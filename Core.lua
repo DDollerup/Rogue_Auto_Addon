@@ -52,6 +52,8 @@ addon.state = {
   lastUiError = nil,
   trackedDebuffs = {},
   pickPocketedTargets = {},
+  pendingPickPocketTarget = nil,
+  pendingPickPocketExpires = 0,
 }
 
 addon.buffAliases = {
@@ -354,8 +356,8 @@ function addon:PrunePickPocketTargets()
   end
 end
 
-function addon:MarkTargetPickPocketed()
-  local targetKey = self:GetTargetKey()
+function addon:MarkTargetPickPocketed(targetKey)
+  targetKey = targetKey or self:GetTargetKey()
   if not targetKey then
     return
   end
@@ -375,6 +377,44 @@ function addon:HasRecentlyPickPocketedTarget()
 
   local expiry = self.state.pickPocketedTargets[targetKey]
   return expiry and expiry > GetTime()
+end
+
+function addon:BeginPickPocketAttempt()
+  local targetKey = self:GetTargetKey()
+  if not targetKey then
+    return
+  end
+
+  self.state.pendingPickPocketTarget = targetKey
+  self.state.pendingPickPocketExpires = GetTime() + 2
+end
+
+function addon:ClearPendingPickPocketAttempt()
+  self.state.pendingPickPocketTarget = nil
+  self.state.pendingPickPocketExpires = 0
+end
+
+function addon:PrunePendingPickPocketAttempt()
+  if self.state.pendingPickPocketTarget and GetTime() > (self.state.pendingPickPocketExpires or 0) then
+    self:ClearPendingPickPocketAttempt()
+  end
+end
+
+function addon:CanAttemptPickPocket()
+  if not RogueAutoDB.stealth.pickPocketHumanoids or not self:HasSpell("Pick Pocket") then
+    return false
+  end
+
+  if UnitCreatureType("target") ~= "Humanoid" then
+    return false
+  end
+
+  if self:HasRecentlyPickPocketedTarget() then
+    return false
+  end
+
+  local inRange = self:IsSpellInRangeSafe("Pick Pocket", "target")
+  return inRange == 1
 end
 
 function addon:TrackTargetDebuff(name, duration)
@@ -502,6 +542,13 @@ function addon:CanCast(name)
     return false
   end
 
+  if name == "Pick Pocket" then
+    local inRange = self:IsSpellInRangeSafe(name, "target")
+    if inRange ~= 1 then
+      return false
+    end
+  end
+
   if not self:IsSpellReady(name) then
     return false
   end
@@ -526,7 +573,7 @@ function addon:Cast(name)
   CastSpellByName(name)
 
   if name == "Pick Pocket" then
-    self:MarkTargetPickPocketed()
+    self:BeginPickPocketAttempt()
   end
 
   return true
@@ -593,11 +640,8 @@ function addon:GetStealthOpener(mode)
     return nil
   end
 
-  if RogueAutoDB.stealth.pickPocketHumanoids and self:HasSpell("Pick Pocket") then
-    local creatureType = UnitCreatureType("target")
-    if creatureType == "Humanoid" and not self:HasRecentlyPickPocketedTarget() then
-      return "Pick Pocket"
-    end
+  if self:CanAttemptPickPocket() then
+    return "Pick Pocket"
   end
 
   if mode == "bleed" then
@@ -785,6 +829,18 @@ function addon:OnUiError(message)
   end
 end
 
+function addon:OnLootOpened()
+  self:PrunePendingPickPocketAttempt()
+  if self.state.pendingPickPocketTarget then
+    self:MarkTargetPickPocketed(self.state.pendingPickPocketTarget)
+    self:ClearPendingPickPocketAttempt()
+  end
+end
+
+function addon:OnTargetChanged()
+  self:ClearPendingPickPocketAttempt()
+end
+
 frame:RegisterEvent("VARIABLES_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("UNIT_ENERGY")
@@ -792,6 +848,8 @@ frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
 frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
 frame:RegisterEvent("UI_ERROR_MESSAGE")
+frame:RegisterEvent("LOOT_OPENED")
+frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 
 frame:SetScript("OnEvent", function()
   if event == "VARIABLES_LOADED" then
@@ -806,5 +864,9 @@ frame:SetScript("OnEvent", function()
     addon:OnCombatMiss(arg1)
   elseif event == "UI_ERROR_MESSAGE" then
     addon:OnUiError(arg1)
+  elseif event == "LOOT_OPENED" then
+    addon:OnLootOpened()
+  elseif event == "PLAYER_TARGET_CHANGED" then
+    addon:OnTargetChanged()
   end
 end)
