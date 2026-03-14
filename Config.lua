@@ -104,6 +104,35 @@ local function makeCheckbox(parent, text, x, y, getter, setter)
   return checkbox
 end
 
+local function makeMacroField(parent, macroText, description, x, y, width)
+  local desc = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  desc:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+  desc:SetText(description)
+  desc:SetWidth(width)
+  desc:SetJustifyH("LEFT")
+
+  local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+  box:SetWidth(width)
+  box:SetHeight(20)
+  box:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 18)
+  box:SetAutoFocus(false)
+  box:SetText(macroText)
+  box:SetCursorPosition(0)
+  box:SetScript("OnEscapePressed", function()
+    box:ClearFocus()
+  end)
+  box:SetScript("OnEditFocusGained", function()
+    box:HighlightText()
+  end)
+  box:SetScript("OnEditFocusLost", function()
+    box:HighlightText(0, 0)
+    box:SetText(macroText)
+    box:SetCursorPosition(0)
+  end)
+
+  return box, desc
+end
+
 local function makeBuilderButton(key, text, x, y)
   local button = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
   button:SetWidth(78)
@@ -154,51 +183,61 @@ end, function(value)
   RogueAutoDB.stealth.pickPocketHumanoids = value
 end)
 
-makeLabel(scrollChild, "Soft Defensives", 8, -278)
+makeLabel(scrollChild, "Buff Upkeep", 8, -278)
+local sndCheckbox = makeCheckbox(scrollChild, "Maintain Slice and Dice", 8, -300, function()
+  return RogueAutoDB and RogueAutoDB.core.keepSliceAndDice
+end, function(value)
+  RogueAutoDB.core.keepSliceAndDice = value
+end)
+
+makeLabel(scrollChild, "Soft Defensives", 8, -342)
 local feintCheckbox = makeCheckbox(scrollChild, "Use Feint in DPS buttons", 8, -300, function()
   return RogueAutoDB and RogueAutoDB.core.softDefensives.feint
 end, function(value)
   RogueAutoDB.core.softDefensives.feint = value
 end)
 
-local ghostlyCheckbox = makeCheckbox(scrollChild, "Use Ghostly Strike in DPS buttons", 8, -326, function()
+feintCheckbox:ClearAllPoints()
+feintCheckbox:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -364)
+
+local ghostlyCheckbox = makeCheckbox(scrollChild, "Use Ghostly Strike in DPS buttons", 8, -390, function()
   return RogueAutoDB and RogueAutoDB.core.softDefensives.ghostlyStrike
 end, function(value)
   RogueAutoDB.core.softDefensives.ghostlyStrike = value
 end)
 
-local flourishCheckbox = makeCheckbox(scrollChild, "Use Flourish in DPS buttons", 8, -352, function()
+local flourishCheckbox = makeCheckbox(scrollChild, "Use Flourish in DPS buttons", 8, -416, function()
   return RogueAutoDB and RogueAutoDB.core.softDefensives.flourish
 end, function(value)
   RogueAutoDB.core.softDefensives.flourish = value
 end)
 
-makeLabel(scrollChild, "Interrupt", 8, -394)
-local blindCheckbox = makeCheckbox(scrollChild, "Allow Blind in interrupt button", 8, -416, function()
+makeLabel(scrollChild, "Interrupt", 8, -458)
+local blindCheckbox = makeCheckbox(scrollChild, "Allow Blind in interrupt button", 8, -480, function()
   return RogueAutoDB and RogueAutoDB.interrupt.useBlind
 end, function(value)
   RogueAutoDB.interrupt.useBlind = value
 end)
 
-local kidneyLabel = makeLabel(scrollChild, "", 8, -446, "GameFontHighlightSmall")
+local kidneyLabel = makeLabel(scrollChild, "", 8, -510, "GameFontHighlightSmall")
 local kidneySlider = CreateFrame("Slider", "RogueAutoKidneySlider", scrollChild, "OptionsSliderTemplate")
 kidneySlider:SetWidth(220)
 kidneySlider:SetHeight(16)
-kidneySlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -462)
+kidneySlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -526)
 kidneySlider:SetMinMaxValues(1, 5)
 kidneySlider:SetValueStep(1)
 getglobal(kidneySlider:GetName() .. "Low"):SetText("1")
 getglobal(kidneySlider:GetName() .. "High"):SetText("5")
 getglobal(kidneySlider:GetName() .. "Text"):SetText("")
 
-makeLabel(scrollChild, "Thresholds", 8, -506)
-local evasionLabel = makeLabel(scrollChild, "", 8, -530, "GameFontHighlightSmall")
-local vanishLabel = makeLabel(scrollChild, "", 194, -530, "GameFontHighlightSmall")
+makeLabel(scrollChild, "Thresholds", 8, -570)
+local evasionLabel = makeLabel(scrollChild, "", 8, -594, "GameFontHighlightSmall")
+local vanishLabel = makeLabel(scrollChild, "", 194, -594, "GameFontHighlightSmall")
 
 local evasionSlider = CreateFrame("Slider", "RogueAutoEvasionSlider", scrollChild, "OptionsSliderTemplate")
 evasionSlider:SetWidth(160)
 evasionSlider:SetHeight(16)
-evasionSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -548)
+evasionSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -612)
 evasionSlider:SetMinMaxValues(5, 100)
 evasionSlider:SetValueStep(1)
 getglobal(evasionSlider:GetName() .. "Low"):SetText("5")
@@ -208,27 +247,58 @@ getglobal(evasionSlider:GetName() .. "Text"):SetText("")
 local vanishSlider = CreateFrame("Slider", "RogueAutoVanishSlider", scrollChild, "OptionsSliderTemplate")
 vanishSlider:SetWidth(160)
 vanishSlider:SetHeight(16)
-vanishSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 194, -548)
+vanishSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 194, -612)
 vanishSlider:SetMinMaxValues(5, 100)
 vanishSlider:SetValueStep(1)
 getglobal(vanishSlider:GetName() .. "Low"):SetText("5")
 getglobal(vanishSlider:GetName() .. "High"):SetText("100")
 getglobal(vanishSlider:GetName() .. "Text"):SetText("")
 
-makeLabel(scrollChild, "Misc", 8, -602)
-debugCheckbox = makeCheckbox(scrollChild, "Enable debug chat output", 8, -624, function()
+makeLabel(scrollChild, "Misc", 8, -666)
+debugCheckbox = makeCheckbox(scrollChild, "Enable debug chat output", 8, -688, function()
   return RogueAutoDB and RogueAutoDB.debug
 end, function(value)
   RogueAutoDB.debug = value
 end)
 
-makeLabel(scrollChild, "Macro Setup", 8, -666)
-local macroLine1 = makeLabel(scrollChild, "/script RogueAuto:Bleed()", 8, -690, "GameFontHighlightSmall")
-local macroLine2 = makeLabel(scrollChild, "/script RogueAuto:Direct()", 8, -708, "GameFontHighlightSmall")
-local macroLine3 = makeLabel(scrollChild, "/script RogueAuto:Interrupt()", 8, -726, "GameFontHighlightSmall")
-local macroLine4 = makeLabel(scrollChild, "/script RogueAuto:Defensive()", 8, -744, "GameFontHighlightSmall")
-local macroHint = makeLabel(scrollChild, "Use the minimap rogue icon to reopen this window.", 8, -772, "GameFontHighlightSmall")
+makeLabel(scrollChild, "Macro Setup", 8, -730)
+local bleedMacroBox = makeMacroField(
+  scrollChild,
+  "/script RogueAuto:Bleed()",
+  "Bleed: stealth opener plus rupture and Shadow of Death upkeep when available.",
+  8,
+  -754,
+  330
+)
+local directMacroBox = makeMacroField(
+  scrollChild,
+  "/script RogueAuto:Direct()",
+  "Direct: stealth opener plus Slice and Dice, Envenom, and direct finisher priority.",
+  8,
+  -808,
+  330
+)
+local interruptMacroBox = makeMacroField(
+  scrollChild,
+  "/script RogueAuto:Interrupt()",
+  "Interrupt: ranged interrupt tools first, then Kick, Kidney Shot, Gouge, and optional Blind.",
+  8,
+  -862,
+  330
+)
+local defensiveMacroBox = makeMacroField(
+  scrollChild,
+  "/script RogueAuto:Defensive()",
+  "Defensive: Vanish and Evasion at thresholds, then Flourish, Ghostly Strike, and Feint.",
+  8,
+  -916,
+  330
+)
+local macroHint = makeLabel(scrollChild, "Click a macro field to highlight and copy it. Use the minimap rogue icon to reopen this window.", 8, -970, "GameFontHighlightSmall")
 macroHint:SetTextColor(0.8, 0.8, 0.8)
+macroHint:SetWidth(330)
+macroHint:SetJustifyH("LEFT")
+scrollChild:SetHeight(1030)
 
 local function clamp(value, minValue, maxValue)
   if value < minValue then
@@ -289,6 +359,7 @@ function addon:RefreshConfig()
   autoAttackCheckbox:Refresh()
   stealthCheckbox:Refresh()
   pickPocketCheckbox:Refresh()
+  sndCheckbox:Refresh()
   feintCheckbox:Refresh()
   ghostlyCheckbox:Refresh()
   flourishCheckbox:Refresh()
@@ -334,6 +405,7 @@ local function printHelp()
   addon:Print("/ra builder auto|sinister|hemo|backstab|noxious")
   addon:Print("/ra fallback on|off")
   addon:Print("/ra pickpocket on|off")
+  addon:Print("/ra snd on|off")
   addon:Print("/ra evasion <pct>")
   addon:Print("/ra vanish <pct>")
 end
@@ -413,6 +485,20 @@ SlashCmdList.ROGUEAUTO = function(message)
     end
     addon:RefreshConfig()
     addon:Print("Pick Pocket opener " .. (RogueAutoDB.stealth.pickPocketHumanoids and "enabled" or "disabled") .. ".")
+    return
+  end
+
+  if command == "snd" then
+    if args[2] == "on" then
+      RogueAutoDB.core.keepSliceAndDice = true
+    elseif args[2] == "off" then
+      RogueAutoDB.core.keepSliceAndDice = false
+    else
+      addon:Print("Usage: /ra snd on|off")
+      return
+    end
+    addon:RefreshConfig()
+    addon:Print("Slice and Dice upkeep " .. (RogueAutoDB.core.keepSliceAndDice and "enabled" or "disabled") .. ".")
     return
   end
 

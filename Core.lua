@@ -22,6 +22,7 @@ addon.defaults = {
     mode = "auto",
   },
   core = {
+    keepSliceAndDice = true,
     softDefensives = {
       feint = true,
       ghostlyStrike = true,
@@ -60,6 +61,10 @@ addon.buffAliases = {
   vanish = "Vanish",
   flourish = "Flourish",
   ghostlyStrike = "Ghostly Strike",
+}
+
+addon.buffTextures = {
+  ["Slice and Dice"] = "ability_rogue_slicedice",
 }
 
 addon.dotBaseDurations = {
@@ -283,6 +288,17 @@ function addon:FindPlayerBuff(name)
     local buffIndex = GetPlayerBuff(index, "HELPFUL")
     if buffIndex < 0 then
       break
+    end
+
+    local expectedTexture = self.buffTextures[name]
+    if expectedTexture and GetPlayerBuffTexture then
+      local texture = GetPlayerBuffTexture(buffIndex)
+      if texture then
+        local normalized = string.lower(string.gsub(texture, ".*\\", ""))
+        if normalized == expectedTexture then
+          return true, GetPlayerBuffTimeLeft(buffIndex) or 0
+        end
+      end
     end
 
     self.tooltip:ClearLines()
@@ -606,6 +622,10 @@ end
 
 function addon:TryMaintainBuff(name)
   if not self:HasSpell(name) then
+    return false
+  end
+
+  if name == "Slice and Dice" and not RogueAutoDB.core.keepSliceAndDice then
     return false
   end
 
