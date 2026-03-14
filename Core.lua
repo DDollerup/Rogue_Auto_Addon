@@ -448,6 +448,11 @@ function addon:StartAttack()
     return
   end
 
+  -- Never break stealth before the opener logic gets a chance to run.
+  if RogueAutoDB.stealth.integrated and self:IsStealthed() then
+    return
+  end
+
   if not UnitExists("target") or UnitIsDead("target") then
     return
   end
