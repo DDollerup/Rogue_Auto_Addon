@@ -1,0 +1,744 @@
+RogueAuto = RogueAuto or {}
+
+local addon = RogueAuto
+
+addon.version = "1.0.0"
+addon.refreshWindow = {
+  playerBuff = 2,
+  targetDebuff = 3,
+}
+
+addon.defaults = {
+  targeting = {
+    nearestFallback = true,
+    autoStartAttack = true,
+    autoAssist = false,
+  },
+  stealth = {
+    integrated = true,
+    pickPocketHumanoids = false,
+  },
+  builder = {
+    mode = "auto",
+  },
+  core = {
+    softDefensives = {
+      feint = true,
+      ghostlyStrike = true,
+      flourish = true,
+    },
+  },
+  panic = {
+    evasionPct = 45,
+    vanishPct = 20,
+  },
+  interrupt = {
+    kidneyMinCP = 1,
+    useBlind = false,
+  },
+  debug = false,
+}
+
+addon.state = {
+  knownSpells = {},
+  lastEnergy = nil,
+  firstEnergyTick = nil,
+  riposteReadyUntil = 0,
+  behindBlockedUntil = 0,
+  lastUiError = nil,
+  trackedDebuffs = {},
+}
+
+addon.buffAliases = {
+  snd = "Slice and Dice",
+  envenom = "Envenom",
+  stealth = "Stealth",
+  evasion = "Evasion",
+  vanish = "Vanish",
+  flourish = "Flourish",
+  ghostlyStrike = "Ghostly Strike",
+}
+
+addon.dotBaseDurations = {
+  ["Rupture"] = 6,
+}
+
+addon.dotPerPointDurations = {
+  ["Rupture"] = 2,
+}
+
+addon.targetDebuffTextures = {
+  ["Rupture"] = "ability_rogue_rupture",
+}
+
+addon.builderModes = {
+  sinister = "Sinister Strike",
+  hemo = "Hemorrhage",
+  backstab = "Backstab",
+  noxious = "Noxious Assault",
+}
+
+local frame = CreateFrame("Frame", "RogueAutoFrame", UIParent)
+addon.frame = frame
+
+local tooltip = CreateFrame("GameTooltip", "RogueAutoTooltip", UIParent, "GameTooltipTemplate")
+tooltip:SetOwner(UIParent, "ANCHOR_NONE")
+addon.tooltip = tooltip
+
+local function deepCopy(value)
+  if type(value) ~= "table" then
+    return value
+  end
+
+  local copy = {}
+  for key, item in pairs(value) do
+    copy[key] = deepCopy(item)
+  end
+  return copy
+end
+
+local function mergeDefaults(target, defaults)
+  if type(defaults) ~= "table" then
+    return target
+  end
+
+  if type(target) ~= "table" then
+    target = {}
+  end
+
+  for key, value in pairs(defaults) do
+    if type(value) == "table" then
+      target[key] = mergeDefaults(target[key], value)
+    elseif target[key] == nil then
+      target[key] = value
+    end
+  end
+
+  return target
+end
+
+function addon:Print(message)
+  DEFAULT_CHAT_FRAME:AddMessage("|cff33cc99RogueAuto:|r " .. message)
+end
+
+function addon:Debug(message)
+  if RogueAutoDB and RogueAutoDB.debug then
+    self:Print(message)
+  end
+end
+
+function addon:InitDB()
+  RogueAutoDB = mergeDefaults(RogueAutoDB, deepCopy(self.defaults))
+end
+
+function addon:ResetDB()
+  RogueAutoDB = deepCopy(self.defaults)
+  self:RefreshKnownSpells()
+  self:Print("Settings reset to defaults.")
+end
+
+function addon:RefreshKnownSpells()
+  self.state.knownSpells = {}
+
+  for spellIndex = 1, 200 do
+    local name = GetSpellName(spellIndex, BOOKTYPE_SPELL)
+    if not name then
+      break
+    end
+    self.state.knownSpells[name] = spellIndex
+  end
+end
+
+function addon:HasSpell(name)
+  return self.state.knownSpells[name] ~= nil
+end
+
+function addon:GetSpellIndex(name)
+  return self.state.knownSpells[name]
+end
+
+function addon:IsSpellReady(name)
+  local spellIndex = self:GetSpellIndex(name)
+  if not spellIndex then
+    return false
+  end
+
+  local startTime, duration = GetSpellCooldown(spellIndex, BOOKTYPE_SPELL)
+  if not startTime or not duration then
+    return true
+  end
+
+  return duration == 0
+end
+
+function addon:GetComboPoints()
+  return GetComboPoints() or 0
+end
+
+function addon:GetEnergy()
+  return UnitMana("player") or 0
+end
+
+function addon:GetPlayerHealthPct()
+  local maxHealth = UnitHealthMax("player")
+  if not maxHealth or maxHealth == 0 then
+    return 100
+  end
+  return (UnitHealth("player") / maxHealth) * 100
+end
+
+function addon:IsStealthed()
+  local icon, name, active = GetShapeshiftFormInfo(1)
+  if active == 1 then
+    return true
+  end
+
+  local isActive = self:FindPlayerBuff(self.buffAliases.stealth)
+  return isActive
+end
+
+function addon:IsBehindBlocked()
+  return GetTime() < (self.state.behindBlockedUntil or 0)
+end
+
+function addon:MarkBehindBlocked()
+  self.state.behindBlockedUntil = GetTime() + 1.5
+end
+
+function addon:IsSpellInRangeSafe(name, unit)
+  if not IsSpellInRange then
+    return nil
+  end
+
+  local ok, result = pcall(IsSpellInRange, name, unit)
+  if not ok then
+    return nil
+  end
+
+  return result
+end
+
+function addon:IsInMeleeRange()
+  if not UnitExists("target") then
+    return false
+  end
+
+  if CheckInteractDistance("target", 3) == 1 then
+    return true
+  end
+
+  local kickRange = self:IsSpellInRangeSafe("Kick", "target")
+  if kickRange == 1 then
+    return true
+  end
+
+  return false
+end
+
+function addon:GetRangedWeaponType()
+  local link = GetInventoryItemLink("player", 18)
+  if not link or not GetItemInfo then
+    return nil
+  end
+
+  local _, _, _, _, _, itemType, subType = GetItemInfo(link)
+  if itemType ~= "Weapon" then
+    return nil
+  end
+
+  return subType
+end
+
+function addon:IsDaggerEquipped()
+  local mainHand = GetInventoryItemLink("player", 16)
+  if not mainHand or not GetItemInfo then
+    return false
+  end
+
+  local _, _, _, _, _, _, subType = GetItemInfo(mainHand)
+  return subType == "Daggers"
+end
+
+function addon:CanAttemptBehindAction()
+  if not UnitExists("target") then
+    return false
+  end
+
+  if self:IsBehindBlocked() then
+    return false
+  end
+
+  if UnitExists("targettarget") and UnitIsUnit("targettarget", "player") then
+    return false
+  end
+
+  return true
+end
+
+function addon:FindPlayerBuff(name)
+  for index = 0, 31 do
+    local buffIndex = GetPlayerBuff(index, "HELPFUL")
+    if buffIndex < 0 then
+      break
+    end
+
+    self.tooltip:ClearLines()
+    self.tooltip:SetPlayerBuff(buffIndex)
+    local text = RogueAutoTooltipTextLeft1 and RogueAutoTooltipTextLeft1:GetText()
+    if text == name then
+      return true, GetPlayerBuffTimeLeft(buffIndex) or 0
+    end
+  end
+
+  return false, 0
+end
+
+function addon:FindUnitDebuffByName(unit, name)
+  if not UnitExists(unit) then
+    return false
+  end
+
+  for index = 1, 16 do
+    local texture = UnitDebuff(unit, index)
+    if not texture then
+      break
+    end
+
+    self.tooltip:ClearLines()
+    self.tooltip:SetUnitDebuff(unit, index)
+    local text = RogueAutoTooltipTextLeft1 and RogueAutoTooltipTextLeft1:GetText()
+    if text == name then
+      return true
+    end
+  end
+
+  return false
+end
+
+function addon:GetTargetKey()
+  if not UnitExists("target") then
+    return nil
+  end
+
+  local name = UnitName("target")
+  local level = UnitLevel("target") or 0
+  return (name or "unknown") .. ":" .. tostring(level)
+end
+
+function addon:TrackTargetDebuff(name, duration)
+  local targetKey = self:GetTargetKey()
+  if not targetKey or not duration then
+    return
+  end
+
+  self.state.trackedDebuffs[targetKey] = self.state.trackedDebuffs[targetKey] or {}
+  self.state.trackedDebuffs[targetKey][name] = GetTime() + duration
+end
+
+function addon:GetTrackedDebuffRemaining(name)
+  local targetKey = self:GetTargetKey()
+  if not targetKey then
+    return 0
+  end
+
+  local targetDebuffs = self.state.trackedDebuffs[targetKey]
+  if not targetDebuffs or not targetDebuffs[name] then
+    return 0
+  end
+
+  local remaining = targetDebuffs[name] - GetTime()
+  if remaining < 0 then
+    targetDebuffs[name] = nil
+    return 0
+  end
+
+  return remaining
+end
+
+function addon:IsTargetDebuffActive(name)
+  if not UnitExists("target") then
+    return false, 0
+  end
+
+  if self:FindUnitDebuffByName("target", name) then
+    local remaining = self:GetTrackedDebuffRemaining(name)
+    return true, remaining
+  end
+
+  local trackedRemaining = self:GetTrackedDebuffRemaining(name)
+  if trackedRemaining > 0 then
+    return true, trackedRemaining
+  end
+
+  local expectedTexture = self.targetDebuffTextures[name]
+  if expectedTexture then
+    for index = 1, 16 do
+      local texture = UnitDebuff("target", index)
+      if not texture then
+        break
+      end
+
+      local normalized = string.lower(string.gsub(texture, ".*\\", ""))
+      if normalized == expectedTexture then
+        return true, trackedRemaining
+      end
+    end
+  end
+
+  return false, 0
+end
+
+function addon:TrackComboDebuff(name, comboPoints)
+  local base = self.dotBaseDurations[name]
+  local perPoint = self.dotPerPointDurations[name]
+  if not base or not perPoint then
+    return
+  end
+
+  local duration = base + (comboPoints * perPoint)
+  self:TrackTargetDebuff(name, duration)
+end
+
+function addon:CanSpendComboPoints(minComboPoints)
+  return self:GetComboPoints() >= (minComboPoints or 1)
+end
+
+function addon:TargetFallback()
+  local hasTarget = UnitExists("target")
+  local targetDead = hasTarget and UnitIsDead("target")
+
+  if targetDead then
+    ClearTarget()
+    hasTarget = false
+  end
+
+  if hasTarget then
+    return true
+  end
+
+  if not RogueAutoDB.targeting.nearestFallback then
+    return false
+  end
+
+  TargetNearestEnemy()
+  return UnitExists("target") and not UnitIsDead("target")
+end
+
+function addon:StartAttack()
+  if not RogueAutoDB.targeting.autoStartAttack then
+    return
+  end
+
+  if not UnitExists("target") or UnitIsDead("target") then
+    return
+  end
+
+  AttackTarget()
+end
+
+function addon:IsTargetTargetingPlayer()
+  return UnitExists("targettarget") and UnitIsUnit("targettarget", "player")
+end
+
+function addon:CanCast(name)
+  if not self:HasSpell(name) then
+    return false
+  end
+
+  if not self:IsSpellReady(name) then
+    return false
+  end
+
+  if IsUsableSpell then
+    local usable, noMana = IsUsableSpell(name)
+    if usable == nil then
+      return true
+    end
+    return usable and not noMana
+  end
+
+  return true
+end
+
+function addon:Cast(name)
+  if not self:CanCast(name) then
+    return false
+  end
+
+  self:Debug("Casting " .. name)
+  CastSpellByName(name)
+  return true
+end
+
+function addon:TryCast(name)
+  if self:Cast(name) then
+    return true
+  end
+  return false
+end
+
+function addon:TryCastWithComboTracking(name, comboPoints)
+  if self:Cast(name) then
+    if name == "Rupture" then
+      self:TrackComboDebuff(name, comboPoints)
+    elseif name == "Shadow of Death" then
+      self:TrackTargetDebuff(name, 12)
+    end
+    return true
+  end
+
+  return false
+end
+
+function addon:GetPreferredBuilder()
+  local mode = RogueAutoDB.builder.mode
+  local forcedSpell = self.builderModes[mode]
+  if forcedSpell and self:HasSpell(forcedSpell) then
+    if forcedSpell == "Backstab" and (not self:IsDaggerEquipped() or self:IsBehindBlocked()) then
+      return self:HasSpell("Sinister Strike") and "Sinister Strike" or forcedSpell
+    end
+    return forcedSpell
+  end
+
+  local preferredSpells = {
+    "Noxious Assault",
+    "Hemorrhage",
+    "Backstab",
+    "Sinister Strike",
+  }
+
+  for _, spellName in ipairs(preferredSpells) do
+    if self:HasSpell(spellName) then
+      if spellName == "Backstab" then
+        if self:IsDaggerEquipped() and not self:IsBehindBlocked() then
+          return spellName
+        end
+      else
+        return spellName
+      end
+    end
+  end
+
+  if self:HasSpell("Sinister Strike") then
+    return "Sinister Strike"
+  end
+
+  return nil
+end
+
+function addon:GetStealthOpener(mode)
+  if not RogueAutoDB.stealth.integrated or not self:IsStealthed() then
+    return nil
+  end
+
+  if RogueAutoDB.stealth.pickPocketHumanoids and self:HasSpell("Pick Pocket") then
+    local creatureType = UnitCreatureType("target")
+    if creatureType == "Humanoid" then
+      return "Pick Pocket"
+    end
+  end
+
+  if mode == "bleed" then
+    if self:HasSpell("Garrote") and self:CanAttemptBehindAction() then
+      return "Garrote"
+    end
+    if self:HasSpell("Cheap Shot") then
+      return "Cheap Shot"
+    end
+    return nil
+  end
+
+  if self:HasSpell("Ambush") and self:IsDaggerEquipped() and self:CanAttemptBehindAction() then
+    return "Ambush"
+  end
+  if self:HasSpell("Cheap Shot") then
+    return "Cheap Shot"
+  end
+
+  return nil
+end
+
+function addon:TrySoftDefensives()
+  if not self:IsTargetTargetingPlayer() then
+    return false
+  end
+
+  if RogueAutoDB.core.softDefensives.feint and self:HasSpell("Feint") and self:TryCast("Feint") then
+    return true
+  end
+
+  if RogueAutoDB.core.softDefensives.ghostlyStrike and self:HasSpell("Ghostly Strike") then
+    local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
+    if (not active or remaining < 2) and self:TryCast("Ghostly Strike") then
+      return true
+    end
+  end
+
+  if RogueAutoDB.core.softDefensives.flourish and self:HasSpell("Flourish") and self:GetComboPoints() > 0 then
+    local active, remaining = self:FindPlayerBuff(self.buffAliases.flourish)
+    if (not active or remaining < 2) and self:TryCast("Flourish") then
+      return true
+    end
+  end
+
+  return false
+end
+
+function addon:TryRiposte()
+  if not self:HasSpell("Riposte") then
+    return false
+  end
+
+  if GetTime() > (self.state.riposteReadyUntil or 0) then
+    return false
+  end
+
+  if self:TryCast("Riposte") then
+    self.state.riposteReadyUntil = 0
+    return true
+  end
+
+  return false
+end
+
+function addon:TryMaintainBuff(name)
+  if not self:HasSpell(name) then
+    return false
+  end
+
+  if self:GetComboPoints() <= 0 then
+    return false
+  end
+
+  local active, remaining = self:FindPlayerBuff(name)
+  if (not active or remaining < self.refreshWindow.playerBuff) and self:TryCast(name) then
+    return true
+  end
+
+  return false
+end
+
+function addon:TryMaintainTargetDebuff(name, comboThreshold)
+  if not self:HasSpell(name) then
+    return false
+  end
+
+  if self:GetComboPoints() < (comboThreshold or 1) then
+    return false
+  end
+
+  local active, remaining = self:IsTargetDebuffActive(name)
+  if active and remaining == 0 then
+    return false
+  end
+
+  if (not active or remaining < self.refreshWindow.targetDebuff) then
+    return self:TryCastWithComboTracking(name, self:GetComboPoints())
+  end
+
+  return false
+end
+
+function addon:TryDirectFinisher()
+  if not self:HasSpell("Eviscerate") then
+    return false
+  end
+
+  if self:GetComboPoints() < 5 then
+    return false
+  end
+
+  return self:TryCast("Eviscerate")
+end
+
+function addon:GetShootSpell()
+  local weaponType = self:GetRangedWeaponType()
+  if weaponType == "Thrown" then
+    return "Throw"
+  end
+  if weaponType == "Bows" then
+    return "Shoot Bow"
+  end
+  if weaponType == "Crossbows" then
+    return "Shoot Crossbow"
+  end
+  if weaponType == "Guns" then
+    return "Shoot Gun"
+  end
+  if weaponType == "Wands" then
+    return "Shoot"
+  end
+  return nil
+end
+
+function addon:OnVariablesLoaded()
+  self:InitDB()
+end
+
+function addon:OnPlayerLogin()
+  self:RefreshKnownSpells()
+  self:Debug("Loaded version " .. self.version)
+end
+
+function addon:OnSpellbookChanged()
+  self:RefreshKnownSpells()
+end
+
+function addon:OnEnergyChanged(unit)
+  if unit ~= "player" then
+    return
+  end
+
+  local currentEnergy = self:GetEnergy()
+  if self.state.lastEnergy and currentEnergy == self.state.lastEnergy + 20 then
+    self.state.firstEnergyTick = GetTime()
+  end
+  self.state.lastEnergy = currentEnergy
+end
+
+function addon:OnCombatMiss(message)
+  if not message then
+    return
+  end
+
+  local lower = string.lower(message)
+  if string.find(lower, "parry") then
+    self.state.riposteReadyUntil = GetTime() + 5
+  end
+end
+
+function addon:OnUiError(message)
+  self.state.lastUiError = message
+  if not message then
+    return
+  end
+
+  local lower = string.lower(message)
+  if string.find(lower, "behind your target") or string.find(lower, "must be behind") then
+    self:MarkBehindBlocked()
+  end
+end
+
+frame:RegisterEvent("VARIABLES_LOADED")
+frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("UNIT_ENERGY")
+frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
+frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
+frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
+frame:RegisterEvent("UI_ERROR_MESSAGE")
+
+frame:SetScript("OnEvent", function()
+  if event == "VARIABLES_LOADED" then
+    addon:OnVariablesLoaded()
+  elseif event == "PLAYER_LOGIN" then
+    addon:OnPlayerLogin()
+  elseif event == "UNIT_ENERGY" then
+    addon:OnEnergyChanged(arg1)
+  elseif event == "LEARNED_SPELL_IN_TAB" or event == "CHARACTER_POINTS_CHANGED" then
+    addon:OnSpellbookChanged()
+  elseif event == "CHAT_MSG_COMBAT_SELF_MISSES" then
+    addon:OnCombatMiss(arg1)
+  elseif event == "UI_ERROR_MESSAGE" then
+    addon:OnUiError(arg1)
+  end
+end)
