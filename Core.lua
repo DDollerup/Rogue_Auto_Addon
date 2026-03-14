@@ -36,6 +36,9 @@ addon.defaults = {
     kidneyMinCP = 1,
     useBlind = false,
   },
+  minimap = {
+    angle = 220,
+  },
   debug = false,
 }
 
