@@ -51,6 +51,7 @@ addon.state = {
   behindBlockedUntil = 0,
   lastUiError = nil,
   trackedDebuffs = {},
+  pickPocketedTargets = {},
 }
 
 addon.buffAliases = {
@@ -344,6 +345,38 @@ function addon:GetTargetKey()
   return (name or "unknown") .. ":" .. tostring(level)
 end
 
+function addon:PrunePickPocketTargets()
+  local now = GetTime()
+  for key, expiry in pairs(self.state.pickPocketedTargets) do
+    if expiry <= now then
+      self.state.pickPocketedTargets[key] = nil
+    end
+  end
+end
+
+function addon:MarkTargetPickPocketed()
+  local targetKey = self:GetTargetKey()
+  if not targetKey then
+    return
+  end
+
+  -- Suppress repeated Pick Pocket attempts on the same target long enough
+  -- for the next keypress to advance into an actual stealth opener.
+  self.state.pickPocketedTargets[targetKey] = GetTime() + 10
+end
+
+function addon:HasRecentlyPickPocketedTarget()
+  self:PrunePickPocketTargets()
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey then
+    return false
+  end
+
+  local expiry = self.state.pickPocketedTargets[targetKey]
+  return expiry and expiry > GetTime()
+end
+
 function addon:TrackTargetDebuff(name, duration)
   local targetKey = self:GetTargetKey()
   if not targetKey or not duration then
@@ -491,6 +524,11 @@ function addon:Cast(name)
 
   self:Debug("Casting " .. name)
   CastSpellByName(name)
+
+  if name == "Pick Pocket" then
+    self:MarkTargetPickPocketed()
+  end
+
   return true
 end
 
@@ -557,7 +595,7 @@ function addon:GetStealthOpener(mode)
 
   if RogueAutoDB.stealth.pickPocketHumanoids and self:HasSpell("Pick Pocket") then
     local creatureType = UnitCreatureType("target")
-    if creatureType == "Humanoid" then
+    if creatureType == "Humanoid" and not self:HasRecentlyPickPocketedTarget() then
       return "Pick Pocket"
     end
   end
