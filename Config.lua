@@ -5,8 +5,8 @@ SLASH_ROGUEAUTO1 = "/ra"
 local frame = CreateFrame("Frame", "RogueAutoConfigFrame", UIParent)
 addon.configFrame = frame
 
-frame:SetWidth(360)
-frame:SetHeight(540)
+frame:SetWidth(430)
+frame:SetHeight(520)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 frame:SetBackdrop({
   bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -34,29 +34,66 @@ title:SetText("RogueAuto")
 local closeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 closeButton:SetWidth(70)
 closeButton:SetHeight(20)
-closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -12, -10)
 closeButton:SetText("Close")
 closeButton:SetScript("OnClick", function()
   frame:Hide()
 end)
 
-local function makeLabel(text, x, y)
-  local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  label:SetPoint("TOPLEFT", frame, "TOPLEFT", x, y)
+local scrollFrame = CreateFrame("ScrollFrame", "RogueAutoScrollFrame", frame, "UIPanelScrollFrameTemplate")
+scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -42)
+scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -30, 14)
+
+local scrollChild = CreateFrame("Frame", "RogueAutoScrollChild", scrollFrame)
+scrollChild:SetWidth(360)
+scrollChild:SetHeight(860)
+scrollFrame:SetScrollChild(scrollChild)
+
+local scrollBar = getglobal("RogueAutoScrollFrameScrollBar")
+scrollBar:SetValueStep(20)
+
+local function updateScrollBounds()
+  local visibleHeight = scrollFrame:GetHeight()
+  local contentHeight = scrollChild:GetHeight()
+  local maxScroll = 0
+
+  if contentHeight > visibleHeight then
+    maxScroll = contentHeight - visibleHeight
+  end
+
+  scrollBar:SetMinMaxValues(0, maxScroll)
+  if scrollBar:GetValue() > maxScroll then
+    scrollBar:SetValue(maxScroll)
+  end
+
+  if maxScroll > 0 then
+    scrollBar:Show()
+  else
+    scrollBar:Hide()
+  end
+end
+
+scrollBar:SetScript("OnValueChanged", function()
+  scrollFrame:SetVerticalScroll(scrollBar:GetValue())
+end)
+
+local function makeLabel(parent, text, x, y, font)
+  local label = parent:CreateFontString(nil, "OVERLAY", font or "GameFontNormal")
+  label:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
   label:SetText(text)
   return label
 end
 
-local function makeCheckbox(text, x, y, getter, setter)
-  local checkbox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+local function makeCheckbox(parent, text, x, y, getter, setter)
+  local checkbox = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
   checkbox:SetWidth(20)
   checkbox:SetHeight(20)
-  checkbox:SetPoint("TOPLEFT", frame, "TOPLEFT", x, y)
+  checkbox:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
   checkbox:SetScript("OnClick", function()
     setter(checkbox:GetChecked() == 1)
   end)
 
-  local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   label:SetPoint("LEFT", checkbox, "RIGHT", 4, 0)
   label:SetText(text)
 
@@ -68,11 +105,12 @@ local function makeCheckbox(text, x, y, getter, setter)
 end
 
 local function makeBuilderButton(key, text, x, y)
-  local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-  button:SetWidth(74)
-  button:SetHeight(18)
-  button:SetPoint("TOPLEFT", frame, "TOPLEFT", x, y)
+  local button = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
+  button:SetWidth(78)
+  button:SetHeight(20)
+  button:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", x, y)
   button:SetText(text)
+  button.key = key
   button:SetScript("OnClick", function()
     RogueAutoDB.builder.mode = key
     addon:RefreshConfig()
@@ -80,98 +118,117 @@ local function makeBuilderButton(key, text, x, y)
   return button
 end
 
-local builderTitle = makeLabel("Builder", 16, -50)
-local builderButtons = {
-  makeBuilderButton("auto", "Auto", 16, -66),
-  makeBuilderButton("sinister", "Sinister", 94, -66),
-  makeBuilderButton("hemo", "Hemo", 172, -66),
-  makeBuilderButton("backstab", "Backstab", 250, -66),
-  makeBuilderButton("noxious", "Noxious", 16, -90),
-}
+local builderButtons = {}
+local debugCheckbox
 
-local targetingTitle = makeLabel("Targeting", 16, -128)
-local fallbackCheckbox = makeCheckbox("Nearest target fallback", 16, -144, function()
+makeLabel(scrollChild, "Builder", 8, -8)
+table.insert(builderButtons, makeBuilderButton("auto", "Auto", 8, -30))
+table.insert(builderButtons, makeBuilderButton("sinister", "Sinister", 94, -30))
+table.insert(builderButtons, makeBuilderButton("hemo", "Hemo", 180, -30))
+table.insert(builderButtons, makeBuilderButton("backstab", "Backstab", 266, -30))
+table.insert(builderButtons, makeBuilderButton("noxious", "Noxious", 8, -56))
+
+makeLabel(scrollChild, "Targeting", 8, -98)
+local fallbackCheckbox = makeCheckbox(scrollChild, "Nearest target fallback", 8, -120, function()
   return RogueAutoDB and RogueAutoDB.targeting.nearestFallback
 end, function(value)
   RogueAutoDB.targeting.nearestFallback = value
 end)
-local autoAttackCheckbox = makeCheckbox("Auto start attack", 16, -168, function()
+
+local autoAttackCheckbox = makeCheckbox(scrollChild, "Auto start attack", 8, -146, function()
   return RogueAutoDB and RogueAutoDB.targeting.autoStartAttack
 end, function(value)
   RogueAutoDB.targeting.autoStartAttack = value
 end)
 
-local stealthTitle = makeLabel("Stealth", 16, -206)
-local stealthCheckbox = makeCheckbox("Integrated stealth openers", 16, -222, function()
+makeLabel(scrollChild, "Stealth", 8, -188)
+local stealthCheckbox = makeCheckbox(scrollChild, "Integrated stealth openers", 8, -210, function()
   return RogueAutoDB and RogueAutoDB.stealth.integrated
 end, function(value)
   RogueAutoDB.stealth.integrated = value
 end)
-local pickPocketCheckbox = makeCheckbox("Pick Pocket humanoids first", 16, -246, function()
+
+local pickPocketCheckbox = makeCheckbox(scrollChild, "Pick Pocket humanoids first", 8, -236, function()
   return RogueAutoDB and RogueAutoDB.stealth.pickPocketHumanoids
 end, function(value)
   RogueAutoDB.stealth.pickPocketHumanoids = value
 end)
 
-local coreTitle = makeLabel("Soft Defensives", 16, -284)
-local feintCheckbox = makeCheckbox("Use Feint in DPS buttons", 16, -300, function()
+makeLabel(scrollChild, "Soft Defensives", 8, -278)
+local feintCheckbox = makeCheckbox(scrollChild, "Use Feint in DPS buttons", 8, -300, function()
   return RogueAutoDB and RogueAutoDB.core.softDefensives.feint
 end, function(value)
   RogueAutoDB.core.softDefensives.feint = value
 end)
-local ghostlyCheckbox = makeCheckbox("Use Ghostly Strike in DPS buttons", 16, -324, function()
+
+local ghostlyCheckbox = makeCheckbox(scrollChild, "Use Ghostly Strike in DPS buttons", 8, -326, function()
   return RogueAutoDB and RogueAutoDB.core.softDefensives.ghostlyStrike
 end, function(value)
   RogueAutoDB.core.softDefensives.ghostlyStrike = value
 end)
-local flourishCheckbox = makeCheckbox("Use Flourish in DPS buttons", 16, -348, function()
+
+local flourishCheckbox = makeCheckbox(scrollChild, "Use Flourish in DPS buttons", 8, -352, function()
   return RogueAutoDB and RogueAutoDB.core.softDefensives.flourish
 end, function(value)
   RogueAutoDB.core.softDefensives.flourish = value
 end)
 
-local interruptTitle = makeLabel("Interrupt", 16, -386)
-local blindCheckbox = makeCheckbox("Allow Blind in interrupt button", 16, -402, function()
+makeLabel(scrollChild, "Interrupt", 8, -394)
+local blindCheckbox = makeCheckbox(scrollChild, "Allow Blind in interrupt button", 8, -416, function()
   return RogueAutoDB and RogueAutoDB.interrupt.useBlind
 end, function(value)
   RogueAutoDB.interrupt.useBlind = value
 end)
 
-local kidneyLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-kidneyLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -428)
+local kidneyLabel = makeLabel(scrollChild, "", 8, -446, "GameFontHighlightSmall")
+local kidneySlider = CreateFrame("Slider", "RogueAutoKidneySlider", scrollChild, "OptionsSliderTemplate")
+kidneySlider:SetWidth(220)
+kidneySlider:SetHeight(16)
+kidneySlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -462)
+kidneySlider:SetMinMaxValues(1, 5)
+kidneySlider:SetValueStep(1)
+getglobal(kidneySlider:GetName() .. "Low"):SetText("1")
+getglobal(kidneySlider:GetName() .. "High"):SetText("5")
+getglobal(kidneySlider:GetName() .. "Text"):SetText("")
 
-local thresholdsTitle = makeLabel("Thresholds", 16, -458)
+makeLabel(scrollChild, "Thresholds", 8, -506)
+local evasionLabel = makeLabel(scrollChild, "", 8, -530, "GameFontHighlightSmall")
+local vanishLabel = makeLabel(scrollChild, "", 194, -530, "GameFontHighlightSmall")
 
-local evasionLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-evasionLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -476)
+local evasionSlider = CreateFrame("Slider", "RogueAutoEvasionSlider", scrollChild, "OptionsSliderTemplate")
+evasionSlider:SetWidth(160)
+evasionSlider:SetHeight(16)
+evasionSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -548)
+evasionSlider:SetMinMaxValues(5, 100)
+evasionSlider:SetValueStep(1)
+getglobal(evasionSlider:GetName() .. "Low"):SetText("5")
+getglobal(evasionSlider:GetName() .. "High"):SetText("100")
+getglobal(evasionSlider:GetName() .. "Text"):SetText("")
 
-local vanishLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-vanishLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 190, -476)
+local vanishSlider = CreateFrame("Slider", "RogueAutoVanishSlider", scrollChild, "OptionsSliderTemplate")
+vanishSlider:SetWidth(160)
+vanishSlider:SetHeight(16)
+vanishSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 194, -548)
+vanishSlider:SetMinMaxValues(5, 100)
+vanishSlider:SetValueStep(1)
+getglobal(vanishSlider:GetName() .. "Low"):SetText("5")
+getglobal(vanishSlider:GetName() .. "High"):SetText("100")
+getglobal(vanishSlider:GetName() .. "Text"):SetText("")
 
-local function refreshBuilderButtons()
-  if not RogueAutoDB then
-    return
-  end
+makeLabel(scrollChild, "Misc", 8, -602)
+debugCheckbox = makeCheckbox(scrollChild, "Enable debug chat output", 8, -624, function()
+  return RogueAutoDB and RogueAutoDB.debug
+end, function(value)
+  RogueAutoDB.debug = value
+end)
 
-  local active = RogueAutoDB.builder.mode
-  for _, button in ipairs(builderButtons) do
-    local alpha = 0.55
-    if string.lower(button:GetText()) == string.lower(active) then
-      alpha = 1
-    elseif button:GetText() == "Auto" and active == "auto" then
-      alpha = 1
-    elseif button:GetText() == "Sinister" and active == "sinister" then
-      alpha = 1
-    elseif button:GetText() == "Hemo" and active == "hemo" then
-      alpha = 1
-    elseif button:GetText() == "Backstab" and active == "backstab" then
-      alpha = 1
-    elseif button:GetText() == "Noxious" and active == "noxious" then
-      alpha = 1
-    end
-    button:SetAlpha(alpha)
-  end
-end
+makeLabel(scrollChild, "Macro Setup", 8, -666)
+local macroLine1 = makeLabel(scrollChild, "/script RogueAuto:Bleed()", 8, -690, "GameFontHighlightSmall")
+local macroLine2 = makeLabel(scrollChild, "/script RogueAuto:Direct()", 8, -708, "GameFontHighlightSmall")
+local macroLine3 = makeLabel(scrollChild, "/script RogueAuto:Interrupt()", 8, -726, "GameFontHighlightSmall")
+local macroLine4 = makeLabel(scrollChild, "/script RogueAuto:Defensive()", 8, -744, "GameFontHighlightSmall")
+local macroHint = makeLabel(scrollChild, "Use the minimap rogue icon to reopen this window.", 8, -772, "GameFontHighlightSmall")
+macroHint:SetTextColor(0.8, 0.8, 0.8)
 
 local function clamp(value, minValue, maxValue)
   if value < minValue then
@@ -185,64 +242,43 @@ end
 
 local suspendRefresh = false
 
-local kidneySlider = CreateFrame("Slider", "RogueAutoKidneySlider", frame, "OptionsSliderTemplate")
-kidneySlider:SetWidth(140)
-kidneySlider:SetHeight(16)
-kidneySlider:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -442)
-kidneySlider:SetMinMaxValues(1, 5)
-kidneySlider:SetValueStep(1)
-getglobal(kidneySlider:GetName() .. "Low"):SetText("1")
-getglobal(kidneySlider:GetName() .. "High"):SetText("5")
-getglobal(kidneySlider:GetName() .. "Text"):SetText("")
+local function refreshBuilderButtons()
+  if not RogueAutoDB then
+    return
+  end
+
+  for _, button in ipairs(builderButtons) do
+    if button.key == RogueAutoDB.builder.mode then
+      button:SetAlpha(1)
+    else
+      button:SetAlpha(0.55)
+    end
+  end
+end
+
 kidneySlider:SetScript("OnValueChanged", function()
-  if suspendRefresh then
+  if suspendRefresh or not RogueAutoDB then
     return
   end
-  if RogueAutoDB then
-    RogueAutoDB.interrupt.kidneyMinCP = clamp(math.floor(kidneySlider:GetValue() + 0.5), 1, 5)
-    addon:RefreshConfig()
-  end
+  RogueAutoDB.interrupt.kidneyMinCP = clamp(math.floor(kidneySlider:GetValue() + 0.5), 1, 5)
+  addon:RefreshConfig()
 end)
 
-local evasionSlider = CreateFrame("Slider", "RogueAutoEvasionSlider", frame, "OptionsSliderTemplate")
-evasionSlider:SetWidth(140)
-evasionSlider:SetHeight(16)
-evasionSlider:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -492)
-evasionSlider:SetMinMaxValues(5, 100)
-evasionSlider:SetValueStep(1)
-getglobal(evasionSlider:GetName() .. "Low"):SetText("5")
-getglobal(evasionSlider:GetName() .. "High"):SetText("100")
-getglobal(evasionSlider:GetName() .. "Text"):SetText("")
 evasionSlider:SetScript("OnValueChanged", function()
-  if suspendRefresh then
+  if suspendRefresh or not RogueAutoDB then
     return
   end
-  if RogueAutoDB then
-    RogueAutoDB.panic.evasionPct = clamp(math.floor(evasionSlider:GetValue() + 0.5), 5, 100)
-    addon:RefreshConfig()
-  end
+  RogueAutoDB.panic.evasionPct = clamp(math.floor(evasionSlider:GetValue() + 0.5), 5, 100)
+  addon:RefreshConfig()
 end)
 
-local vanishSlider = CreateFrame("Slider", "RogueAutoVanishSlider", frame, "OptionsSliderTemplate")
-vanishSlider:SetWidth(140)
-vanishSlider:SetHeight(16)
-vanishSlider:SetPoint("TOPLEFT", frame, "TOPLEFT", 190, -492)
-vanishSlider:SetMinMaxValues(5, 100)
-vanishSlider:SetValueStep(1)
-getglobal(vanishSlider:GetName() .. "Low"):SetText("5")
-getglobal(vanishSlider:GetName() .. "High"):SetText("100")
-getglobal(vanishSlider:GetName() .. "Text"):SetText("")
 vanishSlider:SetScript("OnValueChanged", function()
-  if suspendRefresh then
+  if suspendRefresh or not RogueAutoDB then
     return
   end
-  if RogueAutoDB then
-    RogueAutoDB.panic.vanishPct = clamp(math.floor(vanishSlider:GetValue() + 0.5), 5, 100)
-    addon:RefreshConfig()
-  end
+  RogueAutoDB.panic.vanishPct = clamp(math.floor(vanishSlider:GetValue() + 0.5), 5, 100)
+  addon:RefreshConfig()
 end)
-
-local debugCheckbox
 
 function addon:RefreshConfig()
   if not RogueAutoDB then
@@ -270,33 +306,18 @@ function addon:RefreshConfig()
   kidneyLabel:SetText("Kidney Shot combo minimum: " .. tostring(RogueAutoDB.interrupt.kidneyMinCP))
   evasionLabel:SetText("Evasion: " .. tostring(RogueAutoDB.panic.evasionPct) .. "%")
   vanishLabel:SetText("Vanish: " .. tostring(RogueAutoDB.panic.vanishPct) .. "%")
+
+  updateScrollBounds()
 end
-
-local footer = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-footer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 42)
-footer:SetText("/script RogueAuto:Bleed()  /script RogueAuto:Direct()")
-
-local footer2 = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-footer2:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 30)
-footer2:SetText("/script RogueAuto:Interrupt()  /script RogueAuto:Defensive()")
-
-debugCheckbox = makeCheckbox("Enable debug chat output", 16, -522, function()
-  return RogueAutoDB and RogueAutoDB.debug
-end, function(value)
-  RogueAutoDB.debug = value
-end)
-
-local minimapHint = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-minimapHint:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 12)
-minimapHint:SetText("Use the minimap rogue icon to reopen this window.")
 
 function addon:ToggleConfig()
   self:InitDB()
   if frame:IsShown() then
     frame:Hide()
   else
-    self:RefreshConfig()
     frame:Show()
+    self:RefreshConfig()
+    updateScrollBounds()
   end
 end
 
@@ -502,8 +523,6 @@ local function saveMinimapAngleFromCursor()
   updateMinimapButtonPosition()
 end
 
-addon.UpdateMinimapButtonPosition = updateMinimapButtonPosition
-
 minimapButton:SetScript("OnDragStart", function()
   minimapButton.isDragging = true
 end)
@@ -535,9 +554,12 @@ minimapButton:SetScript("OnLeave", function()
   GameTooltip:Hide()
 end)
 
+addon.UpdateMinimapButtonPosition = updateMinimapButtonPosition
+
 local minimapInitFrame = CreateFrame("Frame")
 minimapInitFrame:RegisterEvent("VARIABLES_LOADED")
 minimapInitFrame:SetScript("OnEvent", function()
   addon:InitDB()
   updateMinimapButtonPosition()
+  updateScrollBounds()
 end)
