@@ -52,6 +52,7 @@ addon.state = {
   lastUiError = nil,
   trackedDebuffs = {},
   pickPocketedTargets = {},
+  pickPocketAttempts = {},
   pendingPickPocketTarget = nil,
   pendingPickPocketExpires = 0,
   attackSlot = nil,
@@ -404,6 +405,15 @@ function addon:PrunePickPocketTargets()
   end
 end
 
+function addon:PrunePickPocketAttempts()
+  local now = GetTime()
+  for key, info in pairs(self.state.pickPocketAttempts) do
+    if not info.expires or info.expires <= now then
+      self.state.pickPocketAttempts[key] = nil
+    end
+  end
+end
+
 function addon:MarkTargetPickPocketed(targetKey)
   targetKey = targetKey or self:GetTargetKey()
   if not targetKey then
@@ -413,6 +423,7 @@ function addon:MarkTargetPickPocketed(targetKey)
   -- Suppress repeated Pick Pocket attempts on the same target long enough
   -- for the next keypress to advance into an actual stealth opener.
   self.state.pickPocketedTargets[targetKey] = GetTime() + 10
+  self.state.pickPocketAttempts[targetKey] = nil
 end
 
 function addon:HasRecentlyPickPocketedTarget()
@@ -427,11 +438,32 @@ function addon:HasRecentlyPickPocketedTarget()
   return expiry and expiry > GetTime()
 end
 
+function addon:GetPickPocketAttemptCount()
+  self:PrunePickPocketAttempts()
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey then
+    return 0
+  end
+
+  local info = self.state.pickPocketAttempts[targetKey]
+  if not info then
+    return 0
+  end
+
+  return info.count or 0
+end
+
 function addon:BeginPickPocketAttempt()
   local targetKey = self:GetTargetKey()
   if not targetKey then
     return
   end
+
+  local info = self.state.pickPocketAttempts[targetKey] or { count = 0, expires = 0 }
+  info.count = info.count + 1
+  info.expires = GetTime() + 15
+  self.state.pickPocketAttempts[targetKey] = info
 
   self.state.pendingPickPocketTarget = targetKey
   self.state.pendingPickPocketExpires = GetTime() + 2
@@ -458,6 +490,10 @@ function addon:CanAttemptPickPocket()
   end
 
   if self:HasRecentlyPickPocketedTarget() then
+    return false
+  end
+
+  if self:GetPickPocketAttemptCount() >= 3 then
     return false
   end
 
