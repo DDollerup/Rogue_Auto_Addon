@@ -246,6 +246,21 @@ function addon:IsInMeleeRange()
   return false
 end
 
+function addon:IsPickPocketRange()
+  local spellRange = self:IsSpellInRangeSafe("Pick Pocket", "target")
+  if spellRange == 1 then
+    return true
+  end
+  if spellRange == 0 then
+    return false
+  end
+
+  -- Some classic/Turtle client setups do not return a stable spell-range
+  -- result for Pick Pocket. Fall back to the same melee-range heuristic used
+  -- elsewhere so we still try the opener when close enough.
+  return self:IsInMeleeRange()
+end
+
 function addon:GetRangedWeaponType()
   local link = GetInventoryItemLink("player", 18)
   if not link or not GetItemInfo then
@@ -413,8 +428,7 @@ function addon:CanAttemptPickPocket()
     return false
   end
 
-  local inRange = self:IsSpellInRangeSafe("Pick Pocket", "target")
-  return inRange == 1
+  return self:IsPickPocketRange()
 end
 
 function addon:TrackTargetDebuff(name, duration)
@@ -543,8 +557,7 @@ function addon:CanCast(name)
   end
 
   if name == "Pick Pocket" then
-    local inRange = self:IsSpellInRangeSafe(name, "target")
-    if inRange ~= 1 then
+    if not self:IsPickPocketRange() then
       return false
     end
   end
