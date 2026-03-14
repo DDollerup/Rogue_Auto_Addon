@@ -55,6 +55,7 @@ addon.state = {
   pendingPickPocketTarget = nil,
   pendingPickPocketExpires = 0,
   attackSlot = nil,
+  warnedMissingAttackSlot = false,
 }
 
 addon.buffAliases = {
@@ -259,6 +260,11 @@ function addon:GetAttackActionSlot()
       self.state.attackSlot = slot
       return slot
     end
+  end
+
+  if RogueAutoDB and RogueAutoDB.debug and not self.state.warnedMissingAttackSlot then
+    self.state.warnedMissingAttackSlot = true
+    self:Print("Could not find the Attack action on any action bar slot. Auto-attack detection may be unreliable until Attack is placed on a bar.")
   end
 
   return nil
