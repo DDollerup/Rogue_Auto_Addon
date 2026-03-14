@@ -54,6 +54,7 @@ addon.state = {
   pickPocketedTargets = {},
   pendingPickPocketTarget = nil,
   pendingPickPocketExpires = 0,
+  attackSlot = nil,
 }
 
 addon.buffAliases = {
@@ -244,6 +245,32 @@ function addon:IsInMeleeRange()
   end
 
   return false
+end
+
+function addon:GetAttackActionSlot()
+  local cachedSlot = self.state.attackSlot
+  if cachedSlot and IsAttackAction(cachedSlot) then
+    return cachedSlot
+  end
+
+  self.state.attackSlot = nil
+  for slot = 1, 120 do
+    if IsAttackAction(slot) then
+      self.state.attackSlot = slot
+      return slot
+    end
+  end
+
+  return nil
+end
+
+function addon:IsAutoAttacking()
+  local attackSlot = self:GetAttackActionSlot()
+  if not attackSlot then
+    return nil
+  end
+
+  return IsCurrentAction(attackSlot) == 1
 end
 
 function addon:IsPickPocketRange()
@@ -544,7 +571,10 @@ function addon:StartAttack()
     return
   end
 
-  AttackTarget()
+  local autoAttacking = self:IsAutoAttacking()
+  if autoAttacking == false or autoAttacking == nil then
+    AttackTarget()
+  end
 end
 
 function addon:IsTargetTargetingPlayer()
