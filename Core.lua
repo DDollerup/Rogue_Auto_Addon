@@ -7,6 +7,22 @@ addon.refreshWindow = {
   playerBuff = 2,
   targetDebuff = 3,
 }
+addon.observedDebuffDurations = {
+  ["Rupture"] = 10,
+  ["Shadow of Death"] = 8,
+  ["Expose Armor"] = 20,
+}
+addon.closeRangeSpells = {
+  "Kick",
+  "Sinister Strike",
+  "Hemorrhage",
+  "Backstab",
+  "Noxious Assault",
+  "Cheap Shot",
+  "Garrote",
+  "Eviscerate",
+  "Rupture",
+}
 
 addon.defaults = {
   targeting = {
@@ -58,6 +74,8 @@ addon.state = {
   pendingPickPocketExpires = 0,
   attackSlot = nil,
   warnedMissingAttackSlot = false,
+  targetSerial = 0,
+  currentTargetKey = nil,
 }
 
 addon.buffAliases = {
@@ -263,6 +281,28 @@ function addon:IsInMeleeRange()
   return false
 end
 
+function addon:IsInCloseSpellRange()
+  local sawOutOfRange = false
+
+  for _, spellName in ipairs(self.closeRangeSpells) do
+    if self:HasSpell(spellName) then
+      local inRange = self:IsSpellInRangeSafe(spellName, "target")
+      if inRange == 1 then
+        return true
+      end
+      if inRange == 0 then
+        sawOutOfRange = true
+      end
+    end
+  end
+
+  if sawOutOfRange then
+    return false
+  end
+
+  return nil
+end
+
 function addon:GetAttackActionSlot()
   local cachedSlot = self.state.attackSlot
   if cachedSlot and IsAttackAction(cachedSlot) then
@@ -304,9 +344,11 @@ function addon:IsPickPocketRange()
   end
 
   -- Some classic/Turtle client setups do not return a stable spell-range
-  -- result for Pick Pocket. Fall back to the same melee-range heuristic used
-  -- elsewhere so we still try the opener when close enough.
-  return self:IsInMeleeRange()
+  -- result for Pick Pocket. Only fall back to other close-range rogue spells,
+  -- not the broader interaction-distance heuristic, to avoid burning attempts
+  -- while still out of true melee range.
+  local closeRange = self:IsInCloseSpellRange()
+  return closeRange == true
 end
 
 function addon:GetRangedWeaponType()
@@ -400,14 +442,38 @@ function addon:FindUnitDebuffByName(unit, name)
   return false
 end
 
-function addon:GetTargetKey()
+function addon:BuildTargetFingerprint()
   if not UnitExists("target") then
     return nil
   end
 
-  local name = UnitName("target")
-  local level = UnitLevel("target") or 0
-  return (name or "unknown") .. ":" .. tostring(level)
+  local name = UnitName("target") or "unknown"
+  local level = UnitLevel("target") or -1
+  local maxHealth = UnitHealthMax("target") or 0
+  local classification = UnitClassification and UnitClassification("target") or "normal"
+  local creatureType = UnitCreatureType("target") or "unknown"
+
+  return string.format("%s:%s:%s:%s:%s", name, tostring(level), tostring(maxHealth), tostring(classification), tostring(creatureType))
+end
+
+function addon:EnsureCurrentTargetKey()
+  if not UnitExists("target") then
+    self.state.currentTargetKey = nil
+    return nil
+  end
+
+  if self.state.currentTargetKey then
+    return self.state.currentTargetKey
+  end
+
+  self.state.targetSerial = (self.state.targetSerial or 0) + 1
+  local fingerprint = self:BuildTargetFingerprint() or "unknown"
+  self.state.currentTargetKey = fingerprint .. "#" .. tostring(self.state.targetSerial)
+  return self.state.currentTargetKey
+end
+
+function addon:GetTargetKey()
+  return self:EnsureCurrentTargetKey()
 end
 
 function addon:PrunePickPocketTargets()
@@ -515,6 +581,8 @@ function addon:CanAttemptPickPocket()
 end
 
 function addon:TrackTargetDebuff(name, duration)
+  self:PruneTrackedDebuffs()
+
   local targetKey = self:GetTargetKey()
   if not targetKey or not duration then
     return
@@ -524,7 +592,39 @@ function addon:TrackTargetDebuff(name, duration)
   self.state.trackedDebuffs[targetKey][name] = GetTime() + duration
 end
 
+function addon:PruneTrackedDebuffs()
+  local now = GetTime()
+
+  for targetKey, targetDebuffs in pairs(self.state.trackedDebuffs) do
+    local hasActiveDebuff = false
+
+    for name, expiresAt in pairs(targetDebuffs) do
+      if not expiresAt or expiresAt <= now then
+        targetDebuffs[name] = nil
+      else
+        hasActiveDebuff = true
+      end
+    end
+
+    if not hasActiveDebuff then
+      self.state.trackedDebuffs[targetKey] = nil
+    end
+  end
+end
+
+function addon:SeedObservedTargetDebuff(name)
+  local fallbackDuration = self.observedDebuffDurations[name]
+  if not fallbackDuration then
+    return 0
+  end
+
+  self:TrackTargetDebuff(name, fallbackDuration)
+  return fallbackDuration
+end
+
 function addon:GetTrackedDebuffRemaining(name)
+  self:PruneTrackedDebuffs()
+
   local targetKey = self:GetTargetKey()
   if not targetKey then
     return 0
@@ -551,6 +651,9 @@ function addon:IsTargetDebuffActive(name)
 
   if self:FindUnitDebuffByName("target", name) then
     local remaining = self:GetTrackedDebuffRemaining(name)
+    if remaining <= 0 then
+      remaining = self:SeedObservedTargetDebuff(name)
+    end
     return true, remaining
   end
 
@@ -569,6 +672,9 @@ function addon:IsTargetDebuffActive(name)
 
       local normalized = string.lower(string.gsub(texture, ".*\\", ""))
       if normalized == expectedTexture then
+        if trackedRemaining <= 0 then
+          trackedRemaining = self:SeedObservedTargetDebuff(name)
+        end
         return true, trackedRemaining
       end
     end
@@ -689,6 +795,8 @@ function addon:TryCastWithComboTracking(name, comboPoints)
   if self:Cast(name) then
     if name == "Rupture" then
       self:TrackComboDebuff(name, comboPoints)
+    elseif name == "Expose Armor" then
+      self:TrackTargetDebuff(name, 30)
     elseif name == "Shadow of Death" then
       self:TrackTargetDebuff(name, 12)
     end
@@ -860,6 +968,27 @@ function addon:ShouldPreferExecuteFinisher()
   return self:GetTargetHealthPct() <= RogueAutoDB.core.executeHealthPct
 end
 
+function addon:ShouldFavorImmediateDamage()
+  if not UnitExists("target") or UnitIsDead("target") then
+    return false
+  end
+
+  if UnitClassification and UnitClassification("target") ~= "normal" then
+    return false
+  end
+
+  return self:GetTargetHealthPct() <= math.max(RogueAutoDB.core.executeHealthPct, 60)
+end
+
+function addon:TryPreferredBuilder()
+  local builder = self:GetPreferredBuilder()
+  if builder then
+    return self:TryCast(builder)
+  end
+
+  return false
+end
+
 function addon:TryDirectFinisher(minComboPoints)
   if not self:HasSpell("Eviscerate") then
     return false
@@ -949,6 +1078,8 @@ function addon:OnLootOpened()
 end
 
 function addon:OnTargetChanged()
+  self:PruneTrackedDebuffs()
+  self.state.currentTargetKey = nil
   self:ClearPendingPickPocketAttempt()
 end
 

@@ -282,7 +282,7 @@ local bleedMacroBox = makeMacroField(
 local directMacroBox = makeMacroField(
   scrollChild,
   "/script RogueAuto:Direct()",
-  "Direct: stealth opener plus Slice and Dice, Envenom, and direct finisher priority.",
+  "Direct: stealth opener plus Expose Armor, Slice and Dice, Envenom, and faster damage pressure on short normal-mob fights.",
   8,
   -854,
   330

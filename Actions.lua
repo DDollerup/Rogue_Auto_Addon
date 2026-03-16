@@ -43,10 +43,7 @@ function addon:Bleed()
   end
 
   if preferExecute then
-    local builder = self:GetPreferredBuilder()
-    if builder then
-      self:TryCast(builder)
-    end
+    self:TryPreferredBuilder()
     return
   end
 
@@ -66,10 +63,7 @@ function addon:Bleed()
     return
   end
 
-  local builder = self:GetPreferredBuilder()
-  if builder then
-    self:TryCast(builder)
-  end
+  self:TryPreferredBuilder()
 end
 
 function addon:Direct()
@@ -96,10 +90,21 @@ function addon:Direct()
   end
 
   if preferExecute then
-    local builder = self:GetPreferredBuilder()
-    if builder then
-      self:TryCast(builder)
+    self:TryPreferredBuilder()
+    return
+  end
+
+  if self:ShouldFavorImmediateDamage() then
+    if self:TryDirectFinisher(3) then
+      return
     end
+
+    if self:TryPreferredBuilder() then
+      return
+    end
+  end
+
+  if self:TryMaintainTargetDebuff("Expose Armor", 4) then
     return
   end
 
@@ -119,10 +124,7 @@ function addon:Direct()
     return
   end
 
-  local builder = self:GetPreferredBuilder()
-  if builder then
-    self:TryCast(builder)
-  end
+  self:TryPreferredBuilder()
 end
 
 function addon:Interrupt()
