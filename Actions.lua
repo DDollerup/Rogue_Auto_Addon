@@ -56,7 +56,7 @@ function addon:Bleed()
       return
     end
 
-    if self:TryMaintainTargetDebuff("Rupture", 5) then
+    if self:TryMaintainTargetDebuff("Rupture", 3) then
       return
     end
 
@@ -64,7 +64,7 @@ function addon:Bleed()
       return
     end
   else
-    if self:TryMaintainTargetDebuff("Rupture", 1) then
+    if self:TryMaintainTargetDebuff("Rupture", 3) then
       return
     end
 
@@ -113,7 +113,7 @@ function addon:Direct()
   end
 
   if self:ShouldFavorImmediateDamage() then
-    if self:TryDirectFinisher(3) then
+    if self:TryDirectFinisher(5) then
       return
     end
 
@@ -127,7 +127,7 @@ function addon:Direct()
       return
     end
 
-    if self:TryMaintainTargetDebuff("Expose Armor", 4) then
+    if self:TryMaintainTargetDebuff("Expose Armor", 3) then
       return
     end
 
@@ -143,7 +143,7 @@ function addon:Direct()
       return
     end
   else
-    if self:TryMaintainTargetDebuff("Expose Armor", 1) then
+    if self:TryMaintainTargetDebuff("Expose Armor", 3) then
       return
     end
 
