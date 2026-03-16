@@ -31,14 +31,15 @@ end
 
 function addon:SetValueByPath(root, path, newValue)
   local value = root
-  for index = 1, #path - 1 do
+  local pathLength = table.getn(path)
+  for index = 1, pathLength - 1 do
     local key = path[index]
     if type(value[key]) ~= "table" then
       value[key] = {}
     end
     value = value[key]
   end
-  value[path[#path]] = newValue
+  value[path[pathLength]] = newValue
 end
 
 function addon:GetSetting(id)
