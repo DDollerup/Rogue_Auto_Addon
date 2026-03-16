@@ -229,13 +229,24 @@ getglobal(kidneySlider:GetName() .. "High"):SetText("5")
 getglobal(kidneySlider:GetName() .. "Text"):SetText("")
 
 makeLabel(scrollChild, "Thresholds", 8, -570)
+local executeLabel = makeLabel(scrollChild, "", 8, -594, "GameFontHighlightSmall")
 local evasionLabel = makeLabel(scrollChild, "", 8, -594, "GameFontHighlightSmall")
 local vanishLabel = makeLabel(scrollChild, "", 194, -594, "GameFontHighlightSmall")
+
+local executeSlider = CreateFrame("Slider", "RogueAutoExecuteSlider", scrollChild, "OptionsSliderTemplate")
+executeSlider:SetWidth(346)
+executeSlider:SetHeight(16)
+executeSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -612)
+executeSlider:SetMinMaxValues(5, 100)
+executeSlider:SetValueStep(1)
+getglobal(executeSlider:GetName() .. "Low"):SetText("5")
+getglobal(executeSlider:GetName() .. "High"):SetText("100")
+getglobal(executeSlider:GetName() .. "Text"):SetText("")
 
 local evasionSlider = CreateFrame("Slider", "RogueAutoEvasionSlider", scrollChild, "OptionsSliderTemplate")
 evasionSlider:SetWidth(160)
 evasionSlider:SetHeight(16)
-evasionSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -612)
+evasionSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -658)
 evasionSlider:SetMinMaxValues(5, 100)
 evasionSlider:SetValueStep(1)
 getglobal(evasionSlider:GetName() .. "Low"):SetText("5")
@@ -245,27 +256,27 @@ getglobal(evasionSlider:GetName() .. "Text"):SetText("")
 local vanishSlider = CreateFrame("Slider", "RogueAutoVanishSlider", scrollChild, "OptionsSliderTemplate")
 vanishSlider:SetWidth(160)
 vanishSlider:SetHeight(16)
-vanishSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 194, -612)
+vanishSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 194, -658)
 vanishSlider:SetMinMaxValues(5, 100)
 vanishSlider:SetValueStep(1)
 getglobal(vanishSlider:GetName() .. "Low"):SetText("5")
 getglobal(vanishSlider:GetName() .. "High"):SetText("100")
 getglobal(vanishSlider:GetName() .. "Text"):SetText("")
 
-makeLabel(scrollChild, "Misc", 8, -666)
-debugCheckbox = makeCheckbox(scrollChild, "Enable debug chat output", 8, -688, function()
+makeLabel(scrollChild, "Misc", 8, -712)
+debugCheckbox = makeCheckbox(scrollChild, "Enable debug chat output", 8, -734, function()
   return RogueAutoDB and RogueAutoDB.debug
 end, function(value)
   RogueAutoDB.debug = value
 end)
 
-makeLabel(scrollChild, "Macro Setup", 8, -730)
+makeLabel(scrollChild, "Macro Setup", 8, -776)
 local bleedMacroBox = makeMacroField(
   scrollChild,
   "/script RogueAuto:Bleed()",
   "Bleed: stealth opener plus rupture and Shadow of Death upkeep when available.",
   8,
-  -754,
+  -800,
   330
 )
 local directMacroBox = makeMacroField(
@@ -273,7 +284,7 @@ local directMacroBox = makeMacroField(
   "/script RogueAuto:Direct()",
   "Direct: stealth opener plus Slice and Dice, Envenom, and direct finisher priority.",
   8,
-  -808,
+  -854,
   330
 )
 local interruptMacroBox = makeMacroField(
@@ -281,7 +292,7 @@ local interruptMacroBox = makeMacroField(
   "/script RogueAuto:Interrupt()",
   "Interrupt: ranged interrupt tools first, then Kick, Kidney Shot, Gouge, and optional Blind.",
   8,
-  -862,
+  -908,
   330
 )
 local defensiveMacroBox = makeMacroField(
@@ -289,14 +300,14 @@ local defensiveMacroBox = makeMacroField(
   "/script RogueAuto:Defensive()",
   "Defensive: Vanish and Evasion at thresholds, then Flourish, Ghostly Strike, and Feint.",
   8,
-  -916,
+  -962,
   330
 )
-local macroHint = makeLabel(scrollChild, "Click a macro field to highlight and copy it. Use the minimap rogue icon to reopen this window.", 8, -970, "GameFontHighlightSmall")
+local macroHint = makeLabel(scrollChild, "Click a macro field to highlight and copy it. Use the minimap rogue icon to reopen this window.", 8, -1016, "GameFontHighlightSmall")
 macroHint:SetTextColor(0.8, 0.8, 0.8)
 macroHint:SetWidth(330)
 macroHint:SetJustifyH("LEFT")
-scrollChild:SetHeight(1030)
+scrollChild:SetHeight(1080)
 
 local function clamp(value, minValue, maxValue)
   if value < minValue then
@@ -329,6 +340,14 @@ kidneySlider:SetScript("OnValueChanged", function()
     return
   end
   RogueAutoDB.interrupt.kidneyMinCP = clamp(math.floor(kidneySlider:GetValue() + 0.5), 1, 5)
+  addon:RefreshConfig()
+end)
+
+executeSlider:SetScript("OnValueChanged", function()
+  if suspendRefresh or not RogueAutoDB then
+    return
+  end
+  RogueAutoDB.core.executeHealthPct = clamp(math.floor(executeSlider:GetValue() + 0.5), 5, 100)
   addon:RefreshConfig()
 end)
 
@@ -368,13 +387,20 @@ function addon:RefreshConfig()
 
   suspendRefresh = true
   kidneySlider:SetValue(RogueAutoDB.interrupt.kidneyMinCP)
+  executeSlider:SetValue(RogueAutoDB.core.executeHealthPct)
   evasionSlider:SetValue(RogueAutoDB.panic.evasionPct)
   vanishSlider:SetValue(RogueAutoDB.panic.vanishPct)
   suspendRefresh = false
 
   kidneyLabel:SetText("Kidney Shot combo minimum: " .. tostring(RogueAutoDB.interrupt.kidneyMinCP))
+  executeLabel:SetText("Direct finisher below: " .. tostring(RogueAutoDB.core.executeHealthPct) .. "%")
   evasionLabel:SetText("Evasion: " .. tostring(RogueAutoDB.panic.evasionPct) .. "%")
   vanishLabel:SetText("Vanish: " .. tostring(RogueAutoDB.panic.vanishPct) .. "%")
+
+  evasionLabel:ClearAllPoints()
+  evasionLabel:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -640)
+  vanishLabel:ClearAllPoints()
+  vanishLabel:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 194, -640)
 
   updateScrollBounds()
 end
@@ -404,6 +430,7 @@ local function printHelp()
   addon:Print("/ra fallback on|off")
   addon:Print("/ra pickpocket on|off")
   addon:Print("/ra snd on|off")
+  addon:Print("/ra execute <pct>")
   addon:Print("/ra evasion <pct>")
   addon:Print("/ra vanish <pct>")
 end
@@ -497,6 +524,18 @@ SlashCmdList.ROGUEAUTO = function(message)
     end
     addon:RefreshConfig()
     addon:Print("Slice and Dice upkeep " .. (RogueAutoDB.core.keepSliceAndDice and "enabled" or "disabled") .. ".")
+    return
+  end
+
+  if command == "execute" then
+    local value = tonumber(args[2])
+    if not value then
+      addon:Print("Usage: /ra execute <pct>")
+      return
+    end
+    RogueAutoDB.core.executeHealthPct = clamp(math.floor(value + 0.5), 5, 100)
+    addon:RefreshConfig()
+    addon:Print("Direct finisher threshold set to " .. tostring(RogueAutoDB.core.executeHealthPct) .. "%.")
     return
   end
 
