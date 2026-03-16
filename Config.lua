@@ -288,14 +288,16 @@ local function createMacroControl(parent, y)
 
   local cursorY = 0
   for _, definition in ipairs(addon.macroDefinitions) do
-    local description, descHeight = createWrappedText(control, definition.description, "GameFontNormal", cursorY, nil)
+    local macroText = definition.macro
+    local descriptionText = definition.description
+    local description, descHeight = createWrappedText(control, descriptionText, "GameFontNormal", cursorY, nil)
     description:SetWidth(332)
     local box = CreateFrame("EditBox", nil, control, "InputBoxTemplate")
     box:SetWidth(332)
     box:SetHeight(20)
     box:SetPoint("TOPLEFT", control, "TOPLEFT", 0, cursorY - descHeight - 4)
     box:SetAutoFocus(false)
-    box:SetText(definition.macro)
+    box:SetText(macroText)
     box:SetScript("OnEscapePressed", function()
       box:ClearFocus()
     end)
@@ -304,7 +306,7 @@ local function createMacroControl(parent, y)
     end)
     box:SetScript("OnEditFocusLost", function()
       box:HighlightText(0, 0)
-      box:SetText(definition.macro)
+      box:SetText(macroText)
     end)
 
     cursorY = cursorY - descHeight - 30

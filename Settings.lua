@@ -230,8 +230,12 @@ addon.uiSections = {
     items = { "integratedStealth", "pickPocketHumanoids" },
   },
   {
+    title = "Rotation: Shared",
+    items = { "keepSliceAndDice" },
+  },
+  {
     title = "Rotation: Bleed",
-    items = { "keepSliceAndDice", "bleedSliceAndDiceFirst", "guaranteeBleedDebuff" },
+    items = { "bleedSliceAndDiceFirst", "guaranteeBleedDebuff" },
   },
   {
     title = "Rotation: Direct",
