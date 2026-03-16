@@ -361,9 +361,15 @@ function addon:IsPickPocketRange()
   -- Some classic/Turtle client setups do not return a stable spell-range
   -- result for Pick Pocket. Only fall back to other close-range rogue spells,
   -- not the broader interaction-distance heuristic, to avoid burning attempts
-  -- while still out of true melee range.
+  -- while still out of true melee range. If the client gives us no useful
+  -- range data at all, allow the manual keypress and let UI-error handling
+  -- roll back the attempt instead of suppressing Pick Pocket entirely.
   local closeRange = self:IsInCloseSpellRange()
-  return closeRange == true
+  if closeRange == false then
+    return false
+  end
+
+  return true
 end
 
 function addon:GetRangedWeaponType()
@@ -567,6 +573,23 @@ end
 function addon:ClearPendingPickPocketAttempt()
   self.state.pendingPickPocketTarget = nil
   self.state.pendingPickPocketExpires = 0
+end
+
+function addon:RevertPendingPickPocketAttempt()
+  local targetKey = self.state.pendingPickPocketTarget
+  if targetKey then
+    local info = self.state.pickPocketAttempts[targetKey]
+    if info then
+      info.count = math.max((info.count or 1) - 1, 0)
+      if info.count <= 0 then
+        self.state.pickPocketAttempts[targetKey] = nil
+      else
+        info.expires = GetTime() + 5
+      end
+    end
+  end
+
+  self:ClearPendingPickPocketAttempt()
 end
 
 function addon:PrunePendingPickPocketAttempt()
@@ -1081,6 +1104,12 @@ function addon:OnUiError(message)
   local lower = string.lower(message)
   if string.find(lower, "behind your target") or string.find(lower, "must be behind") then
     self:MarkBehindBlocked()
+  end
+
+  if self.state.pendingPickPocketTarget then
+    if string.find(lower, "too far away") or string.find(lower, "out of range") or string.find(lower, "line of sight") or string.find(lower, "closer") then
+      self:RevertPendingPickPocketAttempt()
+    end
   end
 end
 
