@@ -64,7 +64,7 @@ function addon:Bleed()
       return
     end
   else
-    if self:TryMaintainTargetDebuff("Rupture", 5) then
+    if self:TryMaintainTargetDebuff("Rupture", 1) then
       return
     end
 
@@ -143,7 +143,7 @@ function addon:Direct()
       return
     end
   else
-    if self:TryMaintainTargetDebuff("Expose Armor", 4) then
+    if self:TryMaintainTargetDebuff("Expose Armor", 1) then
       return
     end
 
