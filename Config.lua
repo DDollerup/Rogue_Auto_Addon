@@ -103,6 +103,40 @@ local function createSectionHeader(parent, titleText, y)
   return 24
 end
 
+local function estimateWrappedTextHeight(text, width, font)
+  local lineHeight = 14
+  local averageCharWidth = 6
+
+  if font == "GameFontNormal" or font == "GameFontNormalLarge" then
+    lineHeight = 16
+    averageCharWidth = 7
+  end
+
+  local charsPerLine = math.floor(width / averageCharWidth)
+  if charsPerLine < 12 then
+    charsPerLine = 12
+  end
+
+  local lineCount = 0
+  for line in string.gfind((text or "") .. "\n", "([^\n]*)\n") do
+    local length = string.len(line)
+    local wrapped = math.floor(length / charsPerLine)
+    if math.mod(length, charsPerLine) ~= 0 then
+      wrapped = wrapped + 1
+    end
+    if wrapped < 1 then
+      wrapped = 1
+    end
+    lineCount = lineCount + wrapped
+  end
+
+  if lineCount < 1 then
+    lineCount = 1
+  end
+
+  return lineCount * lineHeight
+end
+
 local function createWrappedText(parent, text, font, y, color)
   local label = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
   label:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
@@ -114,10 +148,7 @@ local function createWrappedText(parent, text, font, y, color)
     label:SetTextColor(color[1], color[2], color[3])
   end
 
-  local height = label:GetStringHeight() or 0
-  if height < 14 then
-    height = 14
-  end
+  local height = estimateWrappedTextHeight(text, 344, font)
 
   return label, height
 end
