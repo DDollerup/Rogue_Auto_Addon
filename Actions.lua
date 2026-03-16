@@ -68,6 +68,11 @@ function addon:Bleed()
       return
     end
 
+    if self:ShouldForceDebuffBeforeBuff("Rupture", 3) then
+      self:TryPreferredBuilder()
+      return
+    end
+
     if self:TryMaintainTargetDebuff("Shadow of Death", 5) then
       return
     end
@@ -144,6 +149,11 @@ function addon:Direct()
     end
   else
     if self:TryMaintainTargetDebuff("Expose Armor", 3) then
+      return
+    end
+
+    if self:ShouldForceDebuffBeforeBuff("Expose Armor", 3) then
+      self:TryPreferredBuilder()
       return
     end
 

@@ -994,6 +994,19 @@ function addon:TryMaintainTargetDebuff(name, comboThreshold)
   return false
 end
 
+function addon:ShouldForceDebuffBeforeBuff(name, comboThreshold)
+  if not self:HasSpell(name) then
+    return false
+  end
+
+  local active = self:IsTargetDebuffActive(name)
+  if active then
+    return false
+  end
+
+  return self:GetComboPoints() < (comboThreshold or 1)
+end
+
 function addon:ShouldPreferExecuteFinisher()
   if not self:HasSpell("Eviscerate") then
     return false
