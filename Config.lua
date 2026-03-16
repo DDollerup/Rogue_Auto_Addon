@@ -5,8 +5,8 @@ SLASH_ROGUEAUTO1 = "/ra"
 local frame = CreateFrame("Frame", "RogueAutoConfigFrame", UIParent)
 addon.configFrame = frame
 
-frame:SetWidth(430)
-frame:SetHeight(520)
+frame:SetWidth(470)
+frame:SetHeight(560)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 frame:SetBackdrop({
   bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -31,26 +31,34 @@ local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 title:SetPoint("TOP", frame, "TOP", 0, -12)
 title:SetText("RogueAuto")
 
+local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+subtitle:SetPoint("TOP", title, "BOTTOM", 0, -4)
+subtitle:SetText("Manual Turtle WoW rogue helper")
+subtitle:SetTextColor(0.8, 0.8, 0.8)
+
 local closeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-closeButton:SetWidth(70)
-closeButton:SetHeight(20)
-closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -12, -10)
+closeButton:SetWidth(76)
+closeButton:SetHeight(22)
+closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -12)
 closeButton:SetText("Close")
 closeButton:SetScript("OnClick", function()
   frame:Hide()
 end)
 
 local scrollFrame = CreateFrame("ScrollFrame", "RogueAutoScrollFrame", frame, "UIPanelScrollFrameTemplate")
-scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -42)
-scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -30, 14)
+scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -56)
+scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -32, 16)
 
 local scrollChild = CreateFrame("Frame", "RogueAutoScrollChild", scrollFrame)
-scrollChild:SetWidth(360)
-scrollChild:SetHeight(860)
+scrollChild:SetWidth(392)
+scrollChild:SetHeight(900)
 scrollFrame:SetScrollChild(scrollChild)
 
 local scrollBar = getglobal("RogueAutoScrollFrameScrollBar")
 scrollBar:SetValueStep(20)
+
+local refreshables = {}
+local builderButtons = {}
 
 local function updateScrollBounds()
   local visibleHeight = scrollFrame:GetHeight()
@@ -77,272 +85,136 @@ scrollBar:SetScript("OnValueChanged", function()
   scrollFrame:SetVerticalScroll(scrollBar:GetValue())
 end)
 
-local function makeLabel(parent, text, x, y, font)
-  local label = parent:CreateFontString(nil, "OVERLAY", font or "GameFontNormal")
-  label:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-  label:SetText(text)
-  return label
+local function registerRefreshable(control)
+  table.insert(refreshables, control)
 end
 
-local function makeCheckbox(parent, text, x, y, getter, setter)
-  local checkbox = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+local function createSectionHeader(parent, titleText, y)
+  local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  label:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+  label:SetText(titleText)
+
+  local line = parent:CreateTexture(nil, "ARTWORK")
+  line:SetHeight(1)
+  line:SetWidth(344)
+  line:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
+  line:SetTexture(1, 0.82, 0, 0.25)
+
+  return 24
+end
+
+local function createWrappedText(parent, text, font, y, color)
+  local label = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
+  label:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+  label:SetWidth(344)
+  label:SetJustifyH("LEFT")
+  label:SetJustifyV("TOP")
+  label:SetText(text)
+  if color then
+    label:SetTextColor(color[1], color[2], color[3])
+  end
+
+  local height = label:GetStringHeight() or 0
+  if height < 14 then
+    height = 14
+  end
+
+  return label, height
+end
+
+local function createToggleControl(parent, settingId, y)
+  local definition = addon.settingDefinitions[settingId]
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(360)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+
+  local checkbox = CreateFrame("CheckButton", nil, control, "UICheckButtonTemplate")
+  checkbox:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
   checkbox:SetWidth(20)
   checkbox:SetHeight(20)
-  checkbox:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-  checkbox:SetScript("OnClick", function()
-    setter(checkbox:GetChecked() == 1)
-  end)
 
-  local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  label:SetPoint("LEFT", checkbox, "RIGHT", 4, 0)
-  label:SetText(text)
+  local label = control:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  label:SetPoint("TOPLEFT", checkbox, "TOPRIGHT", 4, -4)
+  label:SetWidth(332)
+  label:SetJustifyH("LEFT")
+  label:SetText(definition.label)
 
-  checkbox.Refresh = function()
-    checkbox:SetChecked(getter() and 1 or nil)
+  local height = 24
+  if definition.help then
+    local help = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    help:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
+    help:SetWidth(320)
+    help:SetJustifyH("LEFT")
+    help:SetText(definition.help)
+    help:SetTextColor(0.75, 0.75, 0.75)
+    height = height + 14
   end
 
-  return checkbox
-end
-
-local function makeMacroField(parent, macroText, description, x, y, width)
-  local desc = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  desc:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-  desc:SetText(description)
-  desc:SetWidth(width)
-  desc:SetJustifyH("LEFT")
-
-  local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
-  box:SetWidth(width)
-  box:SetHeight(20)
-  box:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 18)
-  box:SetAutoFocus(false)
-  box:SetText(macroText)
-  box:SetScript("OnEscapePressed", function()
-    box:ClearFocus()
-  end)
-  box:SetScript("OnEditFocusGained", function()
-    box:HighlightText()
-  end)
-  box:SetScript("OnEditFocusLost", function()
-    box:HighlightText(0, 0)
-    box:SetText(macroText)
-  end)
-
-  return box, desc
-end
-
-local function makeBuilderButton(key, text, x, y)
-  local button = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
-  button:SetWidth(78)
-  button:SetHeight(20)
-  button:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", x, y)
-  button:SetText(text)
-  button.key = key
-  button:SetScript("OnClick", function()
-    RogueAutoDB.builder.mode = key
+  checkbox:SetScript("OnClick", function()
+    addon:SetSetting(settingId, checkbox:GetChecked() == 1)
     addon:RefreshConfig()
   end)
-  return button
+
+  control.Refresh = function()
+    checkbox:SetChecked(addon:GetSetting(settingId) and 1 or nil)
+  end
+
+  control:SetHeight(height)
+  registerRefreshable(control)
+  return control, height
 end
 
-local builderButtons = {}
-local debugCheckbox
+local function createSliderControl(parent, settingId, y)
+  local definition = addon.settingDefinitions[settingId]
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(360)
+  control:SetHeight(52)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
 
-makeLabel(scrollChild, "Builder", 8, -8)
-table.insert(builderButtons, makeBuilderButton("auto", "Auto", 8, -30))
-table.insert(builderButtons, makeBuilderButton("sinister", "Sinister", 94, -30))
-table.insert(builderButtons, makeBuilderButton("hemo", "Hemo", 180, -30))
-table.insert(builderButtons, makeBuilderButton("backstab", "Backstab", 266, -30))
-table.insert(builderButtons, makeBuilderButton("noxious", "Noxious", 8, -56))
+  local label = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  label:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
+  label:SetWidth(340)
+  label:SetJustifyH("LEFT")
 
-makeLabel(scrollChild, "Targeting", 8, -98)
-local fallbackCheckbox = makeCheckbox(scrollChild, "Nearest target fallback", 8, -120, function()
-  return RogueAutoDB and RogueAutoDB.targeting.nearestFallback
-end, function(value)
-  RogueAutoDB.targeting.nearestFallback = value
-end)
+  local sliderName = "RogueAutoSlider" .. settingId
+  local slider = CreateFrame("Slider", sliderName, control, "OptionsSliderTemplate")
+  slider:SetWidth(326)
+  slider:SetHeight(16)
+  slider:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -16)
+  slider:SetMinMaxValues(definition.min, definition.max)
+  slider:SetValueStep(definition.step or 1)
+  getglobal(sliderName .. "Low"):SetText(tostring(definition.min))
+  getglobal(sliderName .. "High"):SetText(tostring(definition.max))
+  getglobal(sliderName .. "Text"):SetText("")
 
-local autoAttackCheckbox = makeCheckbox(scrollChild, "Auto start attack", 8, -146, function()
-  return RogueAutoDB and RogueAutoDB.targeting.autoStartAttack
-end, function(value)
-  RogueAutoDB.targeting.autoStartAttack = value
-end)
+  slider:SetScript("OnValueChanged", function()
+    if control.suspendRefresh then
+      return
+    end
+    addon:SetSetting(settingId, slider:GetValue())
+    addon:RefreshConfig()
+  end)
 
-makeLabel(scrollChild, "Stealth", 8, -188)
-local stealthCheckbox = makeCheckbox(scrollChild, "Integrated stealth openers", 8, -210, function()
-  return RogueAutoDB and RogueAutoDB.stealth.integrated
-end, function(value)
-  RogueAutoDB.stealth.integrated = value
-end)
-
-local pickPocketCheckbox = makeCheckbox(scrollChild, "Pick Pocket humanoids first", 8, -236, function()
-  return RogueAutoDB and RogueAutoDB.stealth.pickPocketHumanoids
-end, function(value)
-  RogueAutoDB.stealth.pickPocketHumanoids = value
-end)
-
-makeLabel(scrollChild, "Buff Upkeep", 8, -278)
-local sndCheckbox = makeCheckbox(scrollChild, "Maintain Slice and Dice", 8, -300, function()
-  return RogueAutoDB and RogueAutoDB.core.keepSliceAndDice
-end, function(value)
-  RogueAutoDB.core.keepSliceAndDice = value
-end)
-
-makeLabel(scrollChild, "Soft Defensives", 8, -342)
-local feintCheckbox = makeCheckbox(scrollChild, "Use Feint in DPS buttons", 8, -300, function()
-  return RogueAutoDB and RogueAutoDB.core.softDefensives.feint
-end, function(value)
-  RogueAutoDB.core.softDefensives.feint = value
-end)
-
-feintCheckbox:ClearAllPoints()
-feintCheckbox:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -364)
-
-local ghostlyCheckbox = makeCheckbox(scrollChild, "Use Ghostly Strike in DPS buttons", 8, -390, function()
-  return RogueAutoDB and RogueAutoDB.core.softDefensives.ghostlyStrike
-end, function(value)
-  RogueAutoDB.core.softDefensives.ghostlyStrike = value
-end)
-
-local flourishCheckbox = makeCheckbox(scrollChild, "Use Flourish in DPS buttons", 8, -416, function()
-  return RogueAutoDB and RogueAutoDB.core.softDefensives.flourish
-end, function(value)
-  RogueAutoDB.core.softDefensives.flourish = value
-end)
-
-makeLabel(scrollChild, "Interrupt", 8, -458)
-local blindCheckbox = makeCheckbox(scrollChild, "Allow Blind in interrupt button", 8, -480, function()
-  return RogueAutoDB and RogueAutoDB.interrupt.useBlind
-end, function(value)
-  RogueAutoDB.interrupt.useBlind = value
-end)
-
-local kidneyLabel = makeLabel(scrollChild, "", 8, -510, "GameFontHighlightSmall")
-local kidneySlider = CreateFrame("Slider", "RogueAutoKidneySlider", scrollChild, "OptionsSliderTemplate")
-kidneySlider:SetWidth(220)
-kidneySlider:SetHeight(16)
-kidneySlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -526)
-kidneySlider:SetMinMaxValues(1, 5)
-kidneySlider:SetValueStep(1)
-getglobal(kidneySlider:GetName() .. "Low"):SetText("1")
-getglobal(kidneySlider:GetName() .. "High"):SetText("5")
-getglobal(kidneySlider:GetName() .. "Text"):SetText("")
-
-makeLabel(scrollChild, "Thresholds", 8, -570)
-local executeLabel = makeLabel(scrollChild, "", 8, -594, "GameFontHighlightSmall")
-local evasionLabel = makeLabel(scrollChild, "", 8, -594, "GameFontHighlightSmall")
-local vanishLabel = makeLabel(scrollChild, "", 194, -594, "GameFontHighlightSmall")
-
-local executeSlider = CreateFrame("Slider", "RogueAutoExecuteSlider", scrollChild, "OptionsSliderTemplate")
-executeSlider:SetWidth(346)
-executeSlider:SetHeight(16)
-executeSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -612)
-executeSlider:SetMinMaxValues(5, 100)
-executeSlider:SetValueStep(1)
-getglobal(executeSlider:GetName() .. "Low"):SetText("5")
-getglobal(executeSlider:GetName() .. "High"):SetText("100")
-getglobal(executeSlider:GetName() .. "Text"):SetText("")
-
-local evasionSlider = CreateFrame("Slider", "RogueAutoEvasionSlider", scrollChild, "OptionsSliderTemplate")
-evasionSlider:SetWidth(160)
-evasionSlider:SetHeight(16)
-evasionSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -658)
-evasionSlider:SetMinMaxValues(5, 100)
-evasionSlider:SetValueStep(1)
-getglobal(evasionSlider:GetName() .. "Low"):SetText("5")
-getglobal(evasionSlider:GetName() .. "High"):SetText("100")
-getglobal(evasionSlider:GetName() .. "Text"):SetText("")
-
-local vanishSlider = CreateFrame("Slider", "RogueAutoVanishSlider", scrollChild, "OptionsSliderTemplate")
-vanishSlider:SetWidth(160)
-vanishSlider:SetHeight(16)
-vanishSlider:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 194, -658)
-vanishSlider:SetMinMaxValues(5, 100)
-vanishSlider:SetValueStep(1)
-getglobal(vanishSlider:GetName() .. "Low"):SetText("5")
-getglobal(vanishSlider:GetName() .. "High"):SetText("100")
-getglobal(vanishSlider:GetName() .. "Text"):SetText("")
-
-makeLabel(scrollChild, "Priority Order", 8, -712)
-local bleedPriorityCheckbox = makeCheckbox(scrollChild, "Bleed: Slice and Dice before Rupture", 8, -734, function()
-  return RogueAutoDB and RogueAutoDB.core.bleedSliceAndDiceFirst
-end, function(value)
-  RogueAutoDB.core.bleedSliceAndDiceFirst = value
-end)
-
-local directPriorityCheckbox = makeCheckbox(scrollChild, "Direct: Slice and Dice before Expose Armor", 8, -760, function()
-  return RogueAutoDB and RogueAutoDB.core.directSliceAndDiceFirst
-end, function(value)
-  RogueAutoDB.core.directSliceAndDiceFirst = value
-end)
-
-makeLabel(scrollChild, "Misc", 8, -802)
-debugCheckbox = makeCheckbox(scrollChild, "Enable debug chat output", 8, -734, function()
-  return RogueAutoDB and RogueAutoDB.debug
-end, function(value)
-  RogueAutoDB.debug = value
-end)
-debugCheckbox:ClearAllPoints()
-debugCheckbox:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -824)
-
-makeLabel(scrollChild, "Macro Setup", 8, -866)
-local bleedMacroBox = makeMacroField(
-  scrollChild,
-  "/script RogueAuto:Bleed()",
-  "Bleed: stealth opener plus rupture and Shadow of Death upkeep, with a toggle for whether Slice and Dice comes first.",
-  8,
-  -890,
-  330
-)
-local directMacroBox = makeMacroField(
-  scrollChild,
-  "/script RogueAuto:Direct()",
-  "Direct: stealth opener plus Expose Armor, Slice and Dice, Envenom, and faster damage pressure on short normal-mob fights, with a toggle for whether Slice and Dice comes first.",
-  8,
-  -944,
-  330
-)
-local interruptMacroBox = makeMacroField(
-  scrollChild,
-  "/script RogueAuto:Interrupt()",
-  "Interrupt: ranged interrupt tools first, then Kick, Kidney Shot, Gouge, and optional Blind.",
-  8,
-  -998,
-  330
-)
-local defensiveMacroBox = makeMacroField(
-  scrollChild,
-  "/script RogueAuto:Defensive()",
-  "Defensive: Vanish and Evasion at thresholds, then Flourish, Ghostly Strike, and Feint.",
-  8,
-  -1052,
-  330
-)
-local macroHint = makeLabel(scrollChild, "Click a macro field to highlight and copy it. Use the minimap rogue icon to reopen this window.", 8, -1106, "GameFontHighlightSmall")
-macroHint:SetTextColor(0.8, 0.8, 0.8)
-macroHint:SetWidth(330)
-macroHint:SetJustifyH("LEFT")
-scrollChild:SetHeight(1170)
-
-local function clamp(value, minValue, maxValue)
-  if value < minValue then
-    return minValue
+  control.Refresh = function()
+    local value = addon:GetSetting(settingId)
+    control.suspendRefresh = true
+    slider:SetValue(value)
+    control.suspendRefresh = false
+    if definition.display then
+      label:SetText(definition.display(value))
+    else
+      label:SetText(definition.label .. ": " .. tostring(value))
+    end
   end
-  if value > maxValue then
-    return maxValue
-  end
-  return value
+
+  registerRefreshable(control)
+  return control, 52
 end
-
-local suspendRefresh = false
 
 local function refreshBuilderButtons()
-  if not RogueAutoDB then
-    return
-  end
-
+  local currentMode = addon:GetSetting("builderMode")
   for _, button in ipairs(builderButtons) do
-    if button.key == RogueAutoDB.builder.mode then
+    if button.key == currentMode then
       button:SetAlpha(1)
     else
       button:SetAlpha(0.55)
@@ -350,74 +222,113 @@ local function refreshBuilderButtons()
   end
 end
 
-kidneySlider:SetScript("OnValueChanged", function()
-  if suspendRefresh or not RogueAutoDB then
-    return
-  end
-  RogueAutoDB.interrupt.kidneyMinCP = clamp(math.floor(kidneySlider:GetValue() + 0.5), 1, 5)
-  addon:RefreshConfig()
-end)
+local function createBuilderControl(parent, y)
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(360)
+  control:SetHeight(60)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
 
-executeSlider:SetScript("OnValueChanged", function()
-  if suspendRefresh or not RogueAutoDB then
-    return
-  end
-  RogueAutoDB.core.executeHealthPct = clamp(math.floor(executeSlider:GetValue() + 0.5), 5, 100)
-  addon:RefreshConfig()
-end)
+  for index, option in ipairs(addon.builderOptions) do
+    local row = math.floor((index - 1) / 3)
+    local column = math.mod(index - 1, 3)
 
-evasionSlider:SetScript("OnValueChanged", function()
-  if suspendRefresh or not RogueAutoDB then
-    return
+    local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+    button:SetWidth(110)
+    button:SetHeight(22)
+    button:SetPoint("TOPLEFT", control, "TOPLEFT", column * 116, -(row * 28))
+    button:SetText(option.label)
+    button.key = option.key
+    button:SetScript("OnClick", function()
+      addon:SetSetting("builderMode", option.key)
+      addon:RefreshConfig()
+    end)
+    table.insert(builderButtons, button)
   end
-  RogueAutoDB.panic.evasionPct = clamp(math.floor(evasionSlider:GetValue() + 0.5), 5, 100)
-  addon:RefreshConfig()
-end)
 
-vanishSlider:SetScript("OnValueChanged", function()
-  if suspendRefresh or not RogueAutoDB then
-    return
+  control.Refresh = refreshBuilderButtons
+  registerRefreshable(control)
+  return control, 60
+end
+
+local function createMacroControl(parent, y)
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(360)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+
+  local cursorY = 0
+  for _, definition in ipairs(addon.macroDefinitions) do
+    local description, descHeight = createWrappedText(control, definition.description, "GameFontNormal", cursorY, nil)
+    description:SetWidth(332)
+    local box = CreateFrame("EditBox", nil, control, "InputBoxTemplate")
+    box:SetWidth(332)
+    box:SetHeight(20)
+    box:SetPoint("TOPLEFT", control, "TOPLEFT", 0, cursorY - descHeight - 4)
+    box:SetAutoFocus(false)
+    box:SetText(definition.macro)
+    box:SetScript("OnEscapePressed", function()
+      box:ClearFocus()
+    end)
+    box:SetScript("OnEditFocusGained", function()
+      box:HighlightText()
+    end)
+    box:SetScript("OnEditFocusLost", function()
+      box:HighlightText(0, 0)
+      box:SetText(definition.macro)
+    end)
+
+    cursorY = cursorY - descHeight - 30
   end
-  RogueAutoDB.panic.vanishPct = clamp(math.floor(vanishSlider:GetValue() + 0.5), 5, 100)
-  addon:RefreshConfig()
-end)
+
+  local hint, hintHeight = createWrappedText(control, "Click a macro field to highlight and copy it. Use the minimap rogue icon to reopen this window.", "GameFontHighlightSmall", cursorY, { 0.8, 0.8, 0.8 })
+  hint:SetWidth(332)
+  cursorY = cursorY - hintHeight
+
+  control:SetHeight(math.abs(cursorY) + 8)
+  control.Refresh = function()
+  end
+  registerRefreshable(control)
+  return control, control:GetHeight()
+end
+
+local function buildLayout()
+  local cursorY = -8
+
+  for _, section in ipairs(addon.uiSections) do
+    cursorY = cursorY - createSectionHeader(scrollChild, section.title, cursorY)
+
+    if section.kind == "builder" then
+      local _, height = createBuilderControl(scrollChild, cursorY)
+      cursorY = cursorY - height - 14
+    elseif section.kind == "macros" then
+      local _, height = createMacroControl(scrollChild, cursorY)
+      cursorY = cursorY - height - 18
+    else
+      for _, settingId in ipairs(section.items) do
+        local definition = addon.settingDefinitions[settingId]
+        local _, height
+        if definition.min then
+          _, height = createSliderControl(scrollChild, settingId, cursorY)
+        else
+          _, height = createToggleControl(scrollChild, settingId, cursorY)
+        end
+        cursorY = cursorY - height - 6
+      end
+      cursorY = cursorY - 12
+    end
+  end
+
+  scrollChild:SetHeight(math.abs(cursorY) + 16)
+  updateScrollBounds()
+end
 
 function addon:RefreshConfig()
   if not RogueAutoDB then
     return
   end
 
-  fallbackCheckbox:Refresh()
-  autoAttackCheckbox:Refresh()
-  stealthCheckbox:Refresh()
-  pickPocketCheckbox:Refresh()
-  sndCheckbox:Refresh()
-  bleedPriorityCheckbox:Refresh()
-  directPriorityCheckbox:Refresh()
-  feintCheckbox:Refresh()
-  ghostlyCheckbox:Refresh()
-  flourishCheckbox:Refresh()
-  blindCheckbox:Refresh()
-  debugCheckbox:Refresh()
-
-  refreshBuilderButtons()
-
-  suspendRefresh = true
-  kidneySlider:SetValue(RogueAutoDB.interrupt.kidneyMinCP)
-  executeSlider:SetValue(RogueAutoDB.core.executeHealthPct)
-  evasionSlider:SetValue(RogueAutoDB.panic.evasionPct)
-  vanishSlider:SetValue(RogueAutoDB.panic.vanishPct)
-  suspendRefresh = false
-
-  kidneyLabel:SetText("Kidney Shot combo minimum: " .. tostring(RogueAutoDB.interrupt.kidneyMinCP))
-  executeLabel:SetText("Direct finisher below: " .. tostring(RogueAutoDB.core.executeHealthPct) .. "%")
-  evasionLabel:SetText("Evasion: " .. tostring(RogueAutoDB.panic.evasionPct) .. "%")
-  vanishLabel:SetText("Vanish: " .. tostring(RogueAutoDB.panic.vanishPct) .. "%")
-
-  evasionLabel:ClearAllPoints()
-  evasionLabel:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -640)
-  vanishLabel:ClearAllPoints()
-  vanishLabel:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 194, -640)
+  for _, control in ipairs(refreshables) do
+    control:Refresh()
+  end
 
   updateScrollBounds()
 end
@@ -429,29 +340,57 @@ function addon:ToggleConfig()
   else
     frame:Show()
     self:RefreshConfig()
-    updateScrollBounds()
   end
-end
-
-local function setDebug(value)
-  RogueAutoDB.debug = value
-  addon:Print("Debug " .. (value and "enabled" or "disabled") .. ".")
 end
 
 local function printHelp()
   addon:Print("/ra opens config.")
   addon:Print("/ra help")
   addon:Print("/ra reset")
-  addon:Print("/ra debug on|off")
-  addon:Print("/ra builder auto|sinister|hemo|backstab|noxious")
-  addon:Print("/ra fallback on|off")
-  addon:Print("/ra pickpocket on|off")
-  addon:Print("/ra snd on|off")
-  addon:Print("/ra bleedorder snd|rupture")
-  addon:Print("/ra directorder snd|expose")
-  addon:Print("/ra execute <pct>")
-  addon:Print("/ra evasion <pct>")
-  addon:Print("/ra vanish <pct>")
+  for _, definition in ipairs(addon:GetSlashDefinitions()) do
+    addon:Print("/ra " .. definition.command .. " " .. definition.usage)
+  end
+end
+
+local function applySlashDefinition(definition, argument)
+  if definition.type == "toggle" then
+    if argument ~= "on" and argument ~= "off" then
+      addon:Print("Usage: /ra " .. definition.command .. " " .. definition.usage)
+      return
+    end
+
+    local value = argument == "on"
+    addon:SetSetting(definition.setting, value)
+    addon:RefreshConfig()
+    addon:Print(definition.success(value))
+    return
+  end
+
+  if definition.type == "enum" then
+    local mappedValue = definition.values[argument]
+    if mappedValue == nil then
+      addon:Print("Usage: /ra " .. definition.command .. " " .. definition.usage)
+      return
+    end
+
+    addon:SetSetting(definition.setting, mappedValue)
+    addon:RefreshConfig()
+    addon:Print(definition.success(mappedValue))
+    return
+  end
+
+  if definition.type == "number" then
+    local value = tonumber(argument)
+    if not value then
+      addon:Print("Usage: /ra " .. definition.command .. " " .. definition.usage)
+      return
+    end
+
+    addon:SetSetting(definition.setting, value)
+    local currentValue = addon:GetSetting(definition.setting)
+    addon:RefreshConfig()
+    addon:Print(definition.success(currentValue))
+  end
 end
 
 SlashCmdList.ROGUEAUTO = function(message)
@@ -482,132 +421,11 @@ SlashCmdList.ROGUEAUTO = function(message)
     return
   end
 
-  if command == "debug" then
-    if args[2] == "on" then
-      setDebug(true)
-    elseif args[2] == "off" then
-      setDebug(false)
-    else
-      addon:Print("Usage: /ra debug on|off")
-    end
-    return
-  end
-
-  if command == "builder" then
-    if addon.builderModes[args[2]] or args[2] == "auto" then
-      RogueAutoDB.builder.mode = args[2]
-      addon:RefreshConfig()
-      addon:Print("Builder set to " .. args[2] .. ".")
-    else
-      addon:Print("Usage: /ra builder auto|sinister|hemo|backstab|noxious")
-    end
-    return
-  end
-
-  if command == "fallback" then
-    if args[2] == "on" then
-      RogueAutoDB.targeting.nearestFallback = true
-    elseif args[2] == "off" then
-      RogueAutoDB.targeting.nearestFallback = false
-    else
-      addon:Print("Usage: /ra fallback on|off")
+  for _, definition in ipairs(addon:GetSlashDefinitions()) do
+    if definition.command == command then
+      applySlashDefinition(definition, args[2])
       return
     end
-    addon:RefreshConfig()
-    addon:Print("Nearest fallback " .. (RogueAutoDB.targeting.nearestFallback and "enabled" or "disabled") .. ".")
-    return
-  end
-
-  if command == "pickpocket" then
-    if args[2] == "on" then
-      RogueAutoDB.stealth.pickPocketHumanoids = true
-    elseif args[2] == "off" then
-      RogueAutoDB.stealth.pickPocketHumanoids = false
-    else
-      addon:Print("Usage: /ra pickpocket on|off")
-      return
-    end
-    addon:RefreshConfig()
-    addon:Print("Pick Pocket opener " .. (RogueAutoDB.stealth.pickPocketHumanoids and "enabled" or "disabled") .. ".")
-    return
-  end
-
-  if command == "snd" then
-    if args[2] == "on" then
-      RogueAutoDB.core.keepSliceAndDice = true
-    elseif args[2] == "off" then
-      RogueAutoDB.core.keepSliceAndDice = false
-    else
-      addon:Print("Usage: /ra snd on|off")
-      return
-    end
-    addon:RefreshConfig()
-    addon:Print("Slice and Dice upkeep " .. (RogueAutoDB.core.keepSliceAndDice and "enabled" or "disabled") .. ".")
-    return
-  end
-
-  if command == "bleedorder" then
-    if args[2] == "snd" then
-      RogueAutoDB.core.bleedSliceAndDiceFirst = true
-    elseif args[2] == "rupture" then
-      RogueAutoDB.core.bleedSliceAndDiceFirst = false
-    else
-      addon:Print("Usage: /ra bleedorder snd|rupture")
-      return
-    end
-    addon:RefreshConfig()
-    addon:Print("Bleed priority now starts with " .. (RogueAutoDB.core.bleedSliceAndDiceFirst and "Slice and Dice" or "Rupture") .. ".")
-    return
-  end
-
-  if command == "directorder" then
-    if args[2] == "snd" then
-      RogueAutoDB.core.directSliceAndDiceFirst = true
-    elseif args[2] == "expose" then
-      RogueAutoDB.core.directSliceAndDiceFirst = false
-    else
-      addon:Print("Usage: /ra directorder snd|expose")
-      return
-    end
-    addon:RefreshConfig()
-    addon:Print("Direct priority now starts with " .. (RogueAutoDB.core.directSliceAndDiceFirst and "Slice and Dice" or "Expose Armor") .. ".")
-    return
-  end
-
-  if command == "execute" then
-    local value = tonumber(args[2])
-    if not value then
-      addon:Print("Usage: /ra execute <pct>")
-      return
-    end
-    RogueAutoDB.core.executeHealthPct = clamp(math.floor(value + 0.5), 5, 100)
-    addon:RefreshConfig()
-    addon:Print("Direct finisher threshold set to " .. tostring(RogueAutoDB.core.executeHealthPct) .. "%.")
-    return
-  end
-
-  if command == "evasion" then
-    local value = tonumber(args[2])
-    if not value then
-      addon:Print("Usage: /ra evasion <pct>")
-      return
-    end
-    RogueAutoDB.panic.evasionPct = clamp(math.floor(value + 0.5), 5, 100)
-    addon:RefreshConfig()
-    addon:Print("Evasion threshold set to " .. tostring(RogueAutoDB.panic.evasionPct) .. "%.")
-    return
-  end
-
-  if command == "vanish" then
-    local value = tonumber(args[2])
-    if not value then
-      addon:Print("Usage: /ra vanish <pct>")
-      return
-    end
-    RogueAutoDB.panic.vanishPct = clamp(math.floor(value + 0.5), 5, 100)
-    addon:RefreshConfig()
-    addon:Print("Vanish threshold set to " .. tostring(RogueAutoDB.panic.vanishPct) .. "%.")
-    return
   end
 
   addon:Print("Unknown command. Use /ra help")
@@ -687,9 +505,7 @@ local function saveMinimapAngleFromCursor()
   cursorX = cursorX / scale
   cursorY = cursorY / scale
 
-  local angle = calculateAngleDegrees(cursorX - centerX, cursorY - centerY)
-
-  RogueAutoDB.minimap.angle = angle
+  RogueAutoDB.minimap.angle = calculateAngleDegrees(cursorX - centerX, cursorY - centerY)
   updateMinimapButtonPosition()
 end
 
@@ -726,10 +542,12 @@ end)
 
 addon.UpdateMinimapButtonPosition = updateMinimapButtonPosition
 
-local minimapInitFrame = CreateFrame("Frame")
-minimapInitFrame:RegisterEvent("VARIABLES_LOADED")
-minimapInitFrame:SetScript("OnEvent", function()
+buildLayout()
+
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("VARIABLES_LOADED")
+initFrame:SetScript("OnEvent", function()
   addon:InitDB()
   updateMinimapButtonPosition()
-  updateScrollBounds()
+  addon:RefreshConfig()
 end)

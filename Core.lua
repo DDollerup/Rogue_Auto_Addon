@@ -39,8 +39,14 @@ addon.defaults = {
   },
   core = {
     keepSliceAndDice = true,
-    bleedSliceAndDiceFirst = true,
-    directSliceAndDiceFirst = false,
+    bleed = {
+      sliceAndDiceFirst = true,
+      guaranteePrimaryDebuff = true,
+    },
+    direct = {
+      sliceAndDiceFirst = false,
+      guaranteePrimaryDebuff = true,
+    },
     executeHealthPct = 20,
     softDefensives = {
       feint = true,
@@ -164,12 +170,59 @@ end
 
 function addon:InitDB()
   RogueAutoDB = mergeDefaults(RogueAutoDB, deepCopy(self.defaults))
+  self:MigrateSettings()
 end
 
 function addon:ResetDB()
   RogueAutoDB = deepCopy(self.defaults)
   self:RefreshKnownSpells()
   self:Print("Settings reset to defaults.")
+end
+
+function addon:MigrateSettings()
+  if not RogueAutoDB or not RogueAutoDB.core then
+    return
+  end
+
+  local core = RogueAutoDB.core
+  core.bleed = mergeDefaults(core.bleed, deepCopy(self.defaults.core.bleed))
+  core.direct = mergeDefaults(core.direct, deepCopy(self.defaults.core.direct))
+
+  if core.bleedSliceAndDiceFirst ~= nil then
+    core.bleed.sliceAndDiceFirst = core.bleedSliceAndDiceFirst
+    core.bleedSliceAndDiceFirst = nil
+  end
+
+  if core.guaranteeBleedDebuff ~= nil then
+    core.bleed.guaranteePrimaryDebuff = core.guaranteeBleedDebuff
+    core.guaranteeBleedDebuff = nil
+  end
+
+  if core.directSliceAndDiceFirst ~= nil then
+    core.direct.sliceAndDiceFirst = core.directSliceAndDiceFirst
+    core.directSliceAndDiceFirst = nil
+  end
+
+  if core.guaranteeDirectDebuff ~= nil then
+    core.direct.guaranteePrimaryDebuff = core.guaranteeDirectDebuff
+    core.guaranteeDirectDebuff = nil
+  end
+end
+
+function addon:GetRotationSettings(mode)
+  if not RogueAutoDB or not RogueAutoDB.core then
+    return nil
+  end
+
+  return RogueAutoDB.core[mode]
+end
+
+function addon:GetBleedSettings()
+  return self:GetRotationSettings("bleed")
+end
+
+function addon:GetDirectSettings()
+  return self:GetRotationSettings("direct")
 end
 
 function addon:RefreshKnownSpells()

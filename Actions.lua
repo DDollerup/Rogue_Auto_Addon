@@ -1,5 +1,10 @@
 local addon = RogueAuto
 
+local function consumeBuilderAttempt(self)
+  self:TryPreferredBuilder()
+  return true
+end
+
 function addon:PrepareAction(needsTarget)
   self:InitDB()
   self:RefreshKnownSpells()
@@ -19,71 +24,166 @@ function addon:PrepareAction(needsTarget)
   return UnitExists("target") and not UnitIsDead("target")
 end
 
+function addon:RunDamagePreamble(mode)
+  local opener = self:GetStealthOpener(mode)
+  if opener and self:TryCast(opener) then
+    return true
+  end
+
+  if self:TrySoftDefensives() then
+    return true
+  end
+
+  if self:TryRiposte() then
+    return true
+  end
+
+  if self:ShouldPreferExecuteFinisher() then
+    if self:TryDirectFinisher(1) then
+      return true
+    end
+    return consumeBuilderAttempt(self)
+  end
+
+  return false
+end
+
+function addon:TryRotationDebuffStep(name, comboThreshold, guarantee)
+  if self:TryMaintainTargetDebuff(name, comboThreshold) then
+    return true
+  end
+
+  if guarantee and self:ShouldForceDebuffBeforeBuff(name, comboThreshold) then
+    return consumeBuilderAttempt(self)
+  end
+
+  return false
+end
+
+function addon:TryRotationStep(step)
+  if step.type == "buff" then
+    return self:TryMaintainBuff(step.name)
+  end
+
+  if step.type == "debuff" then
+    return self:TryRotationDebuffStep(step.name, step.comboThreshold, step.guarantee)
+  end
+
+  if step.type == "finisher" then
+    return self:TryDirectFinisher(step.comboThreshold)
+  end
+
+  return false
+end
+
+function addon:RunMaintenancePlan(plan)
+  for _, step in ipairs(plan) do
+    if self:TryRotationStep(step) then
+      return true
+    end
+  end
+
+  return false
+end
+
+function addon:GetBleedMaintenancePlan()
+  local settings = self:GetBleedSettings()
+  local ruptureStep = {
+    type = "debuff",
+    name = "Rupture",
+    comboThreshold = 3,
+    guarantee = not settings.sliceAndDiceFirst and settings.guaranteePrimaryDebuff,
+  }
+  local shadowStep = {
+    type = "debuff",
+    name = "Shadow of Death",
+    comboThreshold = 5,
+    guarantee = false,
+  }
+  local buffSteps = {
+    { type = "buff", name = "Slice and Dice" },
+    { type = "buff", name = "Envenom" },
+  }
+
+  if settings.sliceAndDiceFirst then
+    return {
+      buffSteps[1],
+      buffSteps[2],
+      ruptureStep,
+      shadowStep,
+    }
+  end
+
+  return {
+    ruptureStep,
+    shadowStep,
+    buffSteps[1],
+    buffSteps[2],
+  }
+end
+
+function addon:RunDirectGuaranteeStep()
+  local settings = self:GetDirectSettings()
+  if settings.sliceAndDiceFirst or not settings.guaranteePrimaryDebuff then
+    return false
+  end
+
+  return self:TryRotationDebuffStep("Expose Armor", 3, true)
+end
+
+function addon:GetDirectMaintenancePlan()
+  local settings = self:GetDirectSettings()
+  local exposeStep = {
+    type = "debuff",
+    name = "Expose Armor",
+    comboThreshold = 3,
+    guarantee = not settings.sliceAndDiceFirst and settings.guaranteePrimaryDebuff,
+  }
+  local shadowStep = {
+    type = "debuff",
+    name = "Shadow of Death",
+    comboThreshold = 5,
+    guarantee = false,
+  }
+  local buffSteps = {
+    { type = "buff", name = "Slice and Dice" },
+    { type = "buff", name = "Envenom" },
+  }
+  local finisherStep = {
+    type = "finisher",
+    comboThreshold = 5,
+  }
+
+  if settings.sliceAndDiceFirst then
+    return {
+      buffSteps[1],
+      exposeStep,
+      buffSteps[2],
+      finisherStep,
+      shadowStep,
+    }
+  end
+
+  return {
+    exposeStep,
+    buffSteps[1],
+    buffSteps[2],
+    finisherStep,
+    shadowStep,
+  }
+end
+
 function addon:Bleed()
   if not self:PrepareAction(true) then
     return
   end
 
-  local opener = self:GetStealthOpener("bleed")
-  if opener and self:TryCast(opener) then
+  if self:RunDamagePreamble("bleed") then
     return
   end
 
-  if self:TrySoftDefensives() then
+  if self:RunMaintenancePlan(self:GetBleedMaintenancePlan()) then
     return
-  end
-
-  if self:TryRiposte() then
-    return
-  end
-
-  local preferExecute = self:ShouldPreferExecuteFinisher()
-  if preferExecute and self:TryDirectFinisher(1) then
-    return
-  end
-
-  if preferExecute then
-    self:TryPreferredBuilder()
-    return
-  end
-
-  if RogueAutoDB.core.bleedSliceAndDiceFirst then
-    if self:TryMaintainBuff("Slice and Dice") then
-      return
-    end
-
-    if self:TryMaintainBuff("Envenom") then
-      return
-    end
-
-    if self:TryMaintainTargetDebuff("Rupture", 3) then
-      return
-    end
-
-    if self:TryMaintainTargetDebuff("Shadow of Death", 5) then
-      return
-    end
-  else
-    if self:TryMaintainTargetDebuff("Rupture", 3) then
-      return
-    end
-
-    if self:ShouldForceDebuffBeforeBuff("Rupture", 3) then
-      self:TryPreferredBuilder()
-      return
-    end
-
-    if self:TryMaintainTargetDebuff("Shadow of Death", 5) then
-      return
-    end
-
-    if self:TryMaintainBuff("Slice and Dice") then
-      return
-    end
-
-    if self:TryMaintainBuff("Envenom") then
-      return
-    end
   end
 
   self:TryPreferredBuilder()
@@ -94,26 +194,11 @@ function addon:Direct()
     return
   end
 
-  local opener = self:GetStealthOpener("direct")
-  if opener and self:TryCast(opener) then
+  if self:RunDamagePreamble("direct") then
     return
   end
 
-  if self:TrySoftDefensives() then
-    return
-  end
-
-  if self:TryRiposte() then
-    return
-  end
-
-  local preferExecute = self:ShouldPreferExecuteFinisher()
-  if preferExecute and self:TryDirectFinisher(1) then
-    return
-  end
-
-  if preferExecute then
-    self:TryPreferredBuilder()
+  if self:RunDirectGuaranteeStep() then
     return
   end
 
@@ -121,57 +206,13 @@ function addon:Direct()
     if self:TryDirectFinisher(5) then
       return
     end
-
     if self:TryPreferredBuilder() then
       return
     end
   end
 
-  if RogueAutoDB.core.directSliceAndDiceFirst then
-    if self:TryMaintainBuff("Slice and Dice") then
-      return
-    end
-
-    if self:TryMaintainTargetDebuff("Expose Armor", 3) then
-      return
-    end
-
-    if self:TryMaintainBuff("Envenom") then
-      return
-    end
-
-    if self:TryDirectFinisher() then
-      return
-    end
-
-    if self:TryMaintainTargetDebuff("Shadow of Death", 5) then
-      return
-    end
-  else
-    if self:TryMaintainTargetDebuff("Expose Armor", 3) then
-      return
-    end
-
-    if self:ShouldForceDebuffBeforeBuff("Expose Armor", 3) then
-      self:TryPreferredBuilder()
-      return
-    end
-
-    if self:TryMaintainBuff("Slice and Dice") then
-      return
-    end
-
-    if self:TryMaintainBuff("Envenom") then
-      return
-    end
-
-    if self:TryDirectFinisher() then
-      return
-    end
-
-    if self:TryMaintainTargetDebuff("Shadow of Death", 5) then
-      return
-    end
+  if self:RunMaintenancePlan(self:GetDirectMaintenancePlan()) then
+    return
   end
 
   self:TryPreferredBuilder()
@@ -209,7 +250,7 @@ function addon:Interrupt()
     return
   end
 
-  if RogueAutoDB.interrupt.useBlind then
+  if self:GetSetting("useBlind") then
     self:TryCast("Blind")
   end
 end
@@ -221,13 +262,13 @@ function addon:Defensive()
 
   local healthPct = self:GetPlayerHealthPct()
 
-  if self:HasSpell("Vanish") and healthPct <= RogueAutoDB.panic.vanishPct and self:TryCast("Vanish") then
+  if self:HasSpell("Vanish") and healthPct <= self:GetSetting("vanishPct") and self:TryCast("Vanish") then
     return
   end
 
   if self:HasSpell("Evasion") then
     local active, remaining = self:FindPlayerBuff("Evasion")
-    if (not active or remaining < 2) and healthPct <= RogueAutoDB.panic.evasionPct and self:TryCast("Evasion") then
+    if (not active or remaining < 2) and healthPct <= self:GetSetting("evasionPct") and self:TryCast("Evasion") then
       return
     end
   end
