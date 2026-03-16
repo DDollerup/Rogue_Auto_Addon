@@ -37,6 +37,19 @@ function addon:Bleed()
     return
   end
 
+  local preferExecute = self:ShouldPreferExecuteFinisher()
+  if preferExecute and self:TryDirectFinisher(1) then
+    return
+  end
+
+  if preferExecute then
+    local builder = self:GetPreferredBuilder()
+    if builder then
+      self:TryCast(builder)
+    end
+    return
+  end
+
   if self:TryMaintainBuff("Slice and Dice") then
     return
   end
@@ -74,6 +87,19 @@ function addon:Direct()
   end
 
   if self:TryRiposte() then
+    return
+  end
+
+  local preferExecute = self:ShouldPreferExecuteFinisher()
+  if preferExecute and self:TryDirectFinisher(1) then
+    return
+  end
+
+  if preferExecute then
+    local builder = self:GetPreferredBuilder()
+    if builder then
+      self:TryCast(builder)
+    end
     return
   end
 

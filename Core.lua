@@ -23,6 +23,7 @@ addon.defaults = {
   },
   core = {
     keepSliceAndDice = true,
+    executeHealthPct = 20,
     softDefensives = {
       feint = true,
       ghostlyStrike = true,
@@ -199,6 +200,19 @@ function addon:GetPlayerHealthPct()
     return 100
   end
   return (UnitHealth("player") / maxHealth) * 100
+end
+
+function addon:GetTargetHealthPct()
+  if not UnitExists("target") or UnitIsDead("target") then
+    return 0
+  end
+
+  local maxHealth = UnitHealthMax("target")
+  if not maxHealth or maxHealth == 0 then
+    return 100
+  end
+
+  return (UnitHealth("target") / maxHealth) * 100
 end
 
 function addon:IsStealthed()
@@ -834,12 +848,24 @@ function addon:TryMaintainTargetDebuff(name, comboThreshold)
   return false
 end
 
-function addon:TryDirectFinisher()
+function addon:ShouldPreferExecuteFinisher()
   if not self:HasSpell("Eviscerate") then
     return false
   end
 
-  if self:GetComboPoints() < 5 then
+  if self:GetComboPoints() <= 0 then
+    return false
+  end
+
+  return self:GetTargetHealthPct() <= RogueAutoDB.core.executeHealthPct
+end
+
+function addon:TryDirectFinisher(minComboPoints)
+  if not self:HasSpell("Eviscerate") then
+    return false
+  end
+
+  if self:GetComboPoints() < (minComboPoints or 5) then
     return false
   end
 
