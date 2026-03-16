@@ -47,20 +47,38 @@ function addon:Bleed()
     return
   end
 
-  if self:TryMaintainBuff("Slice and Dice") then
-    return
-  end
+  if RogueAutoDB.core.bleedSliceAndDiceFirst then
+    if self:TryMaintainBuff("Slice and Dice") then
+      return
+    end
 
-  if self:TryMaintainBuff("Envenom") then
-    return
-  end
+    if self:TryMaintainBuff("Envenom") then
+      return
+    end
 
-  if self:TryMaintainTargetDebuff("Rupture", 5) then
-    return
-  end
+    if self:TryMaintainTargetDebuff("Rupture", 5) then
+      return
+    end
 
-  if self:TryMaintainTargetDebuff("Shadow of Death", 5) then
-    return
+    if self:TryMaintainTargetDebuff("Shadow of Death", 5) then
+      return
+    end
+  else
+    if self:TryMaintainTargetDebuff("Rupture", 5) then
+      return
+    end
+
+    if self:TryMaintainTargetDebuff("Shadow of Death", 5) then
+      return
+    end
+
+    if self:TryMaintainBuff("Slice and Dice") then
+      return
+    end
+
+    if self:TryMaintainBuff("Envenom") then
+      return
+    end
   end
 
   self:TryPreferredBuilder()
@@ -104,24 +122,46 @@ function addon:Direct()
     end
   end
 
-  if self:TryMaintainTargetDebuff("Expose Armor", 4) then
-    return
-  end
+  if RogueAutoDB.core.directSliceAndDiceFirst then
+    if self:TryMaintainBuff("Slice and Dice") then
+      return
+    end
 
-  if self:TryMaintainBuff("Slice and Dice") then
-    return
-  end
+    if self:TryMaintainTargetDebuff("Expose Armor", 4) then
+      return
+    end
 
-  if self:TryMaintainBuff("Envenom") then
-    return
-  end
+    if self:TryMaintainBuff("Envenom") then
+      return
+    end
 
-  if self:TryDirectFinisher() then
-    return
-  end
+    if self:TryDirectFinisher() then
+      return
+    end
 
-  if self:TryMaintainTargetDebuff("Shadow of Death", 5) then
-    return
+    if self:TryMaintainTargetDebuff("Shadow of Death", 5) then
+      return
+    end
+  else
+    if self:TryMaintainTargetDebuff("Expose Armor", 4) then
+      return
+    end
+
+    if self:TryMaintainBuff("Slice and Dice") then
+      return
+    end
+
+    if self:TryMaintainBuff("Envenom") then
+      return
+    end
+
+    if self:TryDirectFinisher() then
+      return
+    end
+
+    if self:TryMaintainTargetDebuff("Shadow of Death", 5) then
+      return
+    end
   end
 
   self:TryPreferredBuilder()

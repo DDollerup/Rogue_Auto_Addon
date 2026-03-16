@@ -263,28 +263,43 @@ getglobal(vanishSlider:GetName() .. "Low"):SetText("5")
 getglobal(vanishSlider:GetName() .. "High"):SetText("100")
 getglobal(vanishSlider:GetName() .. "Text"):SetText("")
 
-makeLabel(scrollChild, "Misc", 8, -712)
+makeLabel(scrollChild, "Priority Order", 8, -712)
+local bleedPriorityCheckbox = makeCheckbox(scrollChild, "Bleed: Slice and Dice before Rupture", 8, -734, function()
+  return RogueAutoDB and RogueAutoDB.core.bleedSliceAndDiceFirst
+end, function(value)
+  RogueAutoDB.core.bleedSliceAndDiceFirst = value
+end)
+
+local directPriorityCheckbox = makeCheckbox(scrollChild, "Direct: Slice and Dice before Expose Armor", 8, -760, function()
+  return RogueAutoDB and RogueAutoDB.core.directSliceAndDiceFirst
+end, function(value)
+  RogueAutoDB.core.directSliceAndDiceFirst = value
+end)
+
+makeLabel(scrollChild, "Misc", 8, -802)
 debugCheckbox = makeCheckbox(scrollChild, "Enable debug chat output", 8, -734, function()
   return RogueAutoDB and RogueAutoDB.debug
 end, function(value)
   RogueAutoDB.debug = value
 end)
+debugCheckbox:ClearAllPoints()
+debugCheckbox:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 8, -824)
 
-makeLabel(scrollChild, "Macro Setup", 8, -776)
+makeLabel(scrollChild, "Macro Setup", 8, -866)
 local bleedMacroBox = makeMacroField(
   scrollChild,
   "/script RogueAuto:Bleed()",
-  "Bleed: stealth opener plus rupture and Shadow of Death upkeep when available.",
+  "Bleed: stealth opener plus rupture and Shadow of Death upkeep, with a toggle for whether Slice and Dice comes first.",
   8,
-  -800,
+  -890,
   330
 )
 local directMacroBox = makeMacroField(
   scrollChild,
   "/script RogueAuto:Direct()",
-  "Direct: stealth opener plus Expose Armor, Slice and Dice, Envenom, and faster damage pressure on short normal-mob fights.",
+  "Direct: stealth opener plus Expose Armor, Slice and Dice, Envenom, and faster damage pressure on short normal-mob fights, with a toggle for whether Slice and Dice comes first.",
   8,
-  -854,
+  -944,
   330
 )
 local interruptMacroBox = makeMacroField(
@@ -292,7 +307,7 @@ local interruptMacroBox = makeMacroField(
   "/script RogueAuto:Interrupt()",
   "Interrupt: ranged interrupt tools first, then Kick, Kidney Shot, Gouge, and optional Blind.",
   8,
-  -908,
+  -998,
   330
 )
 local defensiveMacroBox = makeMacroField(
@@ -300,14 +315,14 @@ local defensiveMacroBox = makeMacroField(
   "/script RogueAuto:Defensive()",
   "Defensive: Vanish and Evasion at thresholds, then Flourish, Ghostly Strike, and Feint.",
   8,
-  -962,
+  -1052,
   330
 )
-local macroHint = makeLabel(scrollChild, "Click a macro field to highlight and copy it. Use the minimap rogue icon to reopen this window.", 8, -1016, "GameFontHighlightSmall")
+local macroHint = makeLabel(scrollChild, "Click a macro field to highlight and copy it. Use the minimap rogue icon to reopen this window.", 8, -1106, "GameFontHighlightSmall")
 macroHint:SetTextColor(0.8, 0.8, 0.8)
 macroHint:SetWidth(330)
 macroHint:SetJustifyH("LEFT")
-scrollChild:SetHeight(1080)
+scrollChild:SetHeight(1170)
 
 local function clamp(value, minValue, maxValue)
   if value < minValue then
@@ -377,6 +392,8 @@ function addon:RefreshConfig()
   stealthCheckbox:Refresh()
   pickPocketCheckbox:Refresh()
   sndCheckbox:Refresh()
+  bleedPriorityCheckbox:Refresh()
+  directPriorityCheckbox:Refresh()
   feintCheckbox:Refresh()
   ghostlyCheckbox:Refresh()
   flourishCheckbox:Refresh()
@@ -430,6 +447,8 @@ local function printHelp()
   addon:Print("/ra fallback on|off")
   addon:Print("/ra pickpocket on|off")
   addon:Print("/ra snd on|off")
+  addon:Print("/ra bleedorder snd|rupture")
+  addon:Print("/ra directorder snd|expose")
   addon:Print("/ra execute <pct>")
   addon:Print("/ra evasion <pct>")
   addon:Print("/ra vanish <pct>")
@@ -524,6 +543,34 @@ SlashCmdList.ROGUEAUTO = function(message)
     end
     addon:RefreshConfig()
     addon:Print("Slice and Dice upkeep " .. (RogueAutoDB.core.keepSliceAndDice and "enabled" or "disabled") .. ".")
+    return
+  end
+
+  if command == "bleedorder" then
+    if args[2] == "snd" then
+      RogueAutoDB.core.bleedSliceAndDiceFirst = true
+    elseif args[2] == "rupture" then
+      RogueAutoDB.core.bleedSliceAndDiceFirst = false
+    else
+      addon:Print("Usage: /ra bleedorder snd|rupture")
+      return
+    end
+    addon:RefreshConfig()
+    addon:Print("Bleed priority now starts with " .. (RogueAutoDB.core.bleedSliceAndDiceFirst and "Slice and Dice" or "Rupture") .. ".")
+    return
+  end
+
+  if command == "directorder" then
+    if args[2] == "snd" then
+      RogueAutoDB.core.directSliceAndDiceFirst = true
+    elseif args[2] == "expose" then
+      RogueAutoDB.core.directSliceAndDiceFirst = false
+    else
+      addon:Print("Usage: /ra directorder snd|expose")
+      return
+    end
+    addon:RefreshConfig()
+    addon:Print("Direct priority now starts with " .. (RogueAutoDB.core.directSliceAndDiceFirst and "Slice and Dice" or "Expose Armor") .. ".")
     return
   end
 

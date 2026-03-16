@@ -39,6 +39,8 @@ addon.defaults = {
   },
   core = {
     keepSliceAndDice = true,
+    bleedSliceAndDiceFirst = true,
+    directSliceAndDiceFirst = false,
     executeHealthPct = 20,
     softDefensives = {
       feint = true,
@@ -256,12 +258,25 @@ function addon:IsSpellInRangeSafe(name, unit)
     return nil
   end
 
-  local ok, result = pcall(IsSpellInRange, name, unit)
-  if not ok then
-    return nil
+  local spellIndex = self:GetSpellIndex(name)
+  if spellIndex then
+    local okByIndex, resultByIndex = pcall(IsSpellInRange, spellIndex, BOOKTYPE_SPELL, unit)
+    if okByIndex and resultByIndex ~= nil then
+      return resultByIndex
+    end
   end
 
-  return result
+  local okByNameBook, resultByNameBook = pcall(IsSpellInRange, name, BOOKTYPE_SPELL, unit)
+  if okByNameBook and resultByNameBook ~= nil then
+    return resultByNameBook
+  end
+
+  local okByName, resultByName = pcall(IsSpellInRange, name, unit)
+  if okByName and resultByName ~= nil then
+    return resultByName
+  end
+
+  return nil
 end
 
 function addon:IsInMeleeRange()
