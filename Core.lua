@@ -70,12 +70,14 @@ addon.defaults = {
 
 addon.state = {
   knownSpells = {},
+  spellEnergyCosts = {},
   lastEnergy = nil,
   firstEnergyTick = nil,
   riposteReadyUntil = 0,
   behindBlockedUntil = 0,
   lastUiError = nil,
   trackedDebuffs = {},
+  pendingDebuffs = {},
   pickPocketedTargets = {},
   pickPocketAttempts = {},
   pendingPickPocketTarget = nil,
@@ -227,6 +229,7 @@ end
 
 function addon:RefreshKnownSpells()
   self.state.knownSpells = {}
+  self.state.spellEnergyCosts = {}
 
   for spellIndex = 1, 200 do
     local name = GetSpellName(spellIndex, BOOKTYPE_SPELL)
@@ -265,6 +268,50 @@ end
 
 function addon:GetEnergy()
   return UnitMana("player") or 0
+end
+
+function addon:GetSpellEnergyCost(name)
+  local cached = self.state.spellEnergyCosts[name]
+  if cached ~= nil then
+    if cached == false then
+      return nil
+    end
+    return cached
+  end
+
+  local spellIndex = self:GetSpellIndex(name)
+  if not spellIndex or not self.tooltip.SetSpell then
+    self.state.spellEnergyCosts[name] = false
+    return nil
+  end
+
+  self.tooltip:ClearLines()
+  self.tooltip:SetSpell(spellIndex, BOOKTYPE_SPELL)
+
+  for index = 2, 10 do
+    local leftLine = _G["RogueAutoTooltipTextLeft" .. tostring(index)]
+    local rightLine = _G["RogueAutoTooltipTextRight" .. tostring(index)]
+    local leftText = leftLine and leftLine:GetText()
+    local rightText = rightLine and rightLine:GetText()
+    local costText = leftText or rightText
+    if leftText and string.find(string.lower(leftText), "energy") then
+      costText = leftText
+    elseif rightText and string.find(string.lower(rightText), "energy") then
+      costText = rightText
+    end
+
+    if costText then
+      local amount = string.match(costText, "(%d+)%s+[Ee]nergy")
+      if amount then
+        local cost = tonumber(amount)
+        self.state.spellEnergyCosts[name] = cost or false
+        return cost
+      end
+    end
+  end
+
+  self.state.spellEnergyCosts[name] = false
+  return nil
 end
 
 function addon:GetPlayerHealthPct()
@@ -683,6 +730,65 @@ function addon:TrackTargetDebuff(name, duration)
   self.state.trackedDebuffs[targetKey][name] = GetTime() + duration
 end
 
+function addon:QueuePendingTargetDebuff(name, duration)
+  local targetKey = self:GetTargetKey()
+  if not targetKey or not duration then
+    return
+  end
+
+  self.state.pendingDebuffs[targetKey] = self.state.pendingDebuffs[targetKey] or {}
+  self.state.pendingDebuffs[targetKey][name] = {
+    duration = duration,
+    expires = GetTime() + 2.5,
+  }
+end
+
+function addon:PrunePendingTargetDebuffs()
+  local now = GetTime()
+
+  for targetKey, targetDebuffs in pairs(self.state.pendingDebuffs) do
+    local hasPendingDebuff = false
+
+    for name, info in pairs(targetDebuffs) do
+      if not info or not info.expires or info.expires <= now then
+        targetDebuffs[name] = nil
+      else
+        hasPendingDebuff = true
+      end
+    end
+
+    if not hasPendingDebuff then
+      self.state.pendingDebuffs[targetKey] = nil
+    end
+  end
+end
+
+function addon:ConsumePendingTargetDebuffDuration(name)
+  self:PrunePendingTargetDebuffs()
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey then
+    return 0
+  end
+
+  local targetDebuffs = self.state.pendingDebuffs[targetKey]
+  if not targetDebuffs then
+    return 0
+  end
+
+  local info = targetDebuffs[name]
+  if not info or not info.duration then
+    return 0
+  end
+
+  targetDebuffs[name] = nil
+  if not next(targetDebuffs) then
+    self.state.pendingDebuffs[targetKey] = nil
+  end
+
+  return info.duration
+end
+
 function addon:PruneTrackedDebuffs()
   local now = GetTime()
 
@@ -713,6 +819,16 @@ function addon:SeedObservedTargetDebuff(name)
   return fallbackDuration
 end
 
+function addon:GetComboDebuffDuration(name, comboPoints)
+  local base = self.dotBaseDurations[name]
+  local perPoint = self.dotPerPointDurations[name]
+  if not base or not perPoint then
+    return nil
+  end
+
+  return base + (comboPoints * perPoint)
+end
+
 function addon:GetTrackedDebuffRemaining(name)
   self:PruneTrackedDebuffs()
 
@@ -736,6 +852,8 @@ function addon:GetTrackedDebuffRemaining(name)
 end
 
 function addon:IsTargetDebuffActive(name)
+  self:PrunePendingTargetDebuffs()
+
   if not UnitExists("target") then
     return false, 0
   end
@@ -743,7 +861,13 @@ function addon:IsTargetDebuffActive(name)
   if self:FindUnitDebuffByName("target", name) then
     local remaining = self:GetTrackedDebuffRemaining(name)
     if remaining <= 0 then
-      remaining = self:SeedObservedTargetDebuff(name)
+      local pendingDuration = self:ConsumePendingTargetDebuffDuration(name)
+      if pendingDuration and pendingDuration > 0 then
+        self:TrackTargetDebuff(name, pendingDuration)
+        remaining = pendingDuration
+      else
+        remaining = self:SeedObservedTargetDebuff(name)
+      end
     end
     return true, remaining
   end
@@ -764,7 +888,13 @@ function addon:IsTargetDebuffActive(name)
       local normalized = string.lower(string.gsub(texture, ".*\\", ""))
       if normalized == expectedTexture then
         if trackedRemaining <= 0 then
-          trackedRemaining = self:SeedObservedTargetDebuff(name)
+          local pendingDuration = self:ConsumePendingTargetDebuffDuration(name)
+          if pendingDuration and pendingDuration > 0 then
+            self:TrackTargetDebuff(name, pendingDuration)
+            trackedRemaining = pendingDuration
+          else
+            trackedRemaining = self:SeedObservedTargetDebuff(name)
+          end
         end
         return true, trackedRemaining
       end
@@ -775,13 +905,11 @@ function addon:IsTargetDebuffActive(name)
 end
 
 function addon:TrackComboDebuff(name, comboPoints)
-  local base = self.dotBaseDurations[name]
-  local perPoint = self.dotPerPointDurations[name]
-  if not base or not perPoint then
+  local duration = self:GetComboDebuffDuration(name, comboPoints)
+  if not duration then
     return
   end
 
-  local duration = base + (comboPoints * perPoint)
   self:TrackTargetDebuff(name, duration)
 end
 
@@ -849,6 +977,11 @@ function addon:CanCast(name)
     return false
   end
 
+  local energyCost = self:GetSpellEnergyCost(name)
+  if energyCost and self:GetEnergy() < energyCost then
+    return false
+  end
+
   if IsUsableSpell then
     local usable, noMana = IsUsableSpell(name)
     if usable == nil then
@@ -885,11 +1018,11 @@ end
 function addon:TryCastWithComboTracking(name, comboPoints)
   if self:Cast(name) then
     if name == "Rupture" then
-      self:TrackComboDebuff(name, comboPoints)
+      self:QueuePendingTargetDebuff(name, self:GetComboDebuffDuration(name, comboPoints))
     elseif name == "Expose Armor" then
-      self:TrackTargetDebuff(name, 30)
+      self:QueuePendingTargetDebuff(name, 30)
     elseif name == "Shadow of Death" then
-      self:TrackTargetDebuff(name, 12)
+      self:QueuePendingTargetDebuff(name, 12)
     end
     return true
   end
@@ -1189,6 +1322,7 @@ end
 
 function addon:OnTargetChanged()
   self:PruneTrackedDebuffs()
+  self:PrunePendingTargetDebuffs()
   self.state.currentTargetKey = nil
   self:ClearPendingPickPocketAttempt()
 end
