@@ -88,10 +88,11 @@ end
 
 function addon:GetBleedMaintenancePlan()
   local settings = self:GetBleedSettings()
+  local debuffMinCP = settings.primaryDebuffMinCP or 3
   local ruptureStep = {
     type = "debuff",
     name = "Rupture",
-    comboThreshold = 3,
+    comboThreshold = debuffMinCP,
     guarantee = not settings.sliceAndDiceFirst and settings.guaranteePrimaryDebuff,
   }
   local shadowStep = {
@@ -128,15 +129,16 @@ function addon:RunDirectGuaranteeStep()
     return false
   end
 
-  return self:TryRotationDebuffStep("Expose Armor", 3, true)
+  return self:TryRotationDebuffStep("Expose Armor", settings.primaryDebuffMinCP or 3, true)
 end
 
 function addon:GetDirectMaintenancePlan()
   local settings = self:GetDirectSettings()
+  local debuffMinCP = settings.primaryDebuffMinCP or 3
   local exposeStep = {
     type = "debuff",
     name = "Expose Armor",
-    comboThreshold = 3,
+    comboThreshold = debuffMinCP,
     guarantee = not settings.sliceAndDiceFirst and settings.guaranteePrimaryDebuff,
   }
   local shadowStep = {

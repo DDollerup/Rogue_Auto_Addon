@@ -137,6 +137,19 @@ addon.settingDefinitions = {
     path = { "core", "bleed", "guaranteePrimaryDebuff" },
     label = "Guarantee Rupture before buff upkeep",
   },
+  bleedDebuffMinCP = {
+    path = { "core", "bleed", "primaryDebuffMinCP" },
+    label = "Rupture combo minimum",
+    min = 1,
+    max = 5,
+    step = 1,
+    normalize = function(self, value)
+      return self:ClampValue(math.floor(value + 0.5), 1, 5)
+    end,
+    display = function(value)
+      return "Rupture combo minimum: " .. tostring(value)
+    end,
+  },
   directSliceAndDiceFirst = {
     path = { "core", "direct", "sliceAndDiceFirst" },
     label = "Slice and Dice before Expose Armor",
@@ -144,6 +157,19 @@ addon.settingDefinitions = {
   guaranteeDirectDebuff = {
     path = { "core", "direct", "guaranteePrimaryDebuff" },
     label = "Guarantee Expose Armor before short-fight damage",
+  },
+  directDebuffMinCP = {
+    path = { "core", "direct", "primaryDebuffMinCP" },
+    label = "Expose Armor combo minimum",
+    min = 1,
+    max = 5,
+    step = 1,
+    normalize = function(self, value)
+      return self:ClampValue(math.floor(value + 0.5), 1, 5)
+    end,
+    display = function(value)
+      return "Expose Armor combo minimum: " .. tostring(value)
+    end,
   },
   softFeint = {
     path = { "core", "softDefensives", "feint" },
@@ -235,11 +261,11 @@ addon.uiSections = {
   },
   {
     title = "Rotation: Bleed",
-    items = { "bleedSliceAndDiceFirst", "guaranteeBleedDebuff" },
+    items = { "bleedSliceAndDiceFirst", "guaranteeBleedDebuff", "bleedDebuffMinCP" },
   },
   {
     title = "Rotation: Direct",
-    items = { "directSliceAndDiceFirst", "guaranteeDirectDebuff" },
+    items = { "directSliceAndDiceFirst", "guaranteeDirectDebuff", "directDebuffMinCP" },
   },
   {
     title = "Defensives",
@@ -307,12 +333,30 @@ addon.slashCommandDefinitions = {
     end,
   },
   {
+    command = "rupturecp",
+    type = "number",
+    setting = "bleedDebuffMinCP",
+    usage = "<cp>",
+    success = function(value)
+      return "Rupture combo minimum set to " .. tostring(value) .. "."
+    end,
+  },
+  {
     command = "directguarantee",
     type = "toggle",
     setting = "guaranteeDirectDebuff",
     usage = "on|off",
     success = function(value)
       return "Direct debuff guarantee " .. (value and "enabled" or "disabled") .. "."
+    end,
+  },
+  {
+    command = "exposecp",
+    type = "number",
+    setting = "directDebuffMinCP",
+    usage = "<cp>",
+    success = function(value)
+      return "Expose Armor combo minimum set to " .. tostring(value) .. "."
     end,
   },
   {

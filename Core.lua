@@ -42,10 +42,12 @@ addon.defaults = {
     bleed = {
       sliceAndDiceFirst = true,
       guaranteePrimaryDebuff = true,
+      primaryDebuffMinCP = 3,
     },
     direct = {
       sliceAndDiceFirst = false,
       guaranteePrimaryDebuff = true,
+      primaryDebuffMinCP = 3,
     },
     executeHealthPct = 20,
     softDefensives = {
