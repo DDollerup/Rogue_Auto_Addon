@@ -303,7 +303,7 @@ function addon:GetSpellEnergyCost(name)
     end
 
     if costText then
-      local amount = string.match(costText, "(%d+)%s+[Ee]nergy")
+      local _, _, amount = string.find(costText, "(%d+)%s+[Ee]nergy")
       if amount then
         local cost = tonumber(amount)
         self.state.spellEnergyCosts[name] = cost or false
