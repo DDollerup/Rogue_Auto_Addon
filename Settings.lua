@@ -81,16 +81,21 @@ addon.builderOptions = {
   { key = "noxious", label = "Noxious" },
 }
 
+addon.directFinisherOptions = {
+  { key = "eviscerate", label = "Eviscerate" },
+  { key = "envenom", label = "Envenom" },
+}
+
 addon.macroDefinitions = {
   {
     id = "bleed",
     macro = "/script RogueAuto:Bleed()",
-    description = "Bleed: stealth opener plus rupture and Shadow of Death upkeep, with toggles for order and Rupture guarantee.",
+    description = "Bleed: stealth opener plus rupture setup, then direct-finisher damage while Rupture remains active, with toggles for order and Rupture guarantee.",
   },
   {
     id = "direct",
     macro = "/script RogueAuto:Direct()",
-    description = "Direct: stealth opener plus Expose Armor, Slice and Dice, Envenom, and faster damage pressure on short normal-mob fights, with toggles for order and Expose Armor guarantee.",
+    description = "Direct: stealth opener plus Expose Armor setup, then direct-finisher damage once Expose Armor is active, with toggles for order, guarantee, and finisher choice.",
   },
   {
     id = "interrupt",
@@ -170,6 +175,11 @@ addon.settingDefinitions = {
     display = function(value)
       return "Expose Armor combo minimum: " .. tostring(value)
     end,
+  },
+  directFinisher = {
+    path = { "core", "direct", "finisher" },
+    label = "Direct damage finisher",
+    options = addon.directFinisherOptions,
   },
   softFeint = {
     path = { "core", "softDefensives", "feint" },
@@ -278,7 +288,7 @@ addon.uiSections = {
   },
   {
     title = "Rotation: Direct",
-    items = { "directSliceAndDiceFirst", "guaranteeDirectDebuff", "directDebuffMinCP" },
+    items = { "directSliceAndDiceFirst", "guaranteeDirectDebuff", "directDebuffMinCP", "directFinisher" },
   },
   {
     title = "Defensives",
@@ -425,6 +435,22 @@ addon.slashCommandDefinitions = {
     usage = "<pct>",
     success = function(value)
       return "Direct finisher threshold set to " .. tostring(value) .. "%."
+    end,
+  },
+  {
+    command = "finisher",
+    type = "enum",
+    setting = "directFinisher",
+    usage = "eviscerate|envenom",
+    values = {
+      eviscerate = "eviscerate",
+      envenom = "envenom",
+    },
+    success = function(value)
+      if value == "envenom" then
+        return "Direct finisher set to Envenom."
+      end
+      return "Direct finisher set to Eviscerate."
     end,
   },
   {

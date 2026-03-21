@@ -5,6 +5,18 @@ local function consumeBuilderAttempt(self)
   return true
 end
 
+local function runDirectDamageDealer(self)
+  if self:TryMaintainBuff("Slice and Dice") then
+    return true
+  end
+
+  if self:TryDirectFinisher(5) then
+    return true
+  end
+
+  return self:TryPreferredBuilder()
+end
+
 function addon:PrepareAction(needsTarget)
   self:InitDB()
   self:RefreshKnownSpells()
@@ -184,6 +196,10 @@ function addon:Bleed()
     return
   end
 
+  if self:ShouldSwitchToDirectDamageDealer("bleed") and runDirectDamageDealer(self) then
+    return
+  end
+
   if self:RunMaintenancePlan(self:GetBleedMaintenancePlan()) then
     return
   end
@@ -204,11 +220,12 @@ function addon:Direct()
     return
   end
 
+  if self:ShouldSwitchToDirectDamageDealer("direct") and runDirectDamageDealer(self) then
+    return
+  end
+
   if self:ShouldFavorImmediateDamage() then
-    if self:TryDirectFinisher(5) then
-      return
-    end
-    if self:TryPreferredBuilder() then
+    if runDirectDamageDealer(self) then
       return
     end
   end

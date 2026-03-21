@@ -59,6 +59,7 @@ scrollBar:SetValueStep(20)
 
 local refreshables = {}
 local builderButtons = {}
+local optionButtonGroups = {}
 
 local function updateScrollBounds()
   local visibleHeight = scrollFrame:GetHeight()
@@ -242,6 +243,64 @@ local function createSliderControl(parent, settingId, y)
   return control, 52
 end
 
+local function refreshOptionButtons(settingId)
+  local currentValue = addon:GetSetting(settingId)
+  local buttons = optionButtonGroups[settingId] or {}
+
+  for _, button in ipairs(buttons) do
+    if button.key == currentValue then
+      button:SetAlpha(1)
+    else
+      button:SetAlpha(0.55)
+    end
+  end
+end
+
+local function createOptionButtonsControl(parent, settingId, y)
+  local definition = addon.settingDefinitions[settingId]
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(360)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+
+  local label = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  label:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
+  label:SetWidth(340)
+  label:SetJustifyH("LEFT")
+  label:SetText(definition.label)
+
+  optionButtonGroups[settingId] = optionButtonGroups[settingId] or {}
+
+  for index, option in ipairs(definition.options or {}) do
+    local row = math.floor((index - 1) / 3)
+    local column = math.mod(index - 1, 3)
+
+    local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+    button:SetWidth(110)
+    button:SetHeight(22)
+    button:SetPoint("TOPLEFT", control, "TOPLEFT", column * 116, -(20 + (row * 28)))
+    button:SetText(option.label)
+    button.key = option.key
+    button:SetScript("OnClick", function()
+      addon:SetSetting(settingId, option.key)
+      addon:RefreshConfig()
+    end)
+    table.insert(optionButtonGroups[settingId], button)
+  end
+
+  local rowCount = math.ceil(table.getn(definition.options or {}) / 3)
+  if rowCount < 1 then
+    rowCount = 1
+  end
+
+  control:SetHeight(20 + (rowCount * 28))
+  control.Refresh = function()
+    refreshOptionButtons(settingId)
+  end
+
+  registerRefreshable(control)
+  return control, control:GetHeight()
+end
+
 local function refreshBuilderButtons()
   local currentMode = addon:GetSetting("builderMode")
   for _, button in ipairs(builderButtons) do
@@ -342,6 +401,8 @@ local function buildLayout()
         local _, height
         if definition.min then
           _, height = createSliderControl(scrollChild, settingId, cursorY)
+        elseif definition.options then
+          _, height = createOptionButtonsControl(scrollChild, settingId, cursorY)
         else
           _, height = createToggleControl(scrollChild, settingId, cursorY)
         end

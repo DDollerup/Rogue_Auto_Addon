@@ -48,6 +48,7 @@ addon.defaults = {
       sliceAndDiceFirst = false,
       guaranteePrimaryDebuff = true,
       primaryDebuffMinCP = 3,
+      finisher = "eviscerate",
     },
     executeHealthPct = 20,
     softDefensives = {
@@ -339,6 +340,53 @@ function addon:MigrateSettings()
     core.direct.guaranteePrimaryDebuff = core.guaranteeDirectDebuff
     core.guaranteeDirectDebuff = nil
   end
+end
+
+function addon:GetConfiguredDirectFinisherKey()
+  if not RogueAutoDB or not RogueAutoDB.core or not RogueAutoDB.core.direct then
+    return self.defaults.core.direct.finisher
+  end
+
+  return RogueAutoDB.core.direct.finisher or self.defaults.core.direct.finisher
+end
+
+function addon:GetConfiguredDirectFinisherSpell()
+  local finisherKey = self:GetConfiguredDirectFinisherKey()
+
+  if finisherKey == "envenom" and self:HasSpell("Envenom") then
+    return "Envenom"
+  end
+
+  if finisherKey == "eviscerate" and self:HasSpell("Eviscerate") then
+    return "Eviscerate"
+  end
+
+  if self:HasSpell("Eviscerate") then
+    return "Eviscerate"
+  end
+
+  if self:HasSpell("Envenom") then
+    return "Envenom"
+  end
+
+  return nil
+end
+
+function addon:IsTargetDebuffPresent(name)
+  local active = self:IsTargetDebuffActive(name)
+  return active == true
+end
+
+function addon:ShouldSwitchToDirectDamageDealer(mode)
+  if mode == "direct" then
+    return self:IsTargetDebuffPresent("Expose Armor")
+  end
+
+  if mode == "bleed" then
+    return self:IsTargetDebuffPresent("Rupture")
+  end
+
+  return false
 end
 
 function addon:GetHighlightDuration()
@@ -1736,7 +1784,7 @@ function addon:ShouldForceDebuffBeforeBuff(name, comboThreshold)
 end
 
 function addon:ShouldPreferExecuteFinisher()
-  if not self:HasSpell("Eviscerate") then
+  if not self:GetConfiguredDirectFinisherSpell() then
     return false
   end
 
@@ -1769,7 +1817,8 @@ function addon:TryPreferredBuilder()
 end
 
 function addon:TryDirectFinisher(minComboPoints)
-  if not self:HasSpell("Eviscerate") then
+  local finisherSpell = self:GetConfiguredDirectFinisherSpell()
+  if not finisherSpell then
     return false
   end
 
@@ -1777,7 +1826,7 @@ function addon:TryDirectFinisher(minComboPoints)
     return false
   end
 
-  return self:TryCast("Eviscerate")
+  return self:TryCast(finisherSpell)
 end
 
 function addon:GetShootSpell()
