@@ -122,6 +122,11 @@ addon.damageCategoryTextures = {
   misc = "Interface\\Icons\\Spell_Shadow_ShadowWordPain",
 }
 
+addon.noticeAnchorInsetPct = 0.15
+addon.noticeDefaultY = -120
+addon.pickPocketFallbackTexture = "Interface\\Icons\\INV_Misc_Bag_10"
+addon.coinTexture = "Interface\\Icons\\INV_Misc_Coin_01"
+
 addon.bleedSpells = {
   ["Garrote"] = true,
   ["Rupture"] = true,
@@ -180,6 +185,9 @@ local function createNoticeFrame(name, point, relativePoint, xOffset, yOffset)
   noticeFrame:SetWidth(340)
   noticeFrame:SetHeight(116)
   noticeFrame:SetPoint(point, UIParent, relativePoint, xOffset, yOffset)
+  noticeFrame.anchorPoint = point
+  noticeFrame.relativePoint = relativePoint
+  noticeFrame.defaultYOffset = yOffset
   noticeFrame:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -261,12 +269,37 @@ local function createNoticeFrame(name, point, relativePoint, xOffset, yOffset)
     noticeFrame.categoryRows[categoryKey] = row
   end
 
+  noticeFrame.lootRows = {}
+
+  for index = 1, 6 do
+    local row = CreateFrame("Frame", nil, noticeFrame)
+    row:SetWidth(312)
+    row:SetHeight(18)
+    row:SetPoint("TOPLEFT", totalRow, "BOTTOMLEFT", 0, -6 - ((index - 1) * 20))
+    row:Hide()
+
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetWidth(14)
+    icon:SetHeight(14)
+    icon:SetPoint("LEFT", row, "LEFT", 1, 0)
+    row.icon = icon
+
+    local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+    label:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    label:SetJustifyH("LEFT")
+    label:SetTextColor(0.96, 0.96, 0.96)
+    row.label = label
+
+    noticeFrame.lootRows[index] = row
+  end
+
   return noticeFrame
 end
 
 addon.noticeFrames = {
-  combat = createNoticeFrame("RogueAutoCombatNoticeFrame", "TOPLEFT", "TOPLEFT", 24, -120),
-  pickPocket = createNoticeFrame("RogueAutoPickPocketNoticeFrame", "TOPRIGHT", "TOPRIGHT", -24, -120),
+  combat = createNoticeFrame("RogueAutoCombatNoticeFrame", "TOPLEFT", "TOPLEFT", 24, addon.noticeDefaultY),
+  pickPocket = createNoticeFrame("RogueAutoPickPocketNoticeFrame", "TOPRIGHT", "TOPRIGHT", -24, addon.noticeDefaultY),
 }
 
 addon.noticeFadeDuration = 0.35
@@ -339,6 +372,19 @@ local function normalizeLootEntry(text)
   end
 
   return normalized
+end
+
+local function inferPickPocketEntryTexture(text)
+  local normalized = normalizeLootEntry(text)
+  if not normalized then
+    return addon.pickPocketFallbackTexture
+  end
+
+  if string.find(normalized, "Copper") or string.find(normalized, "Silver") or string.find(normalized, "Gold") then
+    return addon.coinTexture
+  end
+
+  return addon.pickPocketFallbackTexture
 end
 
 local function mergeDefaults(target, defaults)
@@ -474,6 +520,21 @@ function addon:GetNoticeFadeDuration()
   return self.noticeFadeDuration or 0.35
 end
 
+function addon:UpdateNoticeFramePositions()
+  local uiWidth = UIParent and UIParent.GetWidth and UIParent:GetWidth() or 1024
+  local inset = math.floor(uiWidth * (self.noticeAnchorInsetPct or 0.15))
+
+  for kind, noticeFrame in pairs(self.noticeFrames) do
+    local xOffset = inset
+    if kind == "pickPocket" then
+      xOffset = -inset
+    end
+
+    noticeFrame:ClearAllPoints()
+    noticeFrame:SetPoint(noticeFrame.anchorPoint, UIParent, noticeFrame.relativePoint, xOffset, noticeFrame.defaultYOffset or self.noticeDefaultY)
+  end
+end
+
 function addon:GetCombatTotalDamage(totals)
   local totalDamage = 0
 
@@ -498,12 +559,24 @@ function addon:ConfigureTextNoticeFrame(noticeFrame, body)
     end
   end
 
+  if noticeFrame.lootRows then
+    for _, row in ipairs(noticeFrame.lootRows) do
+      row:Hide()
+    end
+  end
+
   local height = getFontStringHeight(noticeFrame.title) + getFontStringHeight(noticeFrame.body) + 44
   noticeFrame:SetHeight(math.max(84, height))
 end
 
 function addon:ConfigureCombatNoticeFrame(noticeFrame, totals)
   noticeFrame.body:Hide()
+
+  if noticeFrame.lootRows then
+    for _, row in ipairs(noticeFrame.lootRows) do
+      row:Hide()
+    end
+  end
 
   local totalDamage = self:GetCombatTotalDamage(totals)
 
@@ -529,17 +602,52 @@ function addon:ConfigureCombatNoticeFrame(noticeFrame, totals)
   noticeFrame:SetHeight(176)
 end
 
+function addon:ConfigurePickPocketNoticeFrame(noticeFrame, entries)
+  noticeFrame.body:Hide()
+
+  if noticeFrame.totalRow then
+    noticeFrame.totalRow:Hide()
+  end
+
+  if noticeFrame.categoryRows then
+    for _, row in pairs(noticeFrame.categoryRows) do
+      row:Hide()
+    end
+  end
+
+  local visibleRows = 0
+  if noticeFrame.lootRows then
+    for index, row in ipairs(noticeFrame.lootRows) do
+      local entry = entries[index]
+      if entry then
+        row.icon:SetTexture(entry.icon or self.pickPocketFallbackTexture)
+        row.label:SetText(entry.text or "")
+        row:Show()
+        visibleRows = index
+      else
+        row:Hide()
+      end
+    end
+  end
+
+  local rowCount = math.max(visibleRows, 1)
+  noticeFrame:SetHeight(50 + (rowCount * 20))
+end
+
 function addon:ShowNotice(kind, title, body)
   local noticeFrame = self.noticeFrames[kind]
   if not noticeFrame then
     return
   end
 
+  self:UpdateNoticeFramePositions()
   self.state.activeNotices[kind] = true
   noticeFrame.title:SetText(title or "RogueAuto")
 
   if kind == "combat" and type(body) == "table" then
     self:ConfigureCombatNoticeFrame(noticeFrame, body)
+  elseif kind == "pickPocket" and type(body) == "table" then
+    self:ConfigurePickPocketNoticeFrame(noticeFrame, body)
   else
     self:ConfigureTextNoticeFrame(noticeFrame, body)
   end
@@ -832,7 +940,7 @@ function addon:HasActivePickPocketLootSession()
   return self.state.pickPocketLootSession ~= nil
 end
 
-function addon:AddPickPocketLootEntry(text)
+function addon:AddPickPocketLootEntry(text, texture)
   if not self.state.pickPocketLootSession or not text or text == "" then
     return
   end
@@ -845,8 +953,14 @@ function addon:AddPickPocketLootEntry(text)
 
   local entries = session.entries
   if not session.seen[normalized] then
-    table.insert(entries, normalized)
-    session.seen[normalized] = true
+    local entry = {
+      text = normalized,
+      icon = texture or inferPickPocketEntryTexture(normalized),
+    }
+    table.insert(entries, entry)
+    session.seen[normalized] = entry
+  elseif texture and session.seen[normalized] and (not session.seen[normalized].icon or session.seen[normalized].icon == self.pickPocketFallbackTexture) then
+    session.seen[normalized].icon = texture
   end
 
   session.finishAt = GetTime() + 0.5
@@ -880,10 +994,13 @@ function addon:FinishPickPocketLootSession()
 
   local entries = session.entries
   if table.getn(entries) == 0 then
-    table.insert(entries, "Nothing")
+    table.insert(entries, {
+      text = "Nothing",
+      icon = self.pickPocketFallbackTexture,
+    })
   end
 
-  self:ShowNotice("pickPocket", "Pick Pocket", table.concat(entries, "\n"))
+  self:ShowNotice("pickPocket", "Pick Pocket", entries)
 end
 
 function addon:SchedulePickPocketLootSessionFinish(delay)
@@ -922,7 +1039,7 @@ function addon:CapturePickPocketLootWindow()
     end
 
     if text and text ~= "" then
-      self:AddPickPocketLootEntry(text)
+      self:AddPickPocketLootEntry(text, texture)
     end
   end
 end

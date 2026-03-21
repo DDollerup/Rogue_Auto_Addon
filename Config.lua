@@ -5,17 +5,19 @@ SLASH_ROGUEAUTO1 = "/ra"
 local frame = CreateFrame("Frame", "RogueAutoConfigFrame", UIParent)
 addon.configFrame = frame
 
-frame:SetWidth(470)
-frame:SetHeight(560)
+frame:SetWidth(540)
+frame:SetHeight(620)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 frame:SetBackdrop({
-  bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-  edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+  bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
   tile = true,
   tileSize = 16,
   edgeSize = 16,
-  insets = { left = 4, right = 4, top = 4, bottom = 4 },
+  insets = { left = 5, right = 5, top = 5, bottom = 5 },
 })
+frame:SetBackdropColor(0.03, 0.03, 0.03, 0.96)
+frame:SetBackdropBorderColor(1, 0.82, 0, 0.9)
 frame:SetMovable(true)
 frame:EnableMouse(true)
 frame:RegisterForDrag("LeftButton")
@@ -27,31 +29,65 @@ frame:SetScript("OnDragStop", function()
 end)
 frame:Hide()
 
+local headerGlow = frame:CreateTexture(nil, "BACKGROUND")
+headerGlow:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+headerGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
+headerGlow:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -8)
+headerGlow:SetHeight(70)
+headerGlow:SetVertexColor(0.85, 0.6, 0.12, 0.12)
+
+local titleIcon = frame:CreateTexture(nil, "ARTWORK")
+titleIcon:SetWidth(22)
+titleIcon:SetHeight(22)
+titleIcon:SetPoint("TOP", frame, "TOP", -54, -16)
+titleIcon:SetTexture("Interface\\Icons\\Ability_Stealth")
+
 local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-title:SetPoint("TOP", frame, "TOP", 0, -12)
+title:SetPoint("LEFT", titleIcon, "RIGHT", 8, 0)
 title:SetText("RogueAuto")
+title:SetTextColor(1, 0.9, 0.35)
 
 local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-subtitle:SetPoint("TOP", title, "BOTTOM", 0, -4)
+subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
 subtitle:SetText("Manual Turtle WoW rogue helper")
-subtitle:SetTextColor(0.8, 0.8, 0.8)
+subtitle:SetTextColor(0.82, 0.82, 0.82)
+
+local headerLine = frame:CreateTexture(nil, "ARTWORK")
+headerLine:SetHeight(1)
+headerLine:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -56)
+headerLine:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -16, -56)
+headerLine:SetTexture(1, 0.82, 0, 0.28)
 
 local closeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 closeButton:SetWidth(76)
 closeButton:SetHeight(22)
-closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -12)
+closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -16)
 closeButton:SetText("Close")
 closeButton:SetScript("OnClick", function()
   frame:Hide()
 end)
 
-local scrollFrame = CreateFrame("ScrollFrame", "RogueAutoScrollFrame", frame, "UIPanelScrollFrameTemplate")
-scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -56)
-scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -32, 16)
+local contentPanel = CreateFrame("Frame", "RogueAutoConfigContentPanel", frame)
+contentPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -68)
+contentPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 14)
+contentPanel:SetBackdrop({
+  bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+  tile = true,
+  tileSize = 16,
+  edgeSize = 12,
+  insets = { left = 4, right = 4, top = 4, bottom = 4 },
+})
+contentPanel:SetBackdropColor(0.07, 0.07, 0.07, 0.9)
+contentPanel:SetBackdropBorderColor(0.75, 0.58, 0.12, 0.6)
+
+local scrollFrame = CreateFrame("ScrollFrame", "RogueAutoScrollFrame", contentPanel, "UIPanelScrollFrameTemplate")
+scrollFrame:SetPoint("TOPLEFT", contentPanel, "TOPLEFT", 12, -12)
+scrollFrame:SetPoint("BOTTOMRIGHT", contentPanel, "BOTTOMRIGHT", -28, 12)
 
 local scrollChild = CreateFrame("Frame", "RogueAutoScrollChild", scrollFrame)
-scrollChild:SetWidth(392)
-scrollChild:SetHeight(900)
+scrollChild:SetWidth(448)
+scrollChild:SetHeight(1200)
 scrollFrame:SetScrollChild(scrollChild)
 
 local scrollBar = getglobal("RogueAutoScrollFrameScrollBar")
@@ -60,6 +96,21 @@ scrollBar:SetValueStep(20)
 local refreshables = {}
 local builderButtons = {}
 local optionButtonGroups = {}
+
+local sectionIcons = {
+  builder = "Interface\\Icons\\INV_Sword_04",
+  macros = "Interface\\Icons\\INV_Misc_Note_01",
+  ["Targeting"] = "Interface\\Icons\\Ability_Hunter_SniperShot",
+  ["Stealth/Openers"] = "Interface\\Icons\\Ability_Stealth",
+  ["Rotation: Shared"] = "Interface\\Icons\\Ability_Rogue_SliceDice",
+  ["Rotation: Bleed"] = "Interface\\Icons\\Ability_Rogue_Rupture",
+  ["Rotation: Direct"] = "Interface\\Icons\\Ability_CriticalStrike",
+  ["Defensives"] = "Interface\\Icons\\Spell_Shadow_ShadowWard",
+  ["Interrupt"] = "Interface\\Icons\\Ability_Kick",
+  ["Thresholds"] = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+  ["Highlights"] = "Interface\\Icons\\INV_Misc_Spyglass_02",
+  ["Misc"] = "Interface\\Icons\\INV_Misc_Gear_01",
+}
 
 local function updateScrollBounds()
   local visibleHeight = scrollFrame:GetHeight()
@@ -90,18 +141,27 @@ local function registerRefreshable(control)
   table.insert(refreshables, control)
 end
 
-local function createSectionHeader(parent, titleText, y)
+local function createSectionHeader(parent, section)
+  local iconTexture = sectionIcons[section.kind or section.title] or "Interface\\Icons\\INV_Misc_Gear_01"
+
+  local icon = parent:CreateTexture(nil, "ARTWORK")
+  icon:SetWidth(18)
+  icon:SetHeight(18)
+  icon:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, -12)
+  icon:SetTexture(iconTexture)
+
   local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  label:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
-  label:SetText(titleText)
+  label:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+  label:SetText(section.title)
+  label:SetTextColor(1, 0.9, 0.35)
 
   local line = parent:CreateTexture(nil, "ARTWORK")
   line:SetHeight(1)
-  line:SetWidth(344)
-  line:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
-  line:SetTexture(1, 0.82, 0, 0.25)
+  line:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, -34)
+  line:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -12, -34)
+  line:SetTexture(1, 0.82, 0, 0.22)
 
-  return 24
+  return 38
 end
 
 local function estimateWrappedTextHeight(text, width, font)
@@ -140,8 +200,8 @@ end
 
 local function createWrappedText(parent, text, font, y, color)
   local label = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
-  label:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
-  label:SetWidth(344)
+  label:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
+  label:SetWidth(320)
   label:SetJustifyH("LEFT")
   label:SetJustifyV("TOP")
   label:SetText(text)
@@ -149,7 +209,7 @@ local function createWrappedText(parent, text, font, y, color)
     label:SetTextColor(color[1], color[2], color[3])
   end
 
-  local height = estimateWrappedTextHeight(text, 344, font)
+  local height = estimateWrappedTextHeight(text, 320, font)
 
   return label, height
 end
@@ -157,8 +217,8 @@ end
 local function createToggleControl(parent, settingId, y)
   local definition = addon.settingDefinitions[settingId]
   local control = CreateFrame("Frame", nil, parent)
-  control:SetWidth(360)
-  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+  control:SetWidth(336)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
 
   local checkbox = CreateFrame("CheckButton", nil, control, "UICheckButtonTemplate")
   checkbox:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
@@ -167,7 +227,7 @@ local function createToggleControl(parent, settingId, y)
 
   local label = control:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   label:SetPoint("TOPLEFT", checkbox, "TOPRIGHT", 4, -4)
-  label:SetWidth(332)
+  label:SetWidth(308)
   label:SetJustifyH("LEFT")
   label:SetText(definition.label)
 
@@ -199,18 +259,18 @@ end
 local function createSliderControl(parent, settingId, y)
   local definition = addon.settingDefinitions[settingId]
   local control = CreateFrame("Frame", nil, parent)
-  control:SetWidth(360)
+  control:SetWidth(336)
   control:SetHeight(52)
-  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
 
   local label = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   label:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
-  label:SetWidth(340)
+  label:SetWidth(316)
   label:SetJustifyH("LEFT")
 
   local sliderName = "RogueAutoSlider" .. settingId
   local slider = CreateFrame("Slider", sliderName, control, "OptionsSliderTemplate")
-  slider:SetWidth(326)
+  slider:SetWidth(302)
   slider:SetHeight(16)
   slider:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -16)
   slider:SetMinMaxValues(definition.min, definition.max)
@@ -259,12 +319,12 @@ end
 local function createOptionButtonsControl(parent, settingId, y)
   local definition = addon.settingDefinitions[settingId]
   local control = CreateFrame("Frame", nil, parent)
-  control:SetWidth(360)
-  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+  control:SetWidth(336)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
 
   local label = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   label:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
-  label:SetWidth(340)
+  label:SetWidth(316)
   label:SetJustifyH("LEFT")
   label:SetText(definition.label)
 
@@ -275,9 +335,9 @@ local function createOptionButtonsControl(parent, settingId, y)
     local column = math.mod(index - 1, 3)
 
     local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
-    button:SetWidth(110)
+    button:SetWidth(100)
     button:SetHeight(22)
-    button:SetPoint("TOPLEFT", control, "TOPLEFT", column * 116, -(20 + (row * 28)))
+    button:SetPoint("TOPLEFT", control, "TOPLEFT", column * 108, -(20 + (row * 28)))
     button:SetText(option.label)
     button.key = option.key
     button:SetScript("OnClick", function()
@@ -314,18 +374,18 @@ end
 
 local function createBuilderControl(parent, y)
   local control = CreateFrame("Frame", nil, parent)
-  control:SetWidth(360)
+  control:SetWidth(336)
   control:SetHeight(60)
-  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
 
   for index, option in ipairs(addon.builderOptions) do
     local row = math.floor((index - 1) / 3)
     local column = math.mod(index - 1, 3)
 
     local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
-    button:SetWidth(110)
+    button:SetWidth(100)
     button:SetHeight(22)
-    button:SetPoint("TOPLEFT", control, "TOPLEFT", column * 116, -(row * 28))
+    button:SetPoint("TOPLEFT", control, "TOPLEFT", column * 108, -(row * 28))
     button:SetText(option.label)
     button.key = option.key
     button:SetScript("OnClick", function()
@@ -342,20 +402,20 @@ end
 
 local function createMacroControl(parent, y)
   local control = CreateFrame("Frame", nil, parent)
-  control:SetWidth(360)
-  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+  control:SetWidth(336)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
 
   local cursorY = 0
   for _, definition in ipairs(addon.macroDefinitions) do
     local macroText = definition.macro
     local descriptionText = definition.description
     local description, descHeight = createWrappedText(control, descriptionText, "GameFontNormal", cursorY, nil)
-    description:SetWidth(332)
+    description:SetWidth(308)
     local box = CreateFrame("EditBox", nil, control, "InputBoxTemplate")
     local editBox = box
-    box:SetWidth(332)
+    box:SetWidth(308)
     box:SetHeight(20)
-    box:SetPoint("TOPLEFT", control, "TOPLEFT", 0, cursorY - descHeight - 4)
+    box:SetPoint("TOPLEFT", control, "TOPLEFT", 0, cursorY - descHeight - 6)
     box:SetAutoFocus(false)
     box:SetText(macroText)
     box:SetScript("OnEscapePressed", function()
@@ -373,7 +433,7 @@ local function createMacroControl(parent, y)
   end
 
   local hint, hintHeight = createWrappedText(control, "Click a macro field to highlight and copy it. Use the minimap rogue icon to reopen this window.", "GameFontHighlightSmall", cursorY, { 0.8, 0.8, 0.8 })
-  hint:SetWidth(332)
+  hint:SetWidth(308)
   cursorY = cursorY - hintHeight
 
   control:SetHeight(math.abs(cursorY) + 8)
@@ -383,36 +443,59 @@ local function createMacroControl(parent, y)
   return control, control:GetHeight()
 end
 
+local function createSectionCard(parent, section, y)
+  local card = CreateFrame("Frame", nil, parent)
+  card:SetWidth(360)
+  card:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+  card:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 12,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
+  })
+  card:SetBackdropColor(0.08, 0.08, 0.08, 0.84)
+  card:SetBackdropBorderColor(0.75, 0.58, 0.12, 0.45)
+
+  local cursorY = -10
+  cursorY = cursorY - createSectionHeader(card, section)
+
+  if section.kind == "builder" then
+    local _, height = createBuilderControl(card, cursorY)
+    cursorY = cursorY - height - 12
+  elseif section.kind == "macros" then
+    local _, height = createMacroControl(card, cursorY)
+    cursorY = cursorY - height - 12
+  else
+    for _, settingId in ipairs(section.items) do
+      local definition = addon.settingDefinitions[settingId]
+      local _, height
+      if definition.min then
+        _, height = createSliderControl(card, settingId, cursorY)
+      elseif definition.options then
+        _, height = createOptionButtonsControl(card, settingId, cursorY)
+      else
+        _, height = createToggleControl(card, settingId, cursorY)
+      end
+      cursorY = cursorY - height - 6
+    end
+    cursorY = cursorY - 10
+  end
+
+  card:SetHeight(math.abs(cursorY) + 12)
+  return card, card:GetHeight()
+end
+
 local function buildLayout()
   local cursorY = -8
 
   for _, section in ipairs(addon.uiSections) do
-    cursorY = cursorY - createSectionHeader(scrollChild, section.title, cursorY)
-
-    if section.kind == "builder" then
-      local _, height = createBuilderControl(scrollChild, cursorY)
-      cursorY = cursorY - height - 14
-    elseif section.kind == "macros" then
-      local _, height = createMacroControl(scrollChild, cursorY)
-      cursorY = cursorY - height - 18
-    else
-      for _, settingId in ipairs(section.items) do
-        local definition = addon.settingDefinitions[settingId]
-        local _, height
-        if definition.min then
-          _, height = createSliderControl(scrollChild, settingId, cursorY)
-        elseif definition.options then
-          _, height = createOptionButtonsControl(scrollChild, settingId, cursorY)
-        else
-          _, height = createToggleControl(scrollChild, settingId, cursorY)
-        end
-        cursorY = cursorY - height - 6
-      end
-      cursorY = cursorY - 12
-    end
+    local _, height = createSectionCard(scrollChild, section, cursorY)
+    cursorY = cursorY - height - 12
   end
 
-  scrollChild:SetHeight(math.abs(cursorY) + 16)
+  scrollChild:SetHeight(math.abs(cursorY) + 24)
   updateScrollBounds()
 end
 
