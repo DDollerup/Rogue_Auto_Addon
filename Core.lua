@@ -229,6 +229,22 @@ local function isNatureSchool(school)
   return string.lower(school) == "nature"
 end
 
+local function getFontStringHeight(region)
+  if not region then
+    return 0
+  end
+
+  if region.GetStringHeight then
+    return region:GetStringHeight()
+  end
+
+  if region.GetHeight then
+    return region:GetHeight()
+  end
+
+  return 0
+end
+
 local function mergeDefaults(target, defaults)
   if type(defaults) ~= "table" then
     return target
@@ -325,7 +341,7 @@ function addon:ShowNotice(title, body)
   self.state.activeNotice = entry
   noticeFrame.title:SetText(entry.title)
   noticeFrame.body:SetText(entry.body)
-  local height = noticeFrame.title:GetStringHeight() + noticeFrame.body:GetStringHeight() + 44
+  local height = getFontStringHeight(noticeFrame.title) + getFontStringHeight(noticeFrame.body) + 44
   noticeFrame:SetHeight(math.max(84, height))
   noticeFrame.hideAt = GetTime() + self:GetHighlightDuration()
   noticeFrame:Show()
@@ -1523,7 +1539,7 @@ function addon:TrySoftDefensives()
 
   if RogueAutoDB.core.softDefensives.ghostlyStrike and self:HasSpell("Ghostly Strike") then
     local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
-    if (not active or remaining < 2) and self:TryCast("Ghostly Strike") then
+    if self:GetComboPoints() == 0 and (not active or remaining < 2) and self:TryCast("Ghostly Strike") then
       return true
     end
   end
