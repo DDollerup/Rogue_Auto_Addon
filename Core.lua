@@ -93,8 +93,7 @@ addon.state = {
   currentTargetKey = nil,
   combatSession = nil,
   pickPocketLootSession = nil,
-  noticeQueue = {},
-  activeNotice = nil,
+  activeNotices = {},
 }
 
 addon.damageCategories = {
@@ -158,37 +157,45 @@ local tooltip = CreateFrame("GameTooltip", "RogueAutoTooltip", UIParent, "GameTo
 tooltip:SetOwner(UIParent, "ANCHOR_NONE")
 addon.tooltip = tooltip
 
-local noticeFrame = CreateFrame("Frame", "RogueAutoNoticeFrame", UIParent)
-addon.noticeFrame = noticeFrame
-noticeFrame:SetWidth(340)
-noticeFrame:SetHeight(116)
-noticeFrame:SetPoint("TOP", UIParent, "TOP", 0, -180)
-noticeFrame:SetBackdrop({
-  bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-  tile = true,
-  tileSize = 16,
-  edgeSize = 16,
-  insets = { left = 5, right = 5, top = 5, bottom = 5 },
-})
-noticeFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.92)
-noticeFrame:SetBackdropBorderColor(1, 0.82, 0, 0.85)
-noticeFrame:Hide()
+local function createNoticeFrame(name, point, relativePoint, xOffset, yOffset)
+  local noticeFrame = CreateFrame("Frame", name, UIParent)
+  noticeFrame:SetWidth(340)
+  noticeFrame:SetHeight(116)
+  noticeFrame:SetPoint(point, UIParent, relativePoint, xOffset, yOffset)
+  noticeFrame:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 16,
+    insets = { left = 5, right = 5, top = 5, bottom = 5 },
+  })
+  noticeFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.92)
+  noticeFrame:SetBackdropBorderColor(1, 0.82, 0, 0.85)
+  noticeFrame:Hide()
 
-local noticeTitle = noticeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-noticeTitle:SetPoint("TOPLEFT", noticeFrame, "TOPLEFT", 14, -14)
-noticeTitle:SetPoint("TOPRIGHT", noticeFrame, "TOPRIGHT", -14, -14)
-noticeTitle:SetJustifyH("LEFT")
-noticeTitle:SetTextColor(1, 0.9, 0.35)
-noticeFrame.title = noticeTitle
+  local noticeTitle = noticeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  noticeTitle:SetPoint("TOPLEFT", noticeFrame, "TOPLEFT", 14, -14)
+  noticeTitle:SetPoint("TOPRIGHT", noticeFrame, "TOPRIGHT", -14, -14)
+  noticeTitle:SetJustifyH("LEFT")
+  noticeTitle:SetTextColor(1, 0.9, 0.35)
+  noticeFrame.title = noticeTitle
 
-local noticeBody = noticeFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-noticeBody:SetPoint("TOPLEFT", noticeTitle, "BOTTOMLEFT", 0, -8)
-noticeBody:SetPoint("TOPRIGHT", noticeFrame, "TOPRIGHT", -14, 0)
-noticeBody:SetJustifyH("LEFT")
-noticeBody:SetJustifyV("TOP")
-noticeBody:SetTextColor(0.92, 0.92, 0.92)
-noticeFrame.body = noticeBody
+  local noticeBody = noticeFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  noticeBody:SetPoint("TOPLEFT", noticeTitle, "BOTTOMLEFT", 0, -8)
+  noticeBody:SetPoint("TOPRIGHT", noticeFrame, "TOPRIGHT", -14, 0)
+  noticeBody:SetJustifyH("LEFT")
+  noticeBody:SetJustifyV("TOP")
+  noticeBody:SetTextColor(0.92, 0.92, 0.92)
+  noticeFrame.body = noticeBody
+
+  return noticeFrame
+end
+
+addon.noticeFrames = {
+  combat = createNoticeFrame("RogueAutoCombatNoticeFrame", "TOPLEFT", "TOPLEFT", 24, -120),
+  pickPocket = createNoticeFrame("RogueAutoPickPocketNoticeFrame", "TOPRIGHT", "TOPRIGHT", -24, -120),
+}
 
 local function deepCopy(value)
   if type(value) ~= "table" then
@@ -327,40 +334,37 @@ function addon:GetHighlightDuration()
   return duration
 end
 
-function addon:ShowNotice(title, body)
-  local entry = {
-    title = title or "RogueAuto",
-    body = body or "",
-  }
-
-  if self.state.activeNotice then
-    table.insert(self.state.noticeQueue, entry)
+function addon:ShowNotice(kind, title, body)
+  local noticeFrame = self.noticeFrames[kind]
+  if not noticeFrame then
     return
   end
 
-  self.state.activeNotice = entry
-  noticeFrame.title:SetText(entry.title)
-  noticeFrame.body:SetText(entry.body)
+  self.state.activeNotices[kind] = true
+  noticeFrame.title:SetText(title or "RogueAuto")
+  noticeFrame.body:SetText(body or "")
   local height = getFontStringHeight(noticeFrame.title) + getFontStringHeight(noticeFrame.body) + 44
   noticeFrame:SetHeight(math.max(84, height))
   noticeFrame.hideAt = GetTime() + self:GetHighlightDuration()
   noticeFrame:Show()
 end
 
-function addon:HideNotice()
-  self.state.activeNotice = nil
+function addon:HideNotice(kind)
+  local noticeFrame = self.noticeFrames[kind]
+  if not noticeFrame then
+    return
+  end
+
+  self.state.activeNotices[kind] = nil
   noticeFrame.hideAt = nil
   noticeFrame:Hide()
-
-  if table.getn(self.state.noticeQueue) > 0 then
-    local nextEntry = table.remove(self.state.noticeQueue, 1)
-    self:ShowNotice(nextEntry.title, nextEntry.body)
-  end
 end
 
-function addon:UpdateNoticeFrame()
-  if self.state.activeNotice and noticeFrame.hideAt and GetTime() >= noticeFrame.hideAt then
-    self:HideNotice()
+function addon:UpdateNoticeFrames()
+  for kind, noticeFrame in pairs(self.noticeFrames) do
+    if self.state.activeNotices[kind] and noticeFrame.hideAt and GetTime() >= noticeFrame.hideAt then
+      self:HideNotice(kind)
+    end
   end
 
   self:UpdatePickPocketLootSession()
@@ -484,7 +488,7 @@ function addon:FinishCombatSession()
     return
   end
 
-  self:ShowNotice("Combat Summary", summaryText)
+  self:ShowNotice("combat", "Combat Summary", summaryText)
 end
 
 function addon:ExtractDamageAmount(message)
@@ -597,6 +601,7 @@ end
 function addon:BeginPickPocketLootSession()
   self.state.pickPocketLootSession = {
     entries = {},
+    seen = {},
     finishAt = GetTime() + 3,
   }
 end
@@ -610,13 +615,14 @@ function addon:AddPickPocketLootEntry(text)
     return
   end
 
-  local entries = self.state.pickPocketLootSession.entries
-  local previous = entries[table.getn(entries)]
-  if previous ~= text then
+  local session = self.state.pickPocketLootSession
+  local entries = session.entries
+  if not session.seen[text] then
     table.insert(entries, text)
+    session.seen[text] = true
   end
 
-  self.state.pickPocketLootSession.finishAt = GetTime() + 0.5
+  session.finishAt = GetTime() + 0.5
 end
 
 function addon:ExtractLootText(message)
@@ -650,7 +656,7 @@ function addon:FinishPickPocketLootSession()
     table.insert(entries, "Nothing")
   end
 
-  self:ShowNotice("Pick Pocket", table.concat(entries, "\n"))
+  self:ShowNotice("pickPocket", "Pick Pocket", table.concat(entries, "\n"))
 end
 
 function addon:SchedulePickPocketLootSessionFinish(delay)
@@ -669,6 +675,28 @@ function addon:UpdatePickPocketLootSession()
 
   if GetTime() >= session.finishAt then
     self:FinishPickPocketLootSession()
+  end
+end
+
+function addon:CapturePickPocketLootWindow()
+  if not self.state.pickPocketLootSession or not GetNumLootItems or not GetLootSlotInfo then
+    return
+  end
+
+  local lootItems = GetNumLootItems() or 0
+  for slot = 1, lootItems do
+    local texture, itemName, quantity = GetLootSlotInfo(slot)
+    local text = itemName
+
+    if LootSlotIsCoin and LootSlotIsCoin(slot) == 1 then
+      text = itemName or text
+    elseif text and quantity and quantity > 1 then
+      text = text .. " x" .. tostring(quantity)
+    end
+
+    if text and text ~= "" then
+      self:AddPickPocketLootEntry(text)
+    end
   end
 end
 
@@ -1788,6 +1816,7 @@ function addon:OnLootOpened()
   if self.state.pendingPickPocketTarget then
     self:MarkTargetPickPocketed(self.state.pendingPickPocketTarget)
     self:BeginPickPocketLootSession()
+    self:CapturePickPocketLootWindow()
     self:ClearPendingPickPocketAttempt()
   end
 end
@@ -1881,6 +1910,6 @@ frame:SetScript("OnEvent", function()
   end
 end)
 
-noticeFrame:SetScript("OnUpdate", function()
-  addon:UpdateNoticeFrame()
+frame:SetScript("OnUpdate", function()
+  addon:UpdateNoticeFrames()
 end)
