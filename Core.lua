@@ -197,6 +197,8 @@ addon.noticeFrames = {
   pickPocket = createNoticeFrame("RogueAutoPickPocketNoticeFrame", "TOPRIGHT", "TOPRIGHT", -24, -120),
 }
 
+addon.noticeFadeDuration = 0.35
+
 local function deepCopy(value)
   if type(value) ~= "table" then
     return value
@@ -250,6 +252,21 @@ local function getFontStringHeight(region)
   end
 
   return 0
+end
+
+local function normalizeLootEntry(text)
+  if not text then
+    return nil
+  end
+
+  local normalized = trim(text)
+  normalized = string.gsub(normalized, "%.+$", "")
+  normalized = trim(normalized)
+  if normalized == "" then
+    return nil
+  end
+
+  return normalized
 end
 
 local function mergeDefaults(target, defaults)
@@ -334,6 +351,10 @@ function addon:GetHighlightDuration()
   return duration
 end
 
+function addon:GetNoticeFadeDuration()
+  return self.noticeFadeDuration or 0.35
+end
+
 function addon:ShowNotice(kind, title, body)
   local noticeFrame = self.noticeFrames[kind]
   if not noticeFrame then
@@ -345,7 +366,10 @@ function addon:ShowNotice(kind, title, body)
   noticeFrame.body:SetText(body or "")
   local height = getFontStringHeight(noticeFrame.title) + getFontStringHeight(noticeFrame.body) + 44
   noticeFrame:SetHeight(math.max(84, height))
-  noticeFrame.hideAt = GetTime() + self:GetHighlightDuration()
+  noticeFrame.showAt = GetTime()
+  noticeFrame.hideAt = noticeFrame.showAt + self:GetHighlightDuration()
+  noticeFrame.endAt = noticeFrame.hideAt + self:GetNoticeFadeDuration()
+  noticeFrame:SetAlpha(0)
   noticeFrame:Show()
 end
 
@@ -356,14 +380,38 @@ function addon:HideNotice(kind)
   end
 
   self.state.activeNotices[kind] = nil
+  noticeFrame.showAt = nil
   noticeFrame.hideAt = nil
+  noticeFrame.endAt = nil
+  noticeFrame:SetAlpha(1)
   noticeFrame:Hide()
 end
 
 function addon:UpdateNoticeFrames()
   for kind, noticeFrame in pairs(self.noticeFrames) do
-    if self.state.activeNotices[kind] and noticeFrame.hideAt and GetTime() >= noticeFrame.hideAt then
-      self:HideNotice(kind)
+    if self.state.activeNotices[kind] and noticeFrame.hideAt then
+      local now = GetTime()
+      local fadeDuration = self:GetNoticeFadeDuration()
+
+      if noticeFrame.endAt and now >= noticeFrame.endAt then
+        self:HideNotice(kind)
+      else
+        local alpha = 1
+
+        if noticeFrame.showAt and now < (noticeFrame.showAt + fadeDuration) then
+          alpha = (now - noticeFrame.showAt) / fadeDuration
+        elseif now >= noticeFrame.hideAt then
+          alpha = 1 - ((now - noticeFrame.hideAt) / fadeDuration)
+        end
+
+        if alpha < 0 then
+          alpha = 0
+        elseif alpha > 1 then
+          alpha = 1
+        end
+
+        noticeFrame:SetAlpha(alpha)
+      end
     end
   end
 
@@ -616,10 +664,15 @@ function addon:AddPickPocketLootEntry(text)
   end
 
   local session = self.state.pickPocketLootSession
+  local normalized = normalizeLootEntry(text)
+  if not normalized then
+    return
+  end
+
   local entries = session.entries
-  if not session.seen[text] then
-    table.insert(entries, text)
-    session.seen[text] = true
+  if not session.seen[normalized] then
+    table.insert(entries, normalized)
+    session.seen[normalized] = true
   end
 
   session.finishAt = GetTime() + 0.5
