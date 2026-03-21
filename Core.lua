@@ -105,6 +105,23 @@ addon.damageCategories = {
   misc = "Misc",
 }
 
+addon.damageCategoryOrder = {
+  "melee",
+  "poisonDirect",
+  "bleedDot",
+  "poisonDot",
+  "misc",
+}
+
+addon.damageCategoryTextures = {
+  total = "Interface\\Icons\\Ability_CriticalStrike",
+  melee = "Interface\\Icons\\INV_Sword_04",
+  poisonDirect = "Interface\\Icons\\Ability_Poisons",
+  bleedDot = "Interface\\Icons\\Ability_Rogue_Rupture",
+  poisonDot = "Interface\\Icons\\INV_Potion_19",
+  misc = "Interface\\Icons\\Spell_Shadow_ShadowWordPain",
+}
+
 addon.bleedSpells = {
   ["Garrote"] = true,
   ["Rupture"] = true,
@@ -189,6 +206,60 @@ local function createNoticeFrame(name, point, relativePoint, xOffset, yOffset)
   noticeBody:SetJustifyV("TOP")
   noticeBody:SetTextColor(0.92, 0.92, 0.92)
   noticeFrame.body = noticeBody
+
+  local totalRow = CreateFrame("Frame", nil, noticeFrame)
+  totalRow:SetWidth(312)
+  totalRow:SetHeight(20)
+  totalRow:SetPoint("TOPLEFT", noticeTitle, "BOTTOMLEFT", 0, -8)
+  totalRow:Hide()
+
+  local totalIcon = totalRow:CreateTexture(nil, "ARTWORK")
+  totalIcon:SetWidth(16)
+  totalIcon:SetHeight(16)
+  totalIcon:SetPoint("LEFT", totalRow, "LEFT", 0, 0)
+  totalRow.icon = totalIcon
+
+  local totalLabel = totalRow:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  totalLabel:SetPoint("LEFT", totalIcon, "RIGHT", 6, 0)
+  totalLabel:SetJustifyH("LEFT")
+  totalRow.label = totalLabel
+
+  local totalValue = totalRow:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  totalValue:SetPoint("RIGHT", totalRow, "RIGHT", 0, 0)
+  totalValue:SetJustifyH("RIGHT")
+  totalValue:SetTextColor(1, 0.95, 0.65)
+  totalRow.value = totalValue
+  noticeFrame.totalRow = totalRow
+
+  noticeFrame.categoryRows = {}
+
+  for index, categoryKey in ipairs(addon.damageCategoryOrder) do
+    local row = CreateFrame("Frame", nil, noticeFrame)
+    row:SetWidth(312)
+    row:SetHeight(18)
+    row:SetPoint("TOPLEFT", totalRow, "BOTTOMLEFT", 0, -6 - ((index - 1) * 20))
+    row:Hide()
+
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetWidth(14)
+    icon:SetHeight(14)
+    icon:SetPoint("LEFT", row, "LEFT", 1, 0)
+    row.icon = icon
+
+    local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+    label:SetJustifyH("LEFT")
+    label:SetTextColor(0.92, 0.92, 0.92)
+    row.label = label
+
+    local value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    value:SetJustifyH("RIGHT")
+    value:SetTextColor(1, 1, 1)
+    row.value = value
+
+    noticeFrame.categoryRows[categoryKey] = row
+  end
 
   return noticeFrame
 end
@@ -403,6 +474,61 @@ function addon:GetNoticeFadeDuration()
   return self.noticeFadeDuration or 0.35
 end
 
+function addon:GetCombatTotalDamage(totals)
+  local totalDamage = 0
+
+  for _, key in ipairs(self.damageCategoryOrder) do
+    totalDamage = totalDamage + (totals[key] or 0)
+  end
+
+  return totalDamage
+end
+
+function addon:ConfigureTextNoticeFrame(noticeFrame, body)
+  noticeFrame.body:SetText(body or "")
+  noticeFrame.body:Show()
+
+  if noticeFrame.totalRow then
+    noticeFrame.totalRow:Hide()
+  end
+
+  if noticeFrame.categoryRows then
+    for _, row in pairs(noticeFrame.categoryRows) do
+      row:Hide()
+    end
+  end
+
+  local height = getFontStringHeight(noticeFrame.title) + getFontStringHeight(noticeFrame.body) + 44
+  noticeFrame:SetHeight(math.max(84, height))
+end
+
+function addon:ConfigureCombatNoticeFrame(noticeFrame, totals)
+  noticeFrame.body:Hide()
+
+  local totalDamage = self:GetCombatTotalDamage(totals)
+
+  if noticeFrame.totalRow then
+    noticeFrame.totalRow.icon:SetTexture(self.damageCategoryTextures.total)
+    noticeFrame.totalRow.label:SetText("Total Damage")
+    noticeFrame.totalRow.value:SetText(tostring(totalDamage))
+    noticeFrame.totalRow:Show()
+  end
+
+  if noticeFrame.categoryRows then
+    for _, categoryKey in ipairs(self.damageCategoryOrder) do
+      local row = noticeFrame.categoryRows[categoryKey]
+      if row then
+        row.icon:SetTexture(self.damageCategoryTextures[categoryKey])
+        row.label:SetText(self.damageCategories[categoryKey])
+        row.value:SetText(tostring(totals[categoryKey] or 0))
+        row:Show()
+      end
+    end
+  end
+
+  noticeFrame:SetHeight(176)
+end
+
 function addon:ShowNotice(kind, title, body)
   local noticeFrame = self.noticeFrames[kind]
   if not noticeFrame then
@@ -411,9 +537,13 @@ function addon:ShowNotice(kind, title, body)
 
   self.state.activeNotices[kind] = true
   noticeFrame.title:SetText(title or "RogueAuto")
-  noticeFrame.body:SetText(body or "")
-  local height = getFontStringHeight(noticeFrame.title) + getFontStringHeight(noticeFrame.body) + 44
-  noticeFrame:SetHeight(math.max(84, height))
+
+  if kind == "combat" and type(body) == "table" then
+    self:ConfigureCombatNoticeFrame(noticeFrame, body)
+  else
+    self:ConfigureTextNoticeFrame(noticeFrame, body)
+  end
+
   noticeFrame.showAt = GetTime()
   noticeFrame.hideAt = noticeFrame.showAt + self:GetHighlightDuration()
   noticeFrame.endAt = noticeFrame.hideAt + self:GetNoticeFadeDuration()
@@ -555,11 +685,7 @@ end
 
 function addon:BuildCombatSummaryText(totals)
   local lines = {}
-  local totalDamage = 0
-
-  for key, _ in pairs(self.damageCategories) do
-    totalDamage = totalDamage + (totals[key] or 0)
-  end
+  local totalDamage = self:GetCombatTotalDamage(totals)
 
   table.insert(lines, "Total: " .. tostring(totalDamage))
   table.insert(lines, self.damageCategories.melee .. ": " .. tostring(totals.melee or 0))
@@ -579,12 +705,12 @@ function addon:FinishCombatSession()
     return
   end
 
-  local summaryText, totalDamage = self:BuildCombatSummaryText(session.totals)
+  local _, totalDamage = self:BuildCombatSummaryText(session.totals)
   if totalDamage <= 0 then
     return
   end
 
-  self:ShowNotice("combat", "Combat Summary", summaryText)
+  self:ShowNotice("combat", "Combat Summary", session.totals)
 end
 
 function addon:ExtractDamageAmount(message)
