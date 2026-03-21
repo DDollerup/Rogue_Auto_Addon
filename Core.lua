@@ -67,6 +67,9 @@ addon.defaults = {
   minimap = {
     angle = 220,
   },
+  notifications = {
+    highlightDuration = 8,
+  },
   debug = false,
 }
 
@@ -88,6 +91,31 @@ addon.state = {
   warnedMissingAttackSlot = false,
   targetSerial = 0,
   currentTargetKey = nil,
+  combatSession = nil,
+  pickPocketLootSession = nil,
+  noticeQueue = {},
+  activeNotice = nil,
+}
+
+addon.damageCategories = {
+  melee = "Melee",
+  poisonDirect = "Poison Direct",
+  bleedDot = "Bleeding (Phys DoT)",
+  poisonDot = "Poison (DoT)",
+  misc = "Misc",
+}
+
+addon.bleedSpells = {
+  ["Garrote"] = true,
+  ["Rupture"] = true,
+  ["Shadow of Death"] = true,
+}
+
+addon.poisonDirectSpells = {
+  ["Envenom"] = true,
+  ["Instant Poison"] = true,
+  ["Noxious Assault"] = true,
+  ["Wound Poison"] = true,
 }
 
 addon.buffAliases = {
@@ -130,6 +158,38 @@ local tooltip = CreateFrame("GameTooltip", "RogueAutoTooltip", UIParent, "GameTo
 tooltip:SetOwner(UIParent, "ANCHOR_NONE")
 addon.tooltip = tooltip
 
+local noticeFrame = CreateFrame("Frame", "RogueAutoNoticeFrame", UIParent)
+addon.noticeFrame = noticeFrame
+noticeFrame:SetWidth(340)
+noticeFrame:SetHeight(116)
+noticeFrame:SetPoint("TOP", UIParent, "TOP", 0, -180)
+noticeFrame:SetBackdrop({
+  bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+  tile = true,
+  tileSize = 16,
+  edgeSize = 16,
+  insets = { left = 5, right = 5, top = 5, bottom = 5 },
+})
+noticeFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.92)
+noticeFrame:SetBackdropBorderColor(1, 0.82, 0, 0.85)
+noticeFrame:Hide()
+
+local noticeTitle = noticeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+noticeTitle:SetPoint("TOPLEFT", noticeFrame, "TOPLEFT", 14, -14)
+noticeTitle:SetPoint("TOPRIGHT", noticeFrame, "TOPRIGHT", -14, -14)
+noticeTitle:SetJustifyH("LEFT")
+noticeTitle:SetTextColor(1, 0.9, 0.35)
+noticeFrame.title = noticeTitle
+
+local noticeBody = noticeFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+noticeBody:SetPoint("TOPLEFT", noticeTitle, "BOTTOMLEFT", 0, -8)
+noticeBody:SetPoint("TOPRIGHT", noticeFrame, "TOPRIGHT", -14, 0)
+noticeBody:SetJustifyH("LEFT")
+noticeBody:SetJustifyV("TOP")
+noticeBody:SetTextColor(0.92, 0.92, 0.92)
+noticeFrame.body = noticeBody
+
 local function deepCopy(value)
   if type(value) ~= "table" then
     return value
@@ -140,6 +200,33 @@ local function deepCopy(value)
     copy[key] = deepCopy(item)
   end
   return copy
+end
+
+local function trim(text)
+  if not text then
+    return ""
+  end
+
+  local _, _, stripped = string.find(text, "^%s*(.-)%s*$")
+  return stripped or text
+end
+
+local function normalizeSpellName(name)
+  if not name then
+    return ""
+  end
+
+  local normalized = trim(name)
+  normalized = string.gsub(normalized, "%s+[IVXLCM]+$", "")
+  return normalized
+end
+
+local function isNatureSchool(school)
+  if not school then
+    return false
+  end
+
+  return string.lower(school) == "nature"
 end
 
 local function mergeDefaults(target, defaults)
@@ -191,6 +278,7 @@ function addon:MigrateSettings()
   local core = RogueAutoDB.core
   core.bleed = mergeDefaults(core.bleed, deepCopy(self.defaults.core.bleed))
   core.direct = mergeDefaults(core.direct, deepCopy(self.defaults.core.direct))
+  RogueAutoDB.notifications = mergeDefaults(RogueAutoDB.notifications, deepCopy(self.defaults.notifications))
 
   if core.bleedSliceAndDiceFirst ~= nil then
     core.bleed.sliceAndDiceFirst = core.bleedSliceAndDiceFirst
@@ -211,6 +299,333 @@ function addon:MigrateSettings()
     core.direct.guaranteePrimaryDebuff = core.guaranteeDirectDebuff
     core.guaranteeDirectDebuff = nil
   end
+end
+
+function addon:GetHighlightDuration()
+  local notifications = RogueAutoDB and RogueAutoDB.notifications
+  local duration = notifications and notifications.highlightDuration
+  if not duration or duration < 1 then
+    return self.defaults.notifications.highlightDuration
+  end
+
+  return duration
+end
+
+function addon:ShowNotice(title, body)
+  local entry = {
+    title = title or "RogueAuto",
+    body = body or "",
+  }
+
+  if self.state.activeNotice then
+    table.insert(self.state.noticeQueue, entry)
+    return
+  end
+
+  self.state.activeNotice = entry
+  noticeFrame.title:SetText(entry.title)
+  noticeFrame.body:SetText(entry.body)
+  local height = noticeFrame.title:GetStringHeight() + noticeFrame.body:GetStringHeight() + 44
+  noticeFrame:SetHeight(math.max(84, height))
+  noticeFrame.hideAt = GetTime() + self:GetHighlightDuration()
+  noticeFrame:Show()
+end
+
+function addon:HideNotice()
+  self.state.activeNotice = nil
+  noticeFrame.hideAt = nil
+  noticeFrame:Hide()
+
+  if table.getn(self.state.noticeQueue) > 0 then
+    local nextEntry = table.remove(self.state.noticeQueue, 1)
+    self:ShowNotice(nextEntry.title, nextEntry.body)
+  end
+end
+
+function addon:UpdateNoticeFrame()
+  if self.state.activeNotice and noticeFrame.hideAt and GetTime() >= noticeFrame.hideAt then
+    self:HideNotice()
+  end
+end
+
+local function createCombatTotals()
+  return {
+    melee = 0,
+    poisonDirect = 0,
+    bleedDot = 0,
+    poisonDot = 0,
+    misc = 0,
+  }
+end
+
+function addon:StartCombatSession()
+  self.state.combatSession = {
+    startedAt = GetTime(),
+    totals = createCombatTotals(),
+  }
+end
+
+function addon:IsCombatSessionActive()
+  return self.state.combatSession ~= nil
+end
+
+function addon:EnsureCombatSession()
+  if not self.state.combatSession then
+    self:StartCombatSession()
+  end
+
+  return self.state.combatSession
+end
+
+function addon:IsBleedSpell(name)
+  local normalized = normalizeSpellName(name)
+  return self.bleedSpells[normalized] == true
+end
+
+function addon:IsPoisonDirectSpell(name)
+  local normalized = normalizeSpellName(name)
+  if self.poisonDirectSpells[normalized] then
+    return true
+  end
+
+  return string.find(normalized, "Poison") ~= nil
+end
+
+function addon:ClassifyDamageEvent(sourceType, spellName, school)
+  if sourceType == "melee" then
+    return "melee"
+  end
+
+  if sourceType == "periodic" then
+    if self:IsBleedSpell(spellName) or school == "Physical" then
+      return "bleedDot"
+    end
+    if self:IsPoisonDirectSpell(spellName) or isNatureSchool(school) then
+      return "poisonDot"
+    end
+    return "misc"
+  end
+
+  if self:IsPoisonDirectSpell(spellName) or isNatureSchool(school) then
+    return "poisonDirect"
+  end
+
+  if school == nil or school == "" or school == "Physical" then
+    return "melee"
+  end
+
+  return "misc"
+end
+
+function addon:AddCombatDamage(category, amount)
+  local session = self:EnsureCombatSession()
+  if not session or not amount or amount <= 0 then
+    return
+  end
+
+  session.totals[category] = (session.totals[category] or 0) + amount
+end
+
+function addon:RecordDamageEvent(sourceType, spellName, school, amount)
+  if not amount or amount <= 0 then
+    return
+  end
+
+  local category = self:ClassifyDamageEvent(sourceType, spellName, school)
+  self:AddCombatDamage(category, amount)
+end
+
+function addon:BuildCombatSummaryText(totals)
+  local lines = {}
+  local totalDamage = 0
+
+  for key, _ in pairs(self.damageCategories) do
+    totalDamage = totalDamage + (totals[key] or 0)
+  end
+
+  table.insert(lines, "Total: " .. tostring(totalDamage))
+  table.insert(lines, self.damageCategories.melee .. ": " .. tostring(totals.melee or 0))
+  table.insert(lines, self.damageCategories.poisonDirect .. ": " .. tostring(totals.poisonDirect or 0))
+  table.insert(lines, self.damageCategories.bleedDot .. ": " .. tostring(totals.bleedDot or 0))
+  table.insert(lines, self.damageCategories.poisonDot .. ": " .. tostring(totals.poisonDot or 0))
+  table.insert(lines, self.damageCategories.misc .. ": " .. tostring(totals.misc or 0))
+
+  return table.concat(lines, "\n"), totalDamage
+end
+
+function addon:FinishCombatSession()
+  local session = self.state.combatSession
+  self.state.combatSession = nil
+
+  if not session then
+    return
+  end
+
+  local summaryText, totalDamage = self:BuildCombatSummaryText(session.totals)
+  if totalDamage <= 0 then
+    return
+  end
+
+  self:ShowNotice("Combat Summary", summaryText)
+end
+
+function addon:ExtractDamageAmount(message)
+  if not message then
+    return nil
+  end
+
+  local _, _, amount = string.find(message, "for (%d+)")
+  if amount then
+    return tonumber(amount)
+  end
+
+  _, _, amount = string.find(message, "suffers (%d+)")
+  if amount then
+    return tonumber(amount)
+  end
+
+  _, _, amount = string.find(message, "causes .- (%d+) damage")
+  if amount then
+    return tonumber(amount)
+  end
+
+  _, _, amount = string.find(message, "drains (%d+)")
+  if amount then
+    return tonumber(amount)
+  end
+
+  return nil
+end
+
+function addon:ExtractSpellSchool(message)
+  if not message then
+    return nil
+  end
+
+  local _, _, school = string.find(message, "for %d+ ([A-Za-z]+) damage")
+  if school then
+    return school
+  end
+
+  _, _, school = string.find(message, "suffers %d+ ([A-Za-z]+) damage")
+  if school then
+    return school
+  end
+
+  return nil
+end
+
+function addon:OnCombatSelfHit(message)
+  local amount = self:ExtractDamageAmount(message)
+  if amount then
+    self:RecordDamageEvent("melee", nil, "Physical", amount)
+  end
+end
+
+function addon:OnSpellSelfDamage(message)
+  if not message then
+    return
+  end
+
+  local amount = self:ExtractDamageAmount(message)
+  if not amount then
+    return
+  end
+
+  local spellName = nil
+  local _, _, directSpell = string.find(message, "^Your (.-) hits ")
+  if directSpell then
+    spellName = directSpell
+  end
+
+  if not spellName then
+    _, _, directSpell = string.find(message, "^Your (.-) crits ")
+    if directSpell then
+      spellName = directSpell
+    end
+  end
+
+  if not spellName then
+    _, _, directSpell = string.find(message, "^Your (.-) causes ")
+    if directSpell then
+      spellName = directSpell
+    end
+  end
+
+  if not spellName then
+    _, _, directSpell = string.find(message, "^Your (.-) drains ")
+    if directSpell then
+      spellName = directSpell
+    end
+  end
+
+  self:RecordDamageEvent("direct", spellName, self:ExtractSpellSchool(message), amount)
+end
+
+function addon:OnSpellPeriodicDamage(message)
+  if not message then
+    return
+  end
+
+  local amount = self:ExtractDamageAmount(message)
+  if not amount then
+    return
+  end
+
+  local _, _, spellName = string.find(message, "from your (.-)%.?$")
+  self:RecordDamageEvent("periodic", spellName, self:ExtractSpellSchool(message), amount)
+end
+
+function addon:BeginPickPocketLootSession()
+  self.state.pickPocketLootSession = {
+    entries = {},
+  }
+end
+
+function addon:HasActivePickPocketLootSession()
+  return self.state.pickPocketLootSession ~= nil
+end
+
+function addon:AddPickPocketLootEntry(text)
+  if not self.state.pickPocketLootSession or not text or text == "" then
+    return
+  end
+
+  table.insert(self.state.pickPocketLootSession.entries, text)
+end
+
+function addon:ExtractLootText(message)
+  if not message then
+    return nil
+  end
+
+  local _, _, lootText = string.find(message, "^You receive loot: (.+)%.?$")
+  if lootText then
+    return lootText
+  end
+
+  _, _, lootText = string.find(message, "^You loot (.+)%.?$")
+  if lootText then
+    return lootText
+  end
+
+  return message
+end
+
+function addon:FinishPickPocketLootSession()
+  local session = self.state.pickPocketLootSession
+  self.state.pickPocketLootSession = nil
+
+  if not session then
+    return
+  end
+
+  local entries = session.entries
+  if table.getn(entries) == 0 then
+    table.insert(entries, "Nothing")
+  end
+
+  self:ShowNotice("Pick Pocket", table.concat(entries, "\n"))
 end
 
 function addon:GetRotationSettings(mode)
@@ -1269,6 +1684,16 @@ function addon:OnPlayerLogin()
   self:Debug("Loaded version " .. self.version)
 end
 
+function addon:OnCombatStarted()
+  if not self:IsCombatSessionActive() then
+    self:StartCombatSession()
+  end
+end
+
+function addon:OnCombatEnded()
+  self:FinishCombatSession()
+end
+
 function addon:OnSpellbookChanged()
   self:RefreshKnownSpells()
 end
@@ -1318,7 +1743,35 @@ function addon:OnLootOpened()
   self:PrunePendingPickPocketAttempt()
   if self.state.pendingPickPocketTarget then
     self:MarkTargetPickPocketed(self.state.pendingPickPocketTarget)
+    self:BeginPickPocketLootSession()
     self:ClearPendingPickPocketAttempt()
+  end
+end
+
+function addon:OnLootClosed()
+  if self:HasActivePickPocketLootSession() then
+    self:FinishPickPocketLootSession()
+  end
+end
+
+function addon:OnChatLoot(message)
+  if not self:HasActivePickPocketLootSession() then
+    return
+  end
+
+  local entry = self:ExtractLootText(message)
+  if entry and entry ~= "" then
+    self:AddPickPocketLootEntry(entry)
+  end
+end
+
+function addon:OnChatMoney(message)
+  if not self:HasActivePickPocketLootSession() then
+    return
+  end
+
+  if message and message ~= "" then
+    self:AddPickPocketLootEntry(message)
   end
 end
 
@@ -1331,12 +1784,21 @@ end
 
 frame:RegisterEvent("VARIABLES_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 frame:RegisterEvent("UNIT_ENERGY")
 frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
 frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
+frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
 frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
+frame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
 frame:RegisterEvent("UI_ERROR_MESSAGE")
 frame:RegisterEvent("LOOT_OPENED")
+frame:RegisterEvent("LOOT_CLOSED")
+frame:RegisterEvent("CHAT_MSG_LOOT")
+frame:RegisterEvent("CHAT_MSG_MONEY")
 frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 
 frame:SetScript("OnEvent", function()
@@ -1344,17 +1806,37 @@ frame:SetScript("OnEvent", function()
     addon:OnVariablesLoaded()
   elseif event == "PLAYER_LOGIN" then
     addon:OnPlayerLogin()
+  elseif event == "PLAYER_REGEN_DISABLED" then
+    addon:OnCombatStarted()
+  elseif event == "PLAYER_REGEN_ENABLED" then
+    addon:OnCombatEnded()
   elseif event == "UNIT_ENERGY" then
     addon:OnEnergyChanged(arg1)
   elseif event == "LEARNED_SPELL_IN_TAB" or event == "CHARACTER_POINTS_CHANGED" then
     addon:OnSpellbookChanged()
+  elseif event == "CHAT_MSG_COMBAT_SELF_HITS" then
+    addon:OnCombatSelfHit(arg1)
   elseif event == "CHAT_MSG_COMBAT_SELF_MISSES" then
     addon:OnCombatMiss(arg1)
+  elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
+    addon:OnSpellSelfDamage(arg1)
+  elseif event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" or event == "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE" then
+    addon:OnSpellPeriodicDamage(arg1)
   elseif event == "UI_ERROR_MESSAGE" then
     addon:OnUiError(arg1)
   elseif event == "LOOT_OPENED" then
     addon:OnLootOpened()
+  elseif event == "LOOT_CLOSED" then
+    addon:OnLootClosed()
+  elseif event == "CHAT_MSG_LOOT" then
+    addon:OnChatLoot(arg1)
+  elseif event == "CHAT_MSG_MONEY" then
+    addon:OnChatMoney(arg1)
   elseif event == "PLAYER_TARGET_CHANGED" then
     addon:OnTargetChanged()
   end
+end)
+
+noticeFrame:SetScript("OnUpdate", function()
+  addon:UpdateNoticeFrame()
 end)

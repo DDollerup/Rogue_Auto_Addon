@@ -243,6 +243,19 @@ addon.settingDefinitions = {
     path = { "debug" },
     label = "Enable debug chat output",
   },
+  highlightDuration = {
+    path = { "notifications", "highlightDuration" },
+    label = "Highlight duration",
+    min = 3,
+    max = 20,
+    step = 1,
+    normalize = function(self, value)
+      return self:ClampValue(math.floor(value + 0.5), 3, 20)
+    end,
+    display = function(value)
+      return "Highlight duration: " .. tostring(value) .. " sec"
+    end,
+  },
 }
 
 addon.uiSections = {
@@ -278,6 +291,10 @@ addon.uiSections = {
   {
     title = "Thresholds",
     items = { "executeHealthPct", "evasionPct", "vanishPct" },
+  },
+  {
+    title = "Highlights",
+    items = { "highlightDuration" },
   },
   { title = "Macros", kind = "macros" },
   {
