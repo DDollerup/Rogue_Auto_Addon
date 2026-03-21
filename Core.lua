@@ -362,6 +362,8 @@ function addon:UpdateNoticeFrame()
   if self.state.activeNotice and noticeFrame.hideAt and GetTime() >= noticeFrame.hideAt then
     self:HideNotice()
   end
+
+  self:UpdatePickPocketLootSession()
 end
 
 local function createCombatTotals()
@@ -595,6 +597,7 @@ end
 function addon:BeginPickPocketLootSession()
   self.state.pickPocketLootSession = {
     entries = {},
+    finishAt = GetTime() + 3,
   }
 end
 
@@ -607,7 +610,13 @@ function addon:AddPickPocketLootEntry(text)
     return
   end
 
-  table.insert(self.state.pickPocketLootSession.entries, text)
+  local entries = self.state.pickPocketLootSession.entries
+  local previous = entries[table.getn(entries)]
+  if previous ~= text then
+    table.insert(entries, text)
+  end
+
+  self.state.pickPocketLootSession.finishAt = GetTime() + 0.5
 end
 
 function addon:ExtractLootText(message)
@@ -642,6 +651,25 @@ function addon:FinishPickPocketLootSession()
   end
 
   self:ShowNotice("Pick Pocket", table.concat(entries, "\n"))
+end
+
+function addon:SchedulePickPocketLootSessionFinish(delay)
+  if not self.state.pickPocketLootSession then
+    return
+  end
+
+  self.state.pickPocketLootSession.finishAt = GetTime() + (delay or 0.5)
+end
+
+function addon:UpdatePickPocketLootSession()
+  local session = self.state.pickPocketLootSession
+  if not session or not session.finishAt then
+    return
+  end
+
+  if GetTime() >= session.finishAt then
+    self:FinishPickPocketLootSession()
+  end
 end
 
 function addon:GetRotationSettings(mode)
@@ -1766,7 +1794,7 @@ end
 
 function addon:OnLootClosed()
   if self:HasActivePickPocketLootSession() then
-    self:FinishPickPocketLootSession()
+    self:SchedulePickPocketLootSessionFinish(0.75)
   end
 end
 
