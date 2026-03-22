@@ -613,7 +613,7 @@ function addon:ConfigureCombatNoticeFrame(noticeFrame, totals)
     noticeFrame.titleIcon:Hide()
   end
   if noticeFrame.divider then
-    noticeFrame.divider:Hide()
+    noticeFrame.divider:Show()
   end
 
   if noticeFrame.lootRows then
