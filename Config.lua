@@ -86,7 +86,7 @@ scrollFrame:SetPoint("TOPLEFT", contentPanel, "TOPLEFT", 12, -12)
 scrollFrame:SetPoint("BOTTOMRIGHT", contentPanel, "BOTTOMRIGHT", -28, 12)
 
 local scrollChild = CreateFrame("Frame", "RogueAutoScrollChild", scrollFrame)
-scrollChild:SetWidth(448)
+scrollChild:SetWidth(464)
 scrollChild:SetHeight(1200)
 scrollFrame:SetScrollChild(scrollChild)
 
@@ -96,6 +96,11 @@ scrollBar:SetValueStep(20)
 local refreshables = {}
 local builderButtons = {}
 local optionButtonGroups = {}
+local cardWidth = 424
+local controlWidth = 392
+local textWidth = 372
+local buttonWidth = 122
+local buttonSpacing = 130
 
 local sectionIcons = {
   builder = "Interface\\Icons\\INV_Sword_04",
@@ -108,6 +113,7 @@ local sectionIcons = {
   ["Defensives"] = "Interface\\Icons\\Spell_Shadow_ShadowWard",
   ["Interrupt"] = "Interface\\Icons\\Ability_Kick",
   ["Thresholds"] = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+  ["Direct Finisher"] = "Interface\\Icons\\Ability_Rogue_Eviscerate",
   ["Highlights"] = "Interface\\Icons\\INV_Misc_Spyglass_02",
   ["Misc"] = "Interface\\Icons\\INV_Misc_Gear_01",
 }
@@ -198,10 +204,29 @@ local function estimateWrappedTextHeight(text, width, font)
   return lineCount * lineHeight
 end
 
-local function createWrappedText(parent, text, font, y, color)
+local function getFontStringHeight(label, fallbackHeight)
+  if label and label.GetStringHeight then
+    local height = label:GetStringHeight()
+    if height and height > 0 then
+      return height
+    end
+  end
+
+  if label and label.GetHeight then
+    local height = label:GetHeight()
+    if height and height > 0 then
+      return height
+    end
+  end
+
+  return fallbackHeight or 14
+end
+
+local function createWrappedText(parent, text, font, y, color, width)
+  width = width or textWidth
   local label = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
   label:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
-  label:SetWidth(320)
+  label:SetWidth(width)
   label:SetJustifyH("LEFT")
   label:SetJustifyV("TOP")
   label:SetText(text)
@@ -209,7 +234,7 @@ local function createWrappedText(parent, text, font, y, color)
     label:SetTextColor(color[1], color[2], color[3])
   end
 
-  local height = estimateWrappedTextHeight(text, 320, font)
+  local height = getFontStringHeight(label, estimateWrappedTextHeight(text, width, font))
 
   return label, height
 end
@@ -217,7 +242,7 @@ end
 local function createToggleControl(parent, settingId, y)
   local definition = addon.settingDefinitions[settingId]
   local control = CreateFrame("Frame", nil, parent)
-  control:SetWidth(336)
+  control:SetWidth(controlWidth)
   control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
 
   local checkbox = CreateFrame("CheckButton", nil, control, "UICheckButtonTemplate")
@@ -227,7 +252,7 @@ local function createToggleControl(parent, settingId, y)
 
   local label = control:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   label:SetPoint("TOPLEFT", checkbox, "TOPRIGHT", 4, -4)
-  label:SetWidth(308)
+  label:SetWidth(textWidth - 20)
   label:SetJustifyH("LEFT")
   label:SetText(definition.label)
 
@@ -235,11 +260,11 @@ local function createToggleControl(parent, settingId, y)
   if definition.help then
     local help = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     help:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
-    help:SetWidth(320)
+    help:SetWidth(textWidth)
     help:SetJustifyH("LEFT")
     help:SetText(definition.help)
     help:SetTextColor(0.75, 0.75, 0.75)
-    height = height + 14
+    height = height + getFontStringHeight(help, 14) + 2
   end
 
   checkbox:SetScript("OnClick", function()
@@ -259,18 +284,18 @@ end
 local function createSliderControl(parent, settingId, y)
   local definition = addon.settingDefinitions[settingId]
   local control = CreateFrame("Frame", nil, parent)
-  control:SetWidth(336)
+  control:SetWidth(controlWidth)
   control:SetHeight(52)
   control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
 
   local label = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   label:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
-  label:SetWidth(316)
+  label:SetWidth(textWidth)
   label:SetJustifyH("LEFT")
 
   local sliderName = "RogueAutoSlider" .. settingId
   local slider = CreateFrame("Slider", sliderName, control, "OptionsSliderTemplate")
-  slider:SetWidth(302)
+  slider:SetWidth(356)
   slider:SetHeight(16)
   slider:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -16)
   slider:SetMinMaxValues(definition.min, definition.max)
@@ -319,12 +344,12 @@ end
 local function createOptionButtonsControl(parent, settingId, y)
   local definition = addon.settingDefinitions[settingId]
   local control = CreateFrame("Frame", nil, parent)
-  control:SetWidth(336)
+  control:SetWidth(controlWidth)
   control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
 
   local label = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   label:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
-  label:SetWidth(316)
+  label:SetWidth(textWidth)
   label:SetJustifyH("LEFT")
   label:SetText(definition.label)
 
@@ -335,9 +360,9 @@ local function createOptionButtonsControl(parent, settingId, y)
     local column = math.mod(index - 1, 3)
 
     local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
-    button:SetWidth(100)
+    button:SetWidth(buttonWidth)
     button:SetHeight(22)
-    button:SetPoint("TOPLEFT", control, "TOPLEFT", column * 108, -(20 + (row * 28)))
+    button:SetPoint("TOPLEFT", control, "TOPLEFT", column * buttonSpacing, -(20 + (row * 28)))
     button:SetText(option.label)
     button.key = option.key
     button:SetScript("OnClick", function()
@@ -352,7 +377,13 @@ local function createOptionButtonsControl(parent, settingId, y)
     rowCount = 1
   end
 
-  control:SetHeight(20 + (rowCount * 28))
+  local height = 20 + (rowCount * 28)
+  if definition.help then
+    local _, helpHeight = createWrappedText(control, definition.help, "GameFontHighlightSmall", -(20 + (rowCount * 28)), { 0.75, 0.75, 0.75 }, textWidth)
+    height = height + helpHeight + 4
+  end
+
+  control:SetHeight(height)
   control.Refresh = function()
     refreshOptionButtons(settingId)
   end
@@ -374,7 +405,7 @@ end
 
 local function createBuilderControl(parent, y)
   local control = CreateFrame("Frame", nil, parent)
-  control:SetWidth(336)
+  control:SetWidth(controlWidth)
   control:SetHeight(60)
   control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
 
@@ -383,9 +414,9 @@ local function createBuilderControl(parent, y)
     local column = math.mod(index - 1, 3)
 
     local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
-    button:SetWidth(100)
+    button:SetWidth(buttonWidth)
     button:SetHeight(22)
-    button:SetPoint("TOPLEFT", control, "TOPLEFT", column * 108, -(row * 28))
+    button:SetPoint("TOPLEFT", control, "TOPLEFT", column * buttonSpacing, -(row * 28))
     button:SetText(option.label)
     button.key = option.key
     button:SetScript("OnClick", function()
@@ -402,20 +433,20 @@ end
 
 local function createMacroControl(parent, y)
   local control = CreateFrame("Frame", nil, parent)
-  control:SetWidth(336)
+  control:SetWidth(controlWidth)
   control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
 
   local cursorY = 0
   for _, definition in ipairs(addon.macroDefinitions) do
     local macroText = definition.macro
     local descriptionText = definition.description
-    local description, descHeight = createWrappedText(control, descriptionText, "GameFontNormal", cursorY, nil)
-    description:SetWidth(308)
+    local description, descHeight = createWrappedText(control, descriptionText, "GameFontNormal", cursorY, nil, textWidth)
+    description:SetWidth(textWidth)
     local box = CreateFrame("EditBox", nil, control, "InputBoxTemplate")
     local editBox = box
-    box:SetWidth(308)
+    box:SetWidth(textWidth)
     box:SetHeight(20)
-    box:SetPoint("TOPLEFT", control, "TOPLEFT", 0, cursorY - descHeight - 6)
+    box:SetPoint("TOPLEFT", control, "TOPLEFT", 0, cursorY - descHeight - 10)
     box:SetAutoFocus(false)
     box:SetText(macroText)
     box:SetScript("OnEscapePressed", function()
@@ -429,12 +460,12 @@ local function createMacroControl(parent, y)
       editBox:SetText(macroText)
     end)
 
-    cursorY = cursorY - descHeight - 30
+    cursorY = cursorY - descHeight - 36
   end
 
-  local hint, hintHeight = createWrappedText(control, "Click a macro field to highlight and copy it. Use the minimap rogue icon to reopen this window.", "GameFontHighlightSmall", cursorY, { 0.8, 0.8, 0.8 })
-  hint:SetWidth(308)
-  cursorY = cursorY - hintHeight
+  local hint, hintHeight = createWrappedText(control, "Click a macro field to highlight and copy it. Use the minimap rogue icon to reopen this window.", "GameFontHighlightSmall", cursorY, { 0.8, 0.8, 0.8 }, textWidth)
+  hint:SetWidth(textWidth)
+  cursorY = cursorY - hintHeight - 4
 
   control:SetHeight(math.abs(cursorY) + 8)
   control.Refresh = function()
@@ -445,7 +476,7 @@ end
 
 local function createSectionCard(parent, section, y)
   local card = CreateFrame("Frame", nil, parent)
-  card:SetWidth(360)
+  card:SetWidth(cardWidth)
   card:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
   card:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -460,6 +491,11 @@ local function createSectionCard(parent, section, y)
 
   local cursorY = -10
   cursorY = cursorY - createSectionHeader(card, section)
+
+  if section.help then
+    local _, helpHeight = createWrappedText(card, section.help, "GameFontHighlightSmall", cursorY, { 0.78, 0.78, 0.78 }, textWidth)
+    cursorY = cursorY - helpHeight - 10
+  end
 
   if section.kind == "builder" then
     local _, height = createBuilderControl(card, cursorY)

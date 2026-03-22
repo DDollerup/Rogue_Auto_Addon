@@ -126,6 +126,7 @@ addon.noticeAnchorInsetPct = 0.15
 addon.noticeDefaultY = -120
 addon.pickPocketFallbackTexture = "Interface\\Icons\\INV_Misc_Bag_10"
 addon.coinTexture = "Interface\\Icons\\INV_Misc_Coin_01"
+addon.pickPocketTitleTexture = "Interface\\Icons\\INV_Misc_Bag_10"
 
 addon.bleedSpells = {
   ["Garrote"] = true,
@@ -207,8 +208,23 @@ local function createNoticeFrame(name, point, relativePoint, xOffset, yOffset)
   noticeTitle:SetTextColor(1, 0.9, 0.35)
   noticeFrame.title = noticeTitle
 
+  local titleIcon = noticeFrame:CreateTexture(nil, "ARTWORK")
+  titleIcon:SetWidth(20)
+  titleIcon:SetHeight(20)
+  titleIcon:SetPoint("TOPLEFT", noticeFrame, "TOPLEFT", 14, -14)
+  titleIcon:Hide()
+  noticeFrame.titleIcon = titleIcon
+
+  local divider = noticeFrame:CreateTexture(nil, "ARTWORK")
+  divider:SetHeight(1)
+  divider:SetPoint("TOPLEFT", noticeTitle, "BOTTOMLEFT", 0, -8)
+  divider:SetPoint("TOPRIGHT", noticeFrame, "TOPRIGHT", -14, 0)
+  divider:SetTexture(1, 0.82, 0, 0.24)
+  divider:Hide()
+  noticeFrame.divider = divider
+
   local noticeBody = noticeFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  noticeBody:SetPoint("TOPLEFT", noticeTitle, "BOTTOMLEFT", 0, -8)
+  noticeBody:SetPoint("TOPLEFT", noticeTitle, "BOTTOMLEFT", 0, -12)
   noticeBody:SetPoint("TOPRIGHT", noticeFrame, "TOPRIGHT", -14, 0)
   noticeBody:SetJustifyH("LEFT")
   noticeBody:SetJustifyV("TOP")
@@ -218,7 +234,7 @@ local function createNoticeFrame(name, point, relativePoint, xOffset, yOffset)
   local totalRow = CreateFrame("Frame", nil, noticeFrame)
   totalRow:SetWidth(312)
   totalRow:SetHeight(20)
-  totalRow:SetPoint("TOPLEFT", noticeTitle, "BOTTOMLEFT", 0, -8)
+  totalRow:SetPoint("TOPLEFT", noticeTitle, "BOTTOMLEFT", 0, -14)
   totalRow:Hide()
 
   local totalIcon = totalRow:CreateTexture(nil, "ARTWORK")
@@ -274,13 +290,13 @@ local function createNoticeFrame(name, point, relativePoint, xOffset, yOffset)
   for index = 1, 6 do
     local row = CreateFrame("Frame", nil, noticeFrame)
     row:SetWidth(312)
-    row:SetHeight(18)
-    row:SetPoint("TOPLEFT", totalRow, "BOTTOMLEFT", 0, -6 - ((index - 1) * 20))
+    row:SetHeight(20)
+    row:SetPoint("TOPLEFT", noticeFrame, "TOPLEFT", 16, -52 - ((index - 1) * 22))
     row:Hide()
 
     local icon = row:CreateTexture(nil, "ARTWORK")
-    icon:SetWidth(14)
-    icon:SetHeight(14)
+    icon:SetWidth(16)
+    icon:SetHeight(16)
     icon:SetPoint("LEFT", row, "LEFT", 1, 0)
     row.icon = icon
 
@@ -295,6 +311,20 @@ local function createNoticeFrame(name, point, relativePoint, xOffset, yOffset)
   end
 
   return noticeFrame
+end
+
+local function setNoticeTitleLayout(noticeFrame, useIcon)
+  if not noticeFrame or not noticeFrame.title then
+    return
+  end
+
+  noticeFrame.title:ClearAllPoints()
+  if useIcon then
+    noticeFrame.title:SetPoint("TOPLEFT", noticeFrame, "TOPLEFT", 42, -14)
+  else
+    noticeFrame.title:SetPoint("TOPLEFT", noticeFrame, "TOPLEFT", 14, -14)
+  end
+  noticeFrame.title:SetPoint("TOPRIGHT", noticeFrame, "TOPRIGHT", -14, -14)
 end
 
 addon.noticeFrames = {
@@ -546,8 +576,15 @@ function addon:GetCombatTotalDamage(totals)
 end
 
 function addon:ConfigureTextNoticeFrame(noticeFrame, body)
+  setNoticeTitleLayout(noticeFrame, false)
   noticeFrame.body:SetText(body or "")
   noticeFrame.body:Show()
+  if noticeFrame.titleIcon then
+    noticeFrame.titleIcon:Hide()
+  end
+  if noticeFrame.divider then
+    noticeFrame.divider:Hide()
+  end
 
   if noticeFrame.totalRow then
     noticeFrame.totalRow:Hide()
@@ -570,7 +607,14 @@ function addon:ConfigureTextNoticeFrame(noticeFrame, body)
 end
 
 function addon:ConfigureCombatNoticeFrame(noticeFrame, totals)
+  setNoticeTitleLayout(noticeFrame, false)
   noticeFrame.body:Hide()
+  if noticeFrame.titleIcon then
+    noticeFrame.titleIcon:Hide()
+  end
+  if noticeFrame.divider then
+    noticeFrame.divider:Hide()
+  end
 
   if noticeFrame.lootRows then
     for _, row in ipairs(noticeFrame.lootRows) do
@@ -603,7 +647,15 @@ function addon:ConfigureCombatNoticeFrame(noticeFrame, totals)
 end
 
 function addon:ConfigurePickPocketNoticeFrame(noticeFrame, entries)
+  setNoticeTitleLayout(noticeFrame, true)
   noticeFrame.body:Hide()
+  if noticeFrame.titleIcon then
+    noticeFrame.titleIcon:SetTexture(self.pickPocketTitleTexture)
+    noticeFrame.titleIcon:Show()
+  end
+  if noticeFrame.divider then
+    noticeFrame.divider:Show()
+  end
 
   if noticeFrame.totalRow then
     noticeFrame.totalRow:Hide()
@@ -620,7 +672,11 @@ function addon:ConfigurePickPocketNoticeFrame(noticeFrame, entries)
     for index, row in ipairs(noticeFrame.lootRows) do
       local entry = entries[index]
       if entry then
-        row.icon:SetTexture(entry.icon or self.pickPocketFallbackTexture)
+        if entry.text and (string.find(entry.text, "Copper") or string.find(entry.text, "Silver") or string.find(entry.text, "Gold")) then
+          row.icon:SetTexture(self.coinTexture)
+        else
+          row.icon:SetTexture(entry.icon or self.pickPocketFallbackTexture)
+        end
         row.label:SetText(entry.text or "")
         row:Show()
         visibleRows = index
@@ -631,7 +687,7 @@ function addon:ConfigurePickPocketNoticeFrame(noticeFrame, entries)
   end
 
   local rowCount = math.max(visibleRows, 1)
-  noticeFrame:SetHeight(50 + (rowCount * 20))
+  noticeFrame:SetHeight(66 + (rowCount * 22))
 end
 
 function addon:ShowNotice(kind, title, body)

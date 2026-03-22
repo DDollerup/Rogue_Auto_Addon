@@ -180,6 +180,7 @@ addon.settingDefinitions = {
     path = { "core", "direct", "finisher" },
     label = "Direct damage finisher",
     options = addon.directFinisherOptions,
+    help = "Used after Expose Armor or Rupture is already active. Slice and Dice upkeep still happens first when enabled.",
   },
   softFeint = {
     path = { "core", "softDefensives", "feint" },
@@ -288,7 +289,7 @@ addon.uiSections = {
   },
   {
     title = "Rotation: Direct",
-    items = { "directSliceAndDiceFirst", "guaranteeDirectDebuff", "directDebuffMinCP", "directFinisher" },
+    items = { "directSliceAndDiceFirst", "guaranteeDirectDebuff", "directDebuffMinCP" },
   },
   {
     title = "Defensives",
@@ -301,6 +302,11 @@ addon.uiSections = {
   {
     title = "Thresholds",
     items = { "executeHealthPct", "evasionPct", "vanishPct" },
+  },
+  {
+    title = "Direct Finisher",
+    help = "Select which finisher the Bleed and Direct macros use after their setup debuff is established.",
+    items = { "directFinisher" },
   },
   {
     title = "Highlights",
