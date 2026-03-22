@@ -395,6 +395,9 @@ local function normalizeLootEntry(text)
   end
 
   local normalized = trim(text)
+  normalized = string.gsub(normalized, "|c%x%x%x%x%x%x%x%x", "")
+  normalized = string.gsub(normalized, "|r", "")
+  normalized = string.gsub(normalized, "^%[(.-)%]$", "%1")
   normalized = string.gsub(normalized, "%.+$", "")
   normalized = trim(normalized)
   if normalized == "" then
