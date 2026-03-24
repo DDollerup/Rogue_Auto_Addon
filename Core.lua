@@ -127,6 +127,7 @@ addon.noticeDefaultY = -120
 addon.pickPocketFallbackTexture = "Interface\\Icons\\INV_Misc_Bag_10"
 addon.coinTexture = "Interface\\Icons\\INV_Misc_Coin_01"
 addon.pickPocketTitleTexture = "Interface\\Icons\\INV_Misc_Bag_10"
+addon.playerStatUpdateInterval = 0.25
 
 addon.bleedSpells = {
   ["Garrote"] = true,
@@ -554,6 +555,96 @@ end
 
 function addon:GetNoticeFadeDuration()
   return self.noticeFadeDuration or 0.35
+end
+
+local function formatPlayerStatPct(value)
+  if not value then
+    return nil
+  end
+
+  return string.format("%.1f%%", value)
+end
+
+function addon:EnsurePlayerStatFrame()
+  if self.playerStatFrame then
+    return self.playerStatFrame
+  end
+
+  if not PlayerFrameManaBar then
+    return nil
+  end
+
+  local statFrame = CreateFrame("Frame", "RogueAutoPlayerStatFrame", UIParent)
+  statFrame:SetHeight(8)
+  statFrame:SetPoint("TOPLEFT", PlayerFrameManaBar, "BOTTOMLEFT", 2, -3)
+  statFrame:SetPoint("TOPRIGHT", PlayerFrameManaBar, "BOTTOMRIGHT", -2, -3)
+  statFrame:SetBackdrop({
+    bgFile = "Interface\\TargetingFrame\\UI-StatusBar",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = false,
+    edgeSize = 10,
+    insets = { left = 2, right = 2, top = 2, bottom = 2 },
+  })
+  statFrame:SetBackdropColor(0.08, 0.08, 0.08, 0.9)
+  statFrame:SetBackdropBorderColor(0.55, 0.55, 0.55, 0.6)
+
+  local leftFill = statFrame:CreateTexture(nil, "ARTWORK")
+  leftFill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  leftFill:SetVertexColor(0.2, 0.7, 0.55, 0.75)
+  leftFill:SetPoint("TOPLEFT", statFrame, "TOPLEFT", 1, -1)
+  leftFill:SetPoint("BOTTOMLEFT", statFrame, "BOTTOMLEFT", 1, 1)
+  leftFill:SetWidth(0)
+  statFrame.leftFill = leftFill
+
+  local rightFill = statFrame:CreateTexture(nil, "ARTWORK")
+  rightFill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  rightFill:SetVertexColor(0.85, 0.7, 0.2, 0.75)
+  rightFill:SetPoint("TOPLEFT", leftFill, "TOPRIGHT", 0, 0)
+  rightFill:SetPoint("BOTTOMLEFT", leftFill, "BOTTOMRIGHT", 0, 0)
+  rightFill:SetWidth(0)
+  statFrame.rightFill = rightFill
+
+  local label = statFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  label:SetPoint("CENTER", statFrame, "CENTER", 0, 0)
+  label:SetTextColor(0.95, 0.95, 0.95)
+  label:SetJustifyH("CENTER")
+  statFrame.label = label
+
+  self.playerStatFrame = statFrame
+  return statFrame
+end
+
+function addon:UpdatePlayerStatFrame(force)
+  local now = GetTime()
+  if not force and self.state.nextPlayerStatUpdate and now < self.state.nextPlayerStatUpdate then
+    return
+  end
+
+  self.state.nextPlayerStatUpdate = now + (self.playerStatUpdateInterval or 0.25)
+
+  local statFrame = self:EnsurePlayerStatFrame()
+  if not statFrame then
+    return
+  end
+
+  local dodgeChance = GetDodgeChance and GetDodgeChance() or nil
+  local critChance = GetCritChance and GetCritChance() or nil
+
+  if not dodgeChance and not critChance then
+    statFrame:Hide()
+    return
+  end
+
+  local frameWidth = statFrame:GetWidth() or 0
+  local innerWidth = math.max(frameWidth - 2, 0)
+  local halfWidth = innerWidth / 2
+  local dodgeWidth = math.floor(halfWidth * math.min(math.max(dodgeChance or 0, 0), 100) / 100)
+  local critWidth = math.floor(halfWidth * math.min(math.max(critChance or 0, 0), 100) / 100)
+
+  statFrame.leftFill:SetWidth(dodgeWidth)
+  statFrame.rightFill:SetWidth(critWidth)
+  statFrame.label:SetText("Dodge " .. (formatPlayerStatPct(dodgeChance) or "--") .. "   Crit " .. (formatPlayerStatPct(critChance) or "--"))
+  statFrame:Show()
 end
 
 function addon:UpdateNoticeFramePositions()
@@ -2113,6 +2204,13 @@ function addon:ShouldFavorImmediateDamage()
 end
 
 function addon:TryPreferredBuilder()
+  if RogueAutoDB.core.softDefensives.ghostlyStrike and self:HasSpell("Ghostly Strike") then
+    local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
+    if self:GetComboPoints() == 0 and (not active or remaining < 2) and self:TryCast("Ghostly Strike") then
+      return true
+    end
+  end
+
   local builder = self:GetPreferredBuilder()
   if builder then
     return self:TryCast(builder)
@@ -2160,6 +2258,7 @@ end
 
 function addon:OnPlayerLogin()
   self:RefreshKnownSpells()
+  self:UpdatePlayerStatFrame(true)
   self:Debug("Loaded version " .. self.version)
 end
 
@@ -2319,4 +2418,5 @@ end)
 
 frame:SetScript("OnUpdate", function()
   addon:UpdateNoticeFrames()
+  addon:UpdatePlayerStatFrame(false)
 end)
