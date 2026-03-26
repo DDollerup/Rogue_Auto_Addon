@@ -95,6 +95,7 @@ addon.state = {
   combatSession = nil,
   pickPocketLootSession = nil,
   activeNotices = {},
+  cachedPlayerCritChance = nil,
 }
 
 addon.damageCategories = {
@@ -575,38 +576,35 @@ function addon:EnsurePlayerStatFrame()
   end
 
   local statFrame = CreateFrame("Frame", "RogueAutoPlayerStatFrame", UIParent)
-  statFrame:SetHeight(8)
-  statFrame:SetPoint("TOPLEFT", PlayerFrameManaBar, "BOTTOMLEFT", 2, -3)
-  statFrame:SetPoint("TOPRIGHT", PlayerFrameManaBar, "BOTTOMRIGHT", -2, -3)
-  statFrame:SetBackdrop({
-    bgFile = "Interface\\TargetingFrame\\UI-StatusBar",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = false,
-    edgeSize = 10,
-    insets = { left = 2, right = 2, top = 2, bottom = 2 },
-  })
-  statFrame:SetBackdropColor(0.08, 0.08, 0.08, 0.9)
-  statFrame:SetBackdropBorderColor(0.55, 0.55, 0.55, 0.6)
+  statFrame:SetHeight(12)
+  statFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "BOTTOMLEFT", 0, -18)
+  statFrame:SetWidth(100)
+  local statusBar = CreateFrame("StatusBar", nil, statFrame, "TextStatusBar")
+  statusBar:SetAllPoints(statFrame)
+  statusBar:SetMinMaxValues(0, 1)
+  statusBar:SetValue(1)
+  statusBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  statusBar:SetStatusBarColor(0, 0, 0, 0)
+  statFrame.statusBar = statusBar
 
-  local leftFill = statFrame:CreateTexture(nil, "ARTWORK")
-  leftFill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-  leftFill:SetVertexColor(0.2, 0.7, 0.55, 0.75)
-  leftFill:SetPoint("TOPLEFT", statFrame, "TOPLEFT", 1, -1)
-  leftFill:SetPoint("BOTTOMLEFT", statFrame, "BOTTOMLEFT", 1, 1)
-  leftFill:SetWidth(0)
-  statFrame.leftFill = leftFill
+  local bg = statusBar:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints(statusBar)
+  bg:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  bg:SetVertexColor(0, 0, 0, 0)
+  statusBar.bg = bg
 
-  local rightFill = statFrame:CreateTexture(nil, "ARTWORK")
-  rightFill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-  rightFill:SetVertexColor(0.85, 0.7, 0.2, 0.75)
-  rightFill:SetPoint("TOPLEFT", leftFill, "TOPRIGHT", 0, 0)
-  rightFill:SetPoint("BOTTOMLEFT", leftFill, "BOTTOMRIGHT", 0, 0)
-  rightFill:SetWidth(0)
-  statFrame.rightFill = rightFill
+  local border = statusBar:CreateTexture(nil, "OVERLAY")
+  border:SetWidth(120)
+  border:SetHeight(18)
+  border:SetPoint("TOPLEFT", statusBar, "TOPLEFT", -12, 0)
+  border:SetTexture("Interface\\CharacterFrame\\UI-CharacterFrame-GroupIndicator")
+  border:SetTexCoord(0.0234375, 0.6875, 1.0, 0.0)
+  statFrame.border = border
 
-  local label = statFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  local label = statFrame:CreateFontString(nil, "OVERLAY")
   label:SetPoint("CENTER", statFrame, "CENTER", 0, 0)
-  label:SetTextColor(0.95, 0.95, 0.95)
+  label:SetFont(STANDARD_TEXT_FONT, 8, "OUTLINE")
+  label:SetTextColor(1, 1, 1)
   label:SetJustifyH("CENTER")
   statFrame.label = label
 
@@ -628,22 +626,13 @@ function addon:UpdatePlayerStatFrame(force)
   end
 
   local dodgeChance = GetDodgeChance and GetDodgeChance() or nil
-  local critChance = GetCritChance and GetCritChance() or nil
 
-  if not dodgeChance and not critChance then
+  if not dodgeChance then
     statFrame:Hide()
     return
   end
 
-  local frameWidth = statFrame:GetWidth() or 0
-  local innerWidth = math.max(frameWidth - 2, 0)
-  local halfWidth = innerWidth / 2
-  local dodgeWidth = math.floor(halfWidth * math.min(math.max(dodgeChance or 0, 0), 100) / 100)
-  local critWidth = math.floor(halfWidth * math.min(math.max(critChance or 0, 0), 100) / 100)
-
-  statFrame.leftFill:SetWidth(dodgeWidth)
-  statFrame.rightFill:SetWidth(critWidth)
-  statFrame.label:SetText("Dodge " .. (formatPlayerStatPct(dodgeChance) or "--") .. "   Crit " .. (formatPlayerStatPct(critChance) or "--"))
+  statFrame.label:SetText("Dodge Chance " .. (formatPlayerStatPct(dodgeChance) or "--"))
   statFrame:Show()
 end
 
@@ -2206,7 +2195,7 @@ end
 function addon:TryPreferredBuilder()
   if RogueAutoDB.core.softDefensives.ghostlyStrike and self:HasSpell("Ghostly Strike") then
     local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
-    if self:GetComboPoints() == 0 and (not active or remaining < 2) and self:TryCast("Ghostly Strike") then
+    if self:GetComboPoints() < 5 and (not active or remaining < 2) and self:TryCast("Ghostly Strike") then
       return true
     end
   end
