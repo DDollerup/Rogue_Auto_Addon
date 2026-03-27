@@ -169,11 +169,21 @@ addon.targetDebuffTextures = {
   ["Rupture"] = "ability_rogue_rupture",
 }
 
+addon.selfOwnedTargetDebuffs = {
+  ["Rupture"] = true,
+  ["Expose Armor"] = true,
+  ["Shadow of Death"] = true,
+}
+
 addon.builderModes = {
   sinister = "Sinister Strike",
   hemo = "Hemorrhage",
   backstab = "Backstab",
   noxious = "Noxious Assault",
+}
+
+addon.pickPocketTargetWhitelist = {
+  ["Black Ooze"] = true,
 }
 
 local frame = CreateFrame("Frame", "RogueAutoFrame", UIParent)
@@ -1067,6 +1077,10 @@ function addon:OnSpellPeriodicDamage(message)
   end
 
   local _, _, spellName = string.find(message, "from your (.-)%.?$")
+  if not spellName then
+    return
+  end
+
   self:RecordDamageEvent("periodic", spellName, self:ExtractSpellSchool(message), amount)
 end
 
@@ -1678,7 +1692,11 @@ function addon:CanAttemptPickPocket()
     return false
   end
 
-  if UnitCreatureType("target") ~= "Humanoid" then
+  local targetName = UnitName("target")
+  local creatureType = UnitCreatureType("target")
+  local isWhitelisted = targetName and self.pickPocketTargetWhitelist and self.pickPocketTargetWhitelist[targetName]
+
+  if creatureType ~= "Humanoid" and not isWhitelisted then
     return false
   end
 
@@ -1833,6 +1851,21 @@ function addon:IsTargetDebuffActive(name)
     return false, 0
   end
 
+  local trackedRemaining = self:GetTrackedDebuffRemaining(name)
+  if self.selfOwnedTargetDebuffs and self.selfOwnedTargetDebuffs[name] then
+    if trackedRemaining > 0 then
+      return true, trackedRemaining
+    end
+
+    local pendingDuration = self:ConsumePendingTargetDebuffDuration(name)
+    if pendingDuration and pendingDuration > 0 then
+      self:TrackTargetDebuff(name, pendingDuration)
+      return true, pendingDuration
+    end
+
+    return false, 0
+  end
+
   if self:FindUnitDebuffByName("target", name) then
     local remaining = self:GetTrackedDebuffRemaining(name)
     if remaining <= 0 then
@@ -1847,7 +1880,6 @@ function addon:IsTargetDebuffActive(name)
     return true, remaining
   end
 
-  local trackedRemaining = self:GetTrackedDebuffRemaining(name)
   if trackedRemaining > 0 then
     return true, trackedRemaining
   end
@@ -1995,9 +2027,9 @@ function addon:TryCastWithComboTracking(name, comboPoints)
     if name == "Rupture" then
       self:QueuePendingTargetDebuff(name, self:GetComboDebuffDuration(name, comboPoints))
     elseif name == "Expose Armor" then
-      self:QueuePendingTargetDebuff(name, 30)
+      self:TrackTargetDebuff(name, 30)
     elseif name == "Shadow of Death" then
-      self:QueuePendingTargetDebuff(name, 12)
+      self:TrackTargetDebuff(name, 12)
     end
     return true
   end
