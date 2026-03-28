@@ -5,18 +5,6 @@ local function consumeBuilderAttempt(self)
   return true
 end
 
-local function runDirectDamageDealer(self, profile)
-  if self:ShouldInvestInSliceAndDice(profile) and self:TryMaintainBuff("Slice and Dice") then
-    return true
-  end
-
-  if self:TryDirectFinisher(5) then
-    return true
-  end
-
-  return self:TryPreferredBuilder()
-end
-
 function addon:PrepareAction(needsTarget)
   self:InitDB()
   self:RefreshKnownSpells()
@@ -50,145 +38,14 @@ function addon:RunDamagePreamble(mode)
     return true
   end
 
-  if self:ShouldPreferExecuteFinisher() then
-    if self:TryDirectFinisher(1) then
+  if self:ShouldPreferExecuteFinisher(mode) then
+    if self:TryExecuteFinisher(mode) then
       return true
     end
     return consumeBuilderAttempt(self)
   end
 
   return false
-end
-
-function addon:TryRotationDebuffStep(name, comboThreshold, guarantee)
-  if self:TryMaintainTargetDebuff(name, comboThreshold) then
-    return true
-  end
-
-  if guarantee and self:ShouldForceDebuffBeforeBuff(name, comboThreshold) then
-    return consumeBuilderAttempt(self)
-  end
-
-  return false
-end
-
-function addon:TryRotationStep(step)
-  if step.type == "buff" then
-    return self:TryMaintainBuff(step.name)
-  end
-
-  if step.type == "debuff" then
-    return self:TryRotationDebuffStep(step.name, step.comboThreshold, step.guarantee)
-  end
-
-  if step.type == "finisher" then
-    return self:TryDirectFinisher(step.comboThreshold)
-  end
-
-  return false
-end
-
-function addon:RunMaintenancePlan(plan)
-  for _, step in ipairs(plan) do
-    if self:TryRotationStep(step) then
-      return true
-    end
-  end
-
-  return false
-end
-
-function addon:GetBleedMaintenancePlan()
-  local settings = self:GetBleedSettings()
-  local debuffMinCP = settings.primaryDebuffMinCP or 3
-  local ruptureStep = {
-    type = "debuff",
-    name = "Rupture",
-    comboThreshold = debuffMinCP,
-    guarantee = not settings.sliceAndDiceFirst and settings.guaranteePrimaryDebuff,
-  }
-  local shadowStep = {
-    type = "debuff",
-    name = "Shadow of Death",
-    comboThreshold = 5,
-    guarantee = false,
-  }
-  local buffSteps = {
-    { type = "buff", name = "Slice and Dice" },
-    { type = "buff", name = "Envenom" },
-  }
-
-  if settings.sliceAndDiceFirst then
-    return {
-      buffSteps[1],
-      buffSteps[2],
-      ruptureStep,
-      shadowStep,
-    }
-  end
-
-  return {
-    ruptureStep,
-    shadowStep,
-    buffSteps[1],
-    buffSteps[2],
-  }
-end
-
-function addon:RunDirectGuaranteeStep(profile)
-  local settings = self:GetDirectSettings()
-  if settings.sliceAndDiceFirst or not settings.guaranteePrimaryDebuff then
-    return false
-  end
-
-  if not self:ShouldInvestInPrimaryDebuff("direct", profile) then
-    return false
-  end
-
-  return self:TryRotationDebuffStep("Expose Armor", settings.primaryDebuffMinCP or 3, true)
-end
-
-function addon:GetDirectMaintenancePlan()
-  local settings = self:GetDirectSettings()
-  local debuffMinCP = settings.primaryDebuffMinCP or 3
-  local exposeStep = {
-    type = "debuff",
-    name = "Expose Armor",
-    comboThreshold = debuffMinCP,
-    guarantee = not settings.sliceAndDiceFirst and settings.guaranteePrimaryDebuff,
-  }
-  local shadowStep = {
-    type = "debuff",
-    name = "Shadow of Death",
-    comboThreshold = 5,
-    guarantee = false,
-  }
-  local buffSteps = {
-    { type = "buff", name = "Slice and Dice" },
-    { type = "buff", name = "Envenom" },
-  }
-  local finisherStep = {
-    type = "finisher",
-    comboThreshold = 5,
-  }
-
-  if settings.sliceAndDiceFirst then
-    return {
-      buffSteps[1],
-      exposeStep,
-      buffSteps[2],
-      finisherStep,
-      shadowStep,
-    }
-  end
-
-  return {
-    exposeStep,
-    buffSteps[1],
-    buffSteps[2],
-    finisherStep,
-    shadowStep,
-  }
 end
 
 function addon:Bleed()
@@ -196,21 +53,11 @@ function addon:Bleed()
     return
   end
 
-  local profile = self:GetFightProfile()
-
   if self:RunDamagePreamble("bleed") then
     return
   end
 
-  if self:ShouldSwitchToDirectDamageDealer("bleed") and runDirectDamageDealer(self, profile) then
-    return
-  end
-
-  if self:ShouldForceImmediateDamage(profile) and runDirectDamageDealer(self, profile) then
-    return
-  end
-
-  if self:ShouldInvestInPrimaryDebuff("bleed", profile) and self:RunMaintenancePlan(self:GetBleedMaintenancePlan()) then
+  if self:TryHeuristicFinisher("bleed") then
     return
   end
 
@@ -222,25 +69,11 @@ function addon:Direct()
     return
   end
 
-  local profile = self:GetFightProfile()
-
   if self:RunDamagePreamble("direct") then
     return
   end
 
-  if self:RunDirectGuaranteeStep(profile) then
-    return
-  end
-
-  if self:ShouldSwitchToDirectDamageDealer("direct") and runDirectDamageDealer(self, profile) then
-    return
-  end
-
-  if self:ShouldForceImmediateDamage(profile) and runDirectDamageDealer(self, profile) then
-    return
-  end
-
-  if self:ShouldInvestInPrimaryDebuff("direct", profile) and self:RunMaintenancePlan(self:GetDirectMaintenancePlan()) then
+  if self:TryHeuristicFinisher("direct") then
     return
   end
 
@@ -271,11 +104,11 @@ function addon:Interrupt()
     return
   end
 
-  if self:HasSpell("Kidney Shot") and self:CanSpendComboPoints(RogueAutoDB.interrupt.kidneyMinCP) and self:TryCast("Kidney Shot") then
+  if self:TryCast("Gouge") then
     return
   end
 
-  if self:TryCast("Gouge") then
+  if self:TryHeuristicFinisher("interrupt") then
     return
   end
 

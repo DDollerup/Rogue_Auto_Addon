@@ -358,15 +358,17 @@ local function createOptionButtonsControl(parent, settingId, y)
   for index, option in ipairs(definition.options or {}) do
     local row = math.floor((index - 1) / 3)
     local column = math.mod(index - 1, 3)
+    local optionKey = option.key
+    local optionLabel = option.label
 
     local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
     button:SetWidth(buttonWidth)
     button:SetHeight(22)
     button:SetPoint("TOPLEFT", control, "TOPLEFT", column * buttonSpacing, -(20 + (row * 28)))
-    button:SetText(option.label)
-    button.key = option.key
+    button:SetText(optionLabel)
+    button.key = optionKey
     button:SetScript("OnClick", function()
-      addon:SetSetting(settingId, option.key)
+      addon:SetSetting(settingId, optionKey)
       addon:RefreshConfig()
     end)
     table.insert(optionButtonGroups[settingId], button)
@@ -412,15 +414,17 @@ local function createBuilderControl(parent, y)
   for index, option in ipairs(addon.builderOptions) do
     local row = math.floor((index - 1) / 3)
     local column = math.mod(index - 1, 3)
+    local optionKey = option.key
+    local optionLabel = option.label
 
     local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
     button:SetWidth(buttonWidth)
     button:SetHeight(22)
     button:SetPoint("TOPLEFT", control, "TOPLEFT", column * buttonSpacing, -(row * 28))
-    button:SetText(option.label)
-    button.key = option.key
+    button:SetText(optionLabel)
+    button.key = optionKey
     button:SetScript("OnClick", function()
-      addon:SetSetting("builderMode", option.key)
+      addon:SetSetting("builderMode", optionKey)
       addon:RefreshConfig()
     end)
     table.insert(builderButtons, button)

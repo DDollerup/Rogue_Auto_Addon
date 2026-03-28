@@ -42,15 +42,11 @@ addon.defaults = {
     bleed = {
       sliceAndDiceFirst = true,
       guaranteePrimaryDebuff = true,
-      primaryDebuffMinCP = 3,
     },
     direct = {
       sliceAndDiceFirst = false,
       guaranteePrimaryDebuff = true,
-      primaryDebuffMinCP = 3,
-      finisher = "eviscerate",
     },
-    executeHealthPct = 20,
     softDefensives = {
       feint = true,
       ghostlyStrike = true,
@@ -62,7 +58,6 @@ addon.defaults = {
     vanishPct = 20,
   },
   interrupt = {
-    kidneyMinCP = 1,
     useBlind = false,
   },
   minimap = {
@@ -70,6 +65,10 @@ addon.defaults = {
   },
   notifications = {
     highlightDuration = 8,
+  },
+  learning = {
+    normalMobs = {},
+    eliteMobs = {},
   },
   debug = false,
 }
@@ -95,6 +94,8 @@ addon.state = {
   warnedMissingAttackSlot = false,
   targetSerial = 0,
   currentTargetKey = nil,
+  learnedTargetKey = nil,
+  learningFight = nil,
   combatSession = nil,
   pickPocketLootSession = nil,
   activeNotices = {},
@@ -490,6 +491,7 @@ function addon:MigrateSettings()
   core.bleed = mergeDefaults(core.bleed, deepCopy(self.defaults.core.bleed))
   core.direct = mergeDefaults(core.direct, deepCopy(self.defaults.core.direct))
   RogueAutoDB.notifications = mergeDefaults(RogueAutoDB.notifications, deepCopy(self.defaults.notifications))
+  RogueAutoDB.learning = mergeDefaults(RogueAutoDB.learning, deepCopy(self.defaults.learning))
 
   if core.bleedSliceAndDiceFirst ~= nil then
     core.bleed.sliceAndDiceFirst = core.bleedSliceAndDiceFirst
@@ -510,36 +512,6 @@ function addon:MigrateSettings()
     core.direct.guaranteePrimaryDebuff = core.guaranteeDirectDebuff
     core.guaranteeDirectDebuff = nil
   end
-end
-
-function addon:GetConfiguredDirectFinisherKey()
-  if not RogueAutoDB or not RogueAutoDB.core or not RogueAutoDB.core.direct then
-    return self.defaults.core.direct.finisher
-  end
-
-  return RogueAutoDB.core.direct.finisher or self.defaults.core.direct.finisher
-end
-
-function addon:GetConfiguredDirectFinisherSpell()
-  local finisherKey = self:GetConfiguredDirectFinisherKey()
-
-  if finisherKey == "envenom" and self:HasSpell("Envenom") then
-    return "Envenom"
-  end
-
-  if finisherKey == "eviscerate" and self:HasSpell("Eviscerate") then
-    return "Eviscerate"
-  end
-
-  if self:HasSpell("Eviscerate") then
-    return "Eviscerate"
-  end
-
-  if self:HasSpell("Envenom") then
-    return "Envenom"
-  end
-
-  return nil
 end
 
 function addon:IsTargetDebuffPresent(name)
@@ -1329,20 +1301,401 @@ function addon:GetTargetHealthPct()
   return (UnitHealth("target") / maxHealth) * 100
 end
 
-function addon:GetFightProfile()
+function addon:IsDurableClassification(classification)
+  return classification and classification ~= "normal"
+end
+
+function addon:GetTargetClassification()
+  return UnitClassification and UnitClassification("target") or "normal"
+end
+
+function addon:GetLegacyFightProfile()
   if not UnitExists("target") or UnitIsDead("target") then
     return "normal"
   end
 
-  local classification = UnitClassification and UnitClassification("target") or "normal"
-  if classification and classification ~= "normal" then
+  local classification = self:GetTargetClassification()
+  if self:IsDurableClassification(classification) then
     return "durable"
   end
 
-  if self:GetTargetHealthPct() <= math.max(RogueAutoDB.core.executeHealthPct, 60) then
+  if self:GetTargetHealthPct() <= 60 then
     return "trash_short"
   end
 
+  return "normal"
+end
+
+function addon:GetMobLearningBucket(classification)
+  if not RogueAutoDB or not RogueAutoDB.learning then
+    return nil
+  end
+
+  if self:IsDurableClassification(classification) then
+    return RogueAutoDB.learning.eliteMobs
+  end
+
+  return RogueAutoDB.learning.normalMobs
+end
+
+function addon:NormalizeMobLearningKey(name)
+  if not name then
+    return nil
+  end
+
+  local normalized = trim(string.lower(name))
+  if normalized == "" then
+    return nil
+  end
+
+  return normalized
+end
+
+function addon:IsValidLearningObservation(maxHealth, level)
+  if not maxHealth or maxHealth <= 1 then
+    return false
+  end
+
+  if level and level >= 10 and maxHealth <= (level * 2) then
+    return false
+  end
+
+  return true
+end
+
+function addon:IsUsableLearnedHealth(avgMaxHealth)
+  return avgMaxHealth and avgMaxHealth >= 50
+end
+
+function addon:IsUsableLearnedDuration(avgFightDuration)
+  return avgFightDuration and avgFightDuration >= 1.5
+end
+
+function addon:GetMobLearningEntry(classification, learningKey)
+  local bucket = self:GetMobLearningBucket(classification)
+  if not bucket or not learningKey then
+    return nil
+  end
+
+  return bucket[learningKey]
+end
+
+function addon:EnsureMobLearningEntry(classification, learningKey, name, creatureType, level)
+  local bucket = self:GetMobLearningBucket(classification)
+  if not bucket or not learningKey then
+    return nil
+  end
+
+  local entry = bucket[learningKey]
+  if not entry then
+    entry = {
+      name = name,
+      creatureType = creatureType or "unknown",
+      samples = 0,
+      durationSamples = 0,
+      avgMaxHealth = 0,
+      avgFightDuration = 0,
+      minFightDuration = 0,
+      maxFightDuration = 0,
+      minLevel = level,
+      maxLevel = level,
+      avgLevel = level,
+      lastSeen = 0,
+    }
+    bucket[learningKey] = entry
+  end
+
+  return entry
+end
+
+function addon:UpdateMobLearningHealth(entry, maxHealth, level, name, creatureType)
+  if not entry or not self:IsValidLearningObservation(maxHealth, level) then
+    return
+  end
+
+  local oldSamples = entry.samples or 0
+  local newSamples = oldSamples + 1
+  entry.name = name or entry.name
+  entry.creatureType = creatureType or entry.creatureType
+  entry.samples = newSamples
+  entry.avgMaxHealth = ((entry.avgMaxHealth or 0) * oldSamples + maxHealth) / newSamples
+
+  if level and level > 0 then
+    local oldAvgLevel = entry.avgLevel or level
+    entry.avgLevel = (oldAvgLevel * oldSamples + level) / newSamples
+    if not entry.minLevel or level < entry.minLevel then
+      entry.minLevel = level
+    end
+    if not entry.maxLevel or level > entry.maxLevel then
+      entry.maxLevel = level
+    end
+  end
+
+  entry.lastSeen = time and time() or 0
+end
+
+function addon:UpdateMobLearningFightDuration(entry, duration)
+  if not entry or not duration or duration < 1.5 or duration > 120 then
+    return
+  end
+
+  local durationSamples = entry.durationSamples or 0
+  local newDurationSamples = durationSamples + 1
+  entry.durationSamples = newDurationSamples
+  entry.avgFightDuration = ((entry.avgFightDuration or 0) * durationSamples + duration) / newDurationSamples
+
+  if not entry.minFightDuration or entry.minFightDuration == 0 or duration < entry.minFightDuration then
+    entry.minFightDuration = duration
+  end
+
+  if not entry.maxFightDuration or duration > entry.maxFightDuration then
+    entry.maxFightDuration = duration
+  end
+
+  entry.lastSeen = time and time() or 0
+end
+
+function addon:IsHostileTarget()
+  if not UnitExists("target") or UnitIsDead("target") then
+    return false
+  end
+
+  if UnitCanAttack then
+    return UnitCanAttack("player", "target") == 1
+  end
+
+  return true
+end
+
+function addon:ObserveCurrentTargetLearning()
+  if not self:IsHostileTarget() then
+    return nil
+  end
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey or self.state.learnedTargetKey == targetKey then
+    return nil
+  end
+
+  local maxHealth = UnitHealthMax("target")
+  local level = UnitLevel("target") or 0
+  if not self:IsValidLearningObservation(maxHealth, level) then
+    return nil
+  end
+
+  local name = UnitName("target")
+  local learningKey = self:NormalizeMobLearningKey(name)
+  if not learningKey then
+    return nil
+  end
+
+  local classification = self:GetTargetClassification()
+  local creatureType = UnitCreatureType("target") or "unknown"
+  local entry = self:EnsureMobLearningEntry(classification, learningKey, name, creatureType, level)
+  self:UpdateMobLearningHealth(entry, maxHealth, level, name, creatureType)
+  self.state.learnedTargetKey = targetKey
+  return entry
+end
+
+function addon:GetMobLearningProfile()
+  if not self:IsHostileTarget() then
+    return nil
+  end
+
+  self:ObserveCurrentTargetLearning()
+
+  local name = UnitName("target")
+  local learningKey = self:NormalizeMobLearningKey(name)
+  if not learningKey then
+    return nil
+  end
+
+  local bucket = self:GetMobLearningBucket(self:GetTargetClassification())
+  if not bucket then
+    return nil
+  end
+
+  return bucket[learningKey]
+end
+
+function addon:GetExpectedTargetMaxHealth(profile)
+  local liveMaxHealth = UnitHealthMax("target") or 0
+  local learnedMaxHealth = profile and profile.avgMaxHealth or 0
+  if not self:IsUsableLearnedHealth(learnedMaxHealth) then
+    learnedMaxHealth = 0
+  end
+
+  if liveMaxHealth > 0 and learnedMaxHealth > 0 then
+    return math.floor(((liveMaxHealth * 3) + learnedMaxHealth) / 4 + 0.5)
+  end
+
+  if liveMaxHealth > 0 then
+    return liveMaxHealth
+  end
+
+  if learnedMaxHealth > 0 then
+    return learnedMaxHealth
+  end
+
+  return 0
+end
+
+function addon:GetMobLearningHealthBaseline(classification)
+  local bucket = self:GetMobLearningBucket(classification)
+  if not bucket then
+    return 0
+  end
+
+  local totalWeight = 0
+  local totalHealth = 0
+
+  for _, entry in pairs(bucket) do
+    if entry and self:IsUsableLearnedHealth(entry.avgMaxHealth) then
+      local weight = math.min(entry.samples or 1, 10)
+      totalWeight = totalWeight + weight
+      totalHealth = totalHealth + (entry.avgMaxHealth * weight)
+    end
+  end
+
+  if totalWeight <= 0 then
+    return 0
+  end
+
+  return totalHealth / totalWeight
+end
+
+function addon:GetMobLearningDurationBaseline(classification)
+  local bucket = self:GetMobLearningBucket(classification)
+  if not bucket then
+    return self:IsDurableClassification(classification) and 16 or 8
+  end
+
+  local totalWeight = 0
+  local totalDuration = 0
+
+  for _, entry in pairs(bucket) do
+    if entry and self:IsUsableLearnedDuration(entry.avgFightDuration) then
+      local weight = math.min(entry.durationSamples or entry.samples or 1, 10)
+      totalWeight = totalWeight + weight
+      totalDuration = totalDuration + (entry.avgFightDuration * weight)
+    end
+  end
+
+  if totalWeight <= 0 then
+    return self:IsDurableClassification(classification) and 16 or 8
+  end
+
+  return totalDuration / totalWeight
+end
+
+function addon:GetExpectedFightDuration(profile, expectedMaxHealth, classification)
+  local baselineDuration = self:GetMobLearningDurationBaseline(classification)
+  local baselineHealth = self:GetMobLearningHealthBaseline(classification)
+  local estimatedDuration = baselineDuration
+
+  if baselineHealth and baselineHealth > 0 and expectedMaxHealth and expectedMaxHealth > 0 then
+    estimatedDuration = baselineDuration * (expectedMaxHealth / baselineHealth)
+  end
+
+  local learnedDuration = profile and profile.avgFightDuration or 0
+  if not self:IsUsableLearnedDuration(learnedDuration) then
+    learnedDuration = 0
+  end
+
+  if learnedDuration > 0 then
+    if estimatedDuration > 0 then
+      return (learnedDuration * 0.7) + (estimatedDuration * 0.3)
+    end
+    return learnedDuration
+  end
+
+  return estimatedDuration
+end
+
+function addon:GetTargetDurabilityScore()
+  if not self:IsHostileTarget() then
+    return nil
+  end
+
+  local profile = self:GetMobLearningProfile()
+  local classification = self:GetTargetClassification()
+  local expectedMaxHealth = self:GetExpectedTargetMaxHealth(profile)
+  if expectedMaxHealth <= 0 then
+    return nil, profile, expectedMaxHealth, 0
+  end
+
+  local baselineHealth = self:GetMobLearningHealthBaseline(classification)
+  local score = expectedMaxHealth
+  if baselineHealth and baselineHealth > 0 then
+    score = expectedMaxHealth / baselineHealth
+  else
+    local playerMaxHealth = UnitHealthMax("player") or 0
+    if playerMaxHealth > 0 then
+      score = expectedMaxHealth / playerMaxHealth
+    else
+      score = expectedMaxHealth / 1000
+    end
+  end
+
+  if self:IsDurableClassification(classification) then
+    score = score + 0.35
+  end
+
+  if profile and (profile.samples or 0) >= 3 then
+    score = score + 0.08
+  end
+
+  local targetHealthPct = self:GetTargetHealthPct()
+  if targetHealthPct <= 30 then
+    score = score - 0.3
+  elseif targetHealthPct <= 50 then
+    score = score - 0.12
+  end
+
+  if score < 0 then
+    score = 0
+  end
+
+  return score, profile, expectedMaxHealth, baselineHealth
+end
+
+function addon:GetDurabilityTier(score, classification)
+  if not score then
+    local legacy = self:GetLegacyFightProfile()
+    if legacy == "trash_short" then
+      return "low"
+    elseif legacy == "durable" then
+      return "high"
+    end
+    return "medium"
+  end
+
+  if self:IsDurableClassification(classification) then
+    if score >= 1.15 then
+      return "high"
+    end
+    return "medium"
+  end
+
+  if score < 0.95 then
+    return "low"
+  end
+
+  if score < 1.12 then
+    return "medium"
+  end
+
+  return "high"
+end
+
+function addon:GetFightProfile()
+  local score, _, _ = self:GetTargetDurabilityScore()
+  local tier = self:GetDurabilityTier(score, self:GetTargetClassification())
+  if tier == "low" then
+    return "trash_short"
+  elseif tier == "high" then
+    return "durable"
+  end
   return "normal"
 end
 
@@ -1359,6 +1712,418 @@ end
 function addon:ShouldForceImmediateDamage(profile)
   profile = profile or self:GetFightProfile()
   return profile == "trash_short"
+end
+
+function addon:HasReliablePoisonStateOnTarget()
+  if not UnitExists("target") then
+    return false
+  end
+
+  for index = 1, 16 do
+    local texture = UnitDebuff("target", index)
+    if not texture then
+      break
+    end
+
+    local debuffName = self:GetDebuffTooltipName("target", index)
+    if debuffName and string.find(string.lower(debuffName), "poison") then
+      return true
+    end
+  end
+
+  return false
+end
+
+function addon:GetPrimaryDebuffName(mode)
+  if mode == "bleed" then
+    return "Rupture"
+  end
+
+  if mode == "direct" then
+    return "Expose Armor"
+  end
+
+  return nil
+end
+
+function addon:GetSliceAndDiceComboThreshold(context)
+  if not context or context.durabilityTier == "low" then
+    return 99
+  end
+
+  if context.durabilityTier == "medium" then
+    if context.remainingFightDuration < 10 then
+      return 99
+    end
+    if context.comboPoints >= 3 then
+      return 99
+    end
+    return 2
+  end
+
+  if context.remainingFightDuration < 12 then
+    return 99
+  end
+
+  if context.comboPoints >= 4 and context.remainingFightDuration < 18 then
+    return 99
+  end
+
+  return 2
+end
+
+function addon:GetPrimaryDebuffComboThreshold(mode, context)
+  if not context then
+    return 99
+  end
+
+  if mode == "bleed" then
+    if context.durabilityTier == "medium" and context.remainingFightDuration >= 3 then
+      return 2
+    elseif context.durabilityTier == "high" and context.remainingFightDuration >= 5 then
+      return 3
+    end
+    return 99
+  end
+
+  if mode == "direct" then
+    if context.durabilityTier == "high" and context.remainingFightDuration >= 5 then
+      return 3
+    elseif context.durabilityTier == "medium" and context.targetHealthPct > 45 and context.remainingFightDuration >= 4.5 then
+      return 3
+    end
+  end
+
+  return 99
+end
+
+function addon:GetFinisherComboThreshold(context)
+  if not context then
+    return 5
+  end
+
+  if context.durabilityTier == "low" then
+    if context.targetHealthPct <= 45 then
+      return 2
+    end
+    return 3
+  end
+
+  if context.durabilityTier == "medium" then
+    if context.targetHealthPct <= 55 or context.remainingFightDuration < 8 then
+      return 3
+    end
+    return 4
+  end
+
+  if context.targetHealthPct <= 40 or context.remainingFightDuration < 10 then
+    return 4
+  end
+
+  return 5
+end
+
+function addon:ShouldAttemptPrimaryDebuff(mode, context)
+  if not context then
+    return false
+  end
+
+  if mode == "bleed" then
+    return context.durabilityTier ~= "low" and context.remainingFightDuration >= 3
+  end
+
+  if mode == "direct" then
+    return (context.durabilityTier == "high" and context.remainingFightDuration >= 5)
+      or (context.durabilityTier == "medium" and context.targetHealthPct > 45 and context.remainingFightDuration >= 4.5)
+  end
+
+  return false
+end
+
+function addon:GetBestDirectFinisherSpell(context)
+  if self:HasSpell("Envenom")
+    and context
+    and context.durabilityTier ~= "low"
+    and context.comboPoints >= 4
+    and context.remainingFightDuration >= 5
+    and context.poisonReliable then
+    return "Envenom"
+  end
+
+  if self:HasSpell("Eviscerate") then
+    return "Eviscerate"
+  end
+
+  if self:HasSpell("Envenom") then
+    return "Envenom"
+  end
+
+  return nil
+end
+
+function addon:ShouldUseSliceAndDice(context)
+  if not context or not RogueAutoDB.core.keepSliceAndDice or context.durabilityTier == "low" then
+    return false
+  end
+
+  if context.sndThreshold >= 99 then
+    return false
+  end
+
+  if context.comboPoints < context.sndThreshold then
+    return false
+  end
+
+  if context.primarySpell
+    and self:ShouldAttemptPrimaryDebuff(context.mode, context)
+    and context.comboPoints >= context.primaryThreshold
+    and (not context.primaryActive or context.primaryRemaining < self.refreshWindow.targetDebuff) then
+    return false
+  end
+
+  if context.durabilityTier == "medium" then
+    if not context.sndActive then
+      return context.remainingFightDuration >= 15 and context.comboPoints <= 2
+    end
+
+    if context.sndRemaining >= self.refreshWindow.playerBuff then
+      return false
+    end
+
+    return context.sndRemaining < 1.5 and context.remainingFightDuration >= 11 and context.comboPoints <= 2
+  end
+
+  if not context.sndActive then
+    return context.remainingFightDuration >= 16 and context.comboPoints <= 2
+  end
+
+  if context.sndRemaining >= self.refreshWindow.playerBuff then
+    return false
+  end
+
+  if context.comboPoints >= 4 and context.remainingFightDuration < 18 then
+    return false
+  end
+
+  return context.remainingFightDuration >= 12 and context.sndRemaining < 1.5 and context.comboPoints <= 3
+end
+
+function addon:MaybeBeginLearningFight()
+  if not self:IsHostileTarget() then
+    return
+  end
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey then
+    return
+  end
+
+  local name = UnitName("target")
+  local learningKey = self:NormalizeMobLearningKey(name)
+  if not learningKey then
+    return
+  end
+
+  local classification = self:GetTargetClassification()
+  local creatureType = UnitCreatureType("target") or "unknown"
+  local level = UnitLevel("target") or 0
+
+  if self.state.learningFight and self.state.learningFight.targetKey == targetKey then
+    local fight = self.state.learningFight
+    fight.lastObservedAt = GetTime()
+    fight.lastHealthPct = self:GetTargetHealthPct()
+    fight.maxHealth = UnitHealthMax("target") or fight.maxHealth or 0
+    if level and level > 0 then
+      fight.level = level
+    end
+    if self:GetComboPoints() > (fight.maxComboPointsSeen or 0) then
+      fight.maxComboPointsSeen = self:GetComboPoints()
+    end
+    return
+  end
+
+  self.state.learningFight = {
+    targetKey = targetKey,
+    learningKey = learningKey,
+    classification = classification,
+    name = name,
+    creatureType = creatureType,
+    level = level,
+    startedAt = GetTime(),
+    lastObservedAt = GetTime(),
+    lastHealthPct = self:GetTargetHealthPct(),
+    maxHealth = UnitHealthMax("target") or 0,
+    maxComboPointsSeen = self:GetComboPoints() or 0,
+  }
+end
+
+function addon:ShouldRecordLearningFight(fight, reason)
+  if not fight or not fight.startedAt then
+    return false
+  end
+
+  local endedAt = reason == "combat_end" and GetTime() or (fight.lastObservedAt or GetTime())
+  local duration = endedAt - fight.startedAt
+  if duration < 1.5 or duration > 120 then
+    return false
+  end
+
+  if reason == "combat_end" then
+    return true
+  end
+
+  if reason == "target_change" then
+    if fight.lastHealthPct and fight.lastHealthPct <= 35 then
+      return true
+    end
+
+    if duration >= 6 then
+      return true
+    end
+
+    return (fight.maxComboPointsSeen or 0) >= 2
+  end
+
+  return true
+end
+
+function addon:FinalizeLearningFight(reason)
+  local fight = self.state.learningFight
+  self.state.learningFight = nil
+
+  if not fight or not fight.startedAt then
+    return
+  end
+
+  if not self:ShouldRecordLearningFight(fight, reason) then
+    return
+  end
+
+  local endedAt = reason == "combat_end" and GetTime() or (fight.lastObservedAt or GetTime())
+  local duration = endedAt - fight.startedAt
+  if duration < 1.5 or duration > 120 then
+    return
+  end
+
+  local entry = self:EnsureMobLearningEntry(
+    fight.classification,
+    fight.learningKey,
+    fight.name,
+    fight.creatureType,
+    fight.level
+  )
+
+  self:UpdateMobLearningFightDuration(entry, duration)
+end
+
+function addon:GetComboPointContext(mode)
+  self:MaybeBeginLearningFight()
+
+  local comboPoints = self:GetComboPoints()
+  local classification = self:GetTargetClassification()
+  local score, learningProfile, expectedMaxHealth, baselineHealth = self:GetTargetDurabilityScore()
+  local durabilityTier = self:GetDurabilityTier(score, classification)
+  local fightProfile = self:GetFightProfile()
+  local targetHealthPct = self:GetTargetHealthPct()
+  local expectedFightDuration = self:GetExpectedFightDuration(learningProfile, expectedMaxHealth, classification)
+  local remainingFightDuration = expectedFightDuration * (targetHealthPct / 100)
+  local sndActive, sndRemaining = self:FindPlayerBuff("Slice and Dice")
+  local primaryName = self:GetPrimaryDebuffName(mode)
+  local primaryActive, primaryRemaining = false, 0
+  if primaryName then
+    primaryActive, primaryRemaining = self:IsTargetDebuffActive(primaryName)
+  end
+  local shadowActive, shadowRemaining = self:IsTargetDebuffActive("Shadow of Death")
+
+  local context = {
+    mode = mode,
+    comboPoints = comboPoints,
+    classification = classification,
+    durabilityScore = score,
+    durabilityTier = durabilityTier,
+    fightProfile = fightProfile,
+    targetHealthPct = targetHealthPct,
+    learningProfile = learningProfile,
+    expectedMaxHealth = expectedMaxHealth,
+    baselineHealth = baselineHealth,
+    expectedFightDuration = expectedFightDuration,
+    remainingFightDuration = remainingFightDuration,
+    poisonReliable = self:HasReliablePoisonStateOnTarget(),
+    sndActive = sndActive,
+    sndRemaining = sndRemaining,
+    primarySpell = primaryName,
+    primaryActive = primaryActive,
+    primaryRemaining = primaryRemaining,
+    shadowActive = shadowActive,
+    shadowRemaining = shadowRemaining,
+  }
+
+  context.sndThreshold = self:GetSliceAndDiceComboThreshold(context)
+  context.primaryThreshold = self:GetPrimaryDebuffComboThreshold(mode, context)
+
+  return context
+end
+
+function addon:GetComboPointDecision(mode, context)
+  if not context or context.comboPoints <= 0 then
+    return nil
+  end
+
+  if mode == "interrupt" then
+    if self:HasSpell("Kidney Shot") and context.comboPoints >= 1 then
+      return "Kidney Shot"
+    end
+    return nil
+  end
+
+  local settings = mode == "bleed" and self:GetBleedSettings() or self:GetDirectSettings()
+  local sndNeedsRefresh = self:ShouldUseSliceAndDice(context)
+  local shouldUsePrimary = self:ShouldAttemptPrimaryDebuff(mode, context)
+  local primaryNeedsRefresh = shouldUsePrimary
+    and context.primarySpell
+    and (not context.primaryActive or context.primaryRemaining < self.refreshWindow.targetDebuff)
+  local primaryMissing = shouldUsePrimary and context.primarySpell and not context.primaryActive
+
+  if settings
+    and settings.guaranteePrimaryDebuff
+    and not settings.sliceAndDiceFirst
+    and primaryMissing
+    and context.comboPoints < context.primaryThreshold then
+    return nil
+  end
+
+  if settings and settings.sliceAndDiceFirst then
+    if sndNeedsRefresh and context.comboPoints >= context.sndThreshold then
+      return "Slice and Dice"
+    end
+    if primaryNeedsRefresh and context.comboPoints >= context.primaryThreshold then
+      return context.primarySpell
+    end
+  else
+    if primaryNeedsRefresh and context.comboPoints >= context.primaryThreshold then
+      return context.primarySpell
+    end
+    if sndNeedsRefresh and context.comboPoints >= context.sndThreshold then
+      return "Slice and Dice"
+    end
+  end
+
+  if self:HasSpell("Shadow of Death")
+    and context.durabilityTier == "high"
+    and context.remainingFightDuration >= 12
+    and context.primaryActive
+    and (not context.shadowActive or context.shadowRemaining < self.refreshWindow.targetDebuff)
+    and context.comboPoints >= 5 then
+    return "Shadow of Death"
+  end
+
+  local finisherSpell = self:GetBestDirectFinisherSpell(context)
+  local finisherThreshold = self:GetFinisherComboThreshold(context)
+  if finisherSpell and context.comboPoints >= finisherThreshold then
+    return finisherSpell
+  end
+
+  return nil
 end
 
 function addon:IsStealthed()
@@ -2479,16 +3244,26 @@ function addon:ShouldForceDebuffBeforeBuff(name, comboThreshold)
   return self:GetComboPoints() < (comboThreshold or 1)
 end
 
-function addon:ShouldPreferExecuteFinisher()
-  if not self:GetConfiguredDirectFinisherSpell() then
+function addon:ShouldPreferExecuteFinisher(mode)
+  local context = self:GetComboPointContext(mode or "direct")
+  local finisherSpell = self:GetBestDirectFinisherSpell(context)
+  if not finisherSpell then
     return false
   end
 
-  if self:GetComboPoints() <= 0 then
+  if not context or context.comboPoints <= 0 then
     return false
   end
 
-  return self:GetTargetHealthPct() <= RogueAutoDB.core.executeHealthPct
+  if context.durabilityTier == "low" then
+    return context.targetHealthPct <= 50
+  end
+
+  if context.durabilityTier == "medium" then
+    return context.targetHealthPct <= 30
+  end
+
+  return context.targetHealthPct <= 20
 end
 
 function addon:ShouldFavorImmediateDamage()
@@ -2520,17 +3295,46 @@ function addon:TryPreferredBuilder()
   return false
 end
 
-function addon:TryDirectFinisher(minComboPoints)
-  local finisherSpell = self:GetConfiguredDirectFinisherSpell()
+function addon:TryExecuteFinisher(mode)
+  local context = self:GetComboPointContext(mode or "direct")
+  local finisherSpell = self:GetBestDirectFinisherSpell(context)
   if not finisherSpell then
     return false
   end
 
-  if self:GetComboPoints() < (minComboPoints or 5) then
+  if not context or context.comboPoints <= 0 then
     return false
   end
 
   return self:TryCast(finisherSpell)
+end
+
+function addon:TryDirectFinisher(minComboPoints)
+  local context = self:GetComboPointContext("direct")
+  local finisherSpell = self:GetBestDirectFinisherSpell(context)
+  if not finisherSpell then
+    return false
+  end
+
+  if not context or context.comboPoints < (minComboPoints or 5) then
+    return false
+  end
+
+  return self:TryCast(finisherSpell)
+end
+
+function addon:TryHeuristicFinisher(mode)
+  local context = self:GetComboPointContext(mode)
+  local spellName = self:GetComboPointDecision(mode, context)
+  if not spellName then
+    return false
+  end
+
+  if spellName == "Rupture" or spellName == "Expose Armor" or spellName == "Shadow of Death" then
+    return self:TryCastWithComboTracking(spellName, context.comboPoints)
+  end
+
+  return self:TryCast(spellName)
 end
 
 function addon:GetShootSpell()
@@ -2567,9 +3371,12 @@ function addon:OnCombatStarted()
   if not self:IsCombatSessionActive() then
     self:StartCombatSession()
   end
+
+  self:MaybeBeginLearningFight()
 end
 
 function addon:OnCombatEnded()
+  self:FinalizeLearningFight("combat_end")
   self:FinishCombatSession()
 end
 
@@ -2667,7 +3474,9 @@ function addon:OnTargetChanged()
   self:PruneTrackedDebuffs()
   self:PrunePendingTargetDebuffs()
   self:PruneSuppressedTargetSpells()
+  self:FinalizeLearningFight("target_change")
   self.state.currentTargetKey = nil
+  self.state.learnedTargetKey = nil
   self.state.lastSpellAttempt = nil
   self:ClearPendingPickPocketAttempt()
 end
