@@ -30,6 +30,10 @@ function addon:RunDamagePreamble(mode)
     return true
   end
 
+  if self:TryRotationKick() then
+    return true
+  end
+
   if self:TrySoftDefensives() then
     return true
   end
@@ -49,6 +53,7 @@ function addon:RunDamagePreamble(mode)
 end
 
 function addon:Bleed()
+  self.state.activeRotationMode = "bleed"
   if not self:PrepareAction(true) then
     return
   end
@@ -65,6 +70,7 @@ function addon:Bleed()
 end
 
 function addon:Direct()
+  self.state.activeRotationMode = "direct"
   if not self:PrepareAction(true) then
     return
   end
@@ -81,6 +87,7 @@ function addon:Direct()
 end
 
 function addon:Interrupt()
+  self.state.activeRotationMode = "interrupt"
   if not self:PrepareAction(true) then
     return
   end
@@ -104,20 +111,13 @@ function addon:Interrupt()
     return
   end
 
-  if self:TryCast("Gouge") then
-    return
-  end
-
   if self:TryHeuristicFinisher("interrupt") then
     return
-  end
-
-  if self:GetSetting("useBlind") then
-    self:TryCast("Blind")
   end
 end
 
 function addon:Defensive()
+  self.state.activeRotationMode = "defensive"
   if not self:PrepareAction(false) then
     return
   end

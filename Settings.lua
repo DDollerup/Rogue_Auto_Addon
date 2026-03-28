@@ -95,7 +95,7 @@ addon.macroDefinitions = {
   {
     id = "interrupt",
     macro = "/script RogueAuto:Interrupt()",
-    description = "Interrupt: ranged interrupt tools first, then Kick, Gouge, heuristic Kidney Shot fallback, and optional Blind.",
+    description = "Interrupt: ranged interrupt tools first, then Kick, then heuristic Kidney Shot fallback.",
   },
   {
     id = "defensive",
@@ -159,7 +159,7 @@ addon.settingDefinitions = {
   },
   useBlind = {
     path = { "interrupt", "useBlind" },
-    label = "Allow Blind in interrupt button",
+    label = "Blind interrupt fallback (unused)",
   },
   evasionPct = {
     path = { "panic", "evasionPct" },
