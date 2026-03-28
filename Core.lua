@@ -9,8 +9,8 @@ addon.refreshWindow = {
 }
 addon.observedDebuffDurations = {
   ["Rupture"] = 10,
-  ["Shadow of Death"] = 8,
-  ["Expose Armor"] = 20,
+  ["Shadow of Death"] = 12,
+  ["Expose Armor"] = 30,
 }
 addon.closeRangeSpells = {
   "Kick",
@@ -81,9 +81,12 @@ addon.state = {
   firstEnergyTick = nil,
   riposteReadyUntil = 0,
   behindBlockedUntil = 0,
+  behindBlockedTargetKey = nil,
   lastUiError = nil,
+  lastSpellAttempt = nil,
   trackedDebuffs = {},
   pendingDebuffs = {},
+  suppressedTargetSpells = {},
   pickPocketedTargets = {},
   pickPocketAttempts = {},
   pendingPickPocketTarget = nil,
@@ -169,11 +172,13 @@ addon.targetDebuffTextures = {
   ["Rupture"] = "ability_rogue_rupture",
 }
 
-addon.selfOwnedTargetDebuffs = {
-  ["Rupture"] = true,
-  ["Expose Armor"] = true,
-  ["Shadow of Death"] = true,
+addon.debuffTrackingPolicy = {
+  ["Rupture"] = "strictTracked",
+  ["Expose Armor"] = "sharedPresence",
+  ["Shadow of Death"] = "strictTracked",
 }
+
+addon.targetDebuffSpellIds = {}
 
 addon.builderModes = {
   sinister = "Sinister Strike",
@@ -1324,6 +1329,38 @@ function addon:GetTargetHealthPct()
   return (UnitHealth("target") / maxHealth) * 100
 end
 
+function addon:GetFightProfile()
+  if not UnitExists("target") or UnitIsDead("target") then
+    return "normal"
+  end
+
+  local classification = UnitClassification and UnitClassification("target") or "normal"
+  if classification and classification ~= "normal" then
+    return "durable"
+  end
+
+  if self:GetTargetHealthPct() <= math.max(RogueAutoDB.core.executeHealthPct, 60) then
+    return "trash_short"
+  end
+
+  return "normal"
+end
+
+function addon:ShouldInvestInPrimaryDebuff(mode, profile)
+  profile = profile or self:GetFightProfile()
+  return profile ~= "trash_short"
+end
+
+function addon:ShouldInvestInSliceAndDice(profile)
+  profile = profile or self:GetFightProfile()
+  return profile ~= "trash_short"
+end
+
+function addon:ShouldForceImmediateDamage(profile)
+  profile = profile or self:GetFightProfile()
+  return profile == "trash_short"
+end
+
 function addon:IsStealthed()
   local icon, name, active = GetShapeshiftFormInfo(1)
   if active == 1 then
@@ -1334,12 +1371,23 @@ function addon:IsStealthed()
   return isActive
 end
 
-function addon:IsBehindBlocked()
-  return GetTime() < (self.state.behindBlockedUntil or 0)
+function addon:IsBehindBlocked(targetKey)
+  if GetTime() >= (self.state.behindBlockedUntil or 0) then
+    self.state.behindBlockedTargetKey = nil
+    return false
+  end
+
+  targetKey = targetKey or self:GetTargetKey()
+  if self.state.behindBlockedTargetKey and targetKey and self.state.behindBlockedTargetKey ~= targetKey then
+    return false
+  end
+
+  return true
 end
 
-function addon:MarkBehindBlocked()
-  self.state.behindBlockedUntil = GetTime() + 1.5
+function addon:MarkBehindBlocked(targetKey, duration)
+  self.state.behindBlockedTargetKey = targetKey or self:GetTargetKey()
+  self.state.behindBlockedUntil = GetTime() + (duration or 1.5)
 end
 
 function addon:IsSpellInRangeSafe(name, unit)
@@ -1482,7 +1530,12 @@ function addon:IsDaggerEquipped()
   end
 
   local _, _, _, _, _, _, subType = GetItemInfo(mainHand)
-  return subType == "Daggers"
+  if not subType then
+    return false
+  end
+
+  local normalizedSubType = string.lower(subType)
+  return string.find(normalizedSubType, "dagger") ~= nil
 end
 
 function addon:CanAttemptBehindAction()
@@ -1566,6 +1619,30 @@ function addon:BuildTargetFingerprint()
   return string.format("%s:%s:%s:%s:%s", name, tostring(level), tostring(maxHealth), tostring(classification), tostring(creatureType))
 end
 
+function addon:GetStableUnitIdentity(unit)
+  if not unit or not UnitExists(unit) then
+    return nil
+  end
+
+  if UnitGUID then
+    local guid = UnitGUID(unit)
+    if type(guid) == "string" and guid ~= "" then
+      return guid
+    end
+  end
+
+  local existsValue = UnitExists(unit)
+  if type(existsValue) == "string" and existsValue ~= "" and existsValue ~= "1" then
+    return existsValue
+  end
+
+  if type(existsValue) == "number" and existsValue ~= 1 then
+    return tostring(existsValue)
+  end
+
+  return nil
+end
+
 function addon:EnsureCurrentTargetKey()
   if not UnitExists("target") then
     self.state.currentTargetKey = nil
@@ -1573,6 +1650,12 @@ function addon:EnsureCurrentTargetKey()
   end
 
   if self.state.currentTargetKey then
+    return self.state.currentTargetKey
+  end
+
+  local stableIdentity = self:GetStableUnitIdentity("target")
+  if stableIdentity then
+    self.state.currentTargetKey = stableIdentity
     return self.state.currentTargetKey
   end
 
@@ -1602,6 +1685,49 @@ function addon:PrunePickPocketAttempts()
       self.state.pickPocketAttempts[key] = nil
     end
   end
+end
+
+function addon:PruneSuppressedTargetSpells()
+  local now = GetTime()
+
+  for targetKey, spells in pairs(self.state.suppressedTargetSpells) do
+    local hasActiveSuppression = false
+
+    for spellName, expiresAt in pairs(spells) do
+      if not expiresAt or expiresAt <= now then
+        spells[spellName] = nil
+      else
+        hasActiveSuppression = true
+      end
+    end
+
+    if not hasActiveSuppression then
+      self.state.suppressedTargetSpells[targetKey] = nil
+    end
+  end
+end
+
+function addon:SuppressTargetSpell(spellName, duration, targetKey)
+  targetKey = targetKey or self:GetTargetKey()
+  if not targetKey or not spellName then
+    return
+  end
+
+  self.state.suppressedTargetSpells[targetKey] = self.state.suppressedTargetSpells[targetKey] or {}
+  self.state.suppressedTargetSpells[targetKey][spellName] = GetTime() + (duration or 3)
+end
+
+function addon:IsTargetSpellSuppressed(spellName, targetKey)
+  self:PruneSuppressedTargetSpells()
+
+  targetKey = targetKey or self:GetTargetKey()
+  if not targetKey or not spellName then
+    return false
+  end
+
+  local spells = self.state.suppressedTargetSpells[targetKey]
+  local expiresAt = spells and spells[spellName]
+  return expiresAt and expiresAt > GetTime()
 end
 
 function addon:MarkTargetPickPocketed(targetKey)
@@ -1692,11 +1818,16 @@ function addon:CanAttemptPickPocket()
     return false
   end
 
+  if self:IsTargetSpellSuppressed("Pick Pocket") then
+    return false
+  end
+
   local targetName = UnitName("target")
   local creatureType = UnitCreatureType("target")
   local isWhitelisted = targetName and self.pickPocketTargetWhitelist and self.pickPocketTargetWhitelist[targetName]
+  local isCreatureTypeWhitelisted = creatureType == "Undead"
 
-  if creatureType ~= "Humanoid" and not isWhitelisted then
+  if creatureType ~= "Humanoid" and not isWhitelisted and not isCreatureTypeWhitelisted then
     return false
   end
 
@@ -1711,21 +1842,50 @@ function addon:CanAttemptPickPocket()
   return self:IsPickPocketRange()
 end
 
-function addon:TrackTargetDebuff(name, duration)
+function addon:GetDebuffTrackingPolicy(name)
+  return self.debuffTrackingPolicy[name] or "sharedPresence"
+end
+
+function addon:GetTrackedDebuffRecord(name, targetKey)
+  targetKey = targetKey or self:GetTargetKey()
+  if not targetKey then
+    return nil
+  end
+
+  local targetDebuffs = self.state.trackedDebuffs[targetKey]
+  return targetDebuffs and targetDebuffs[name] or nil
+end
+
+function addon:GetPendingDebuffRecord(name, targetKey)
+  targetKey = targetKey or self:GetTargetKey()
+  if not targetKey then
+    return nil
+  end
+
+  local targetDebuffs = self.state.pendingDebuffs[targetKey]
+  return targetDebuffs and targetDebuffs[name] or nil
+end
+
+function addon:TrackTargetDebuff(name, duration, targetKey, metadata)
   self:PruneTrackedDebuffs()
 
-  local targetKey = self:GetTargetKey()
-  if not targetKey or not duration then
+  targetKey = targetKey or self:GetTargetKey()
+  if not targetKey or not duration or duration <= 0 then
     return
   end
 
   self.state.trackedDebuffs[targetKey] = self.state.trackedDebuffs[targetKey] or {}
-  self.state.trackedDebuffs[targetKey][name] = GetTime() + duration
+  self.state.trackedDebuffs[targetKey][name] = {
+    expiresAt = GetTime() + duration,
+    confirmedAt = GetTime(),
+    source = metadata and metadata.source or "local",
+    spellId = metadata and metadata.spellId or nil,
+  }
 end
 
-function addon:QueuePendingTargetDebuff(name, duration)
-  local targetKey = self:GetTargetKey()
-  if not targetKey or not duration then
+function addon:QueuePendingTargetDebuff(name, duration, targetKey, metadata)
+  targetKey = targetKey or self:GetTargetKey()
+  if not targetKey or not duration or duration <= 0 then
     return
   end
 
@@ -1733,6 +1893,9 @@ function addon:QueuePendingTargetDebuff(name, duration)
   self.state.pendingDebuffs[targetKey][name] = {
     duration = duration,
     expires = GetTime() + 2.5,
+    queuedAt = GetTime(),
+    source = metadata and metadata.source or "pending",
+    spellId = metadata and metadata.spellId or nil,
   }
 end
 
@@ -1788,7 +1951,8 @@ function addon:PruneTrackedDebuffs()
   for targetKey, targetDebuffs in pairs(self.state.trackedDebuffs) do
     local hasActiveDebuff = false
 
-    for name, expiresAt in pairs(targetDebuffs) do
+    for name, record in pairs(targetDebuffs) do
+      local expiresAt = record and record.expiresAt or nil
       if not expiresAt or expiresAt <= now then
         targetDebuffs[name] = nil
       else
@@ -1802,13 +1966,16 @@ function addon:PruneTrackedDebuffs()
   end
 end
 
-function addon:SeedObservedTargetDebuff(name)
+function addon:SeedObservedTargetDebuff(name, targetKey, spellId)
   local fallbackDuration = self.observedDebuffDurations[name]
   if not fallbackDuration then
     return 0
   end
 
-  self:TrackTargetDebuff(name, fallbackDuration)
+  self:TrackTargetDebuff(name, fallbackDuration, targetKey, {
+    source = "observed",
+    spellId = spellId,
+  })
   return fallbackDuration
 end
 
@@ -1825,23 +1992,122 @@ end
 function addon:GetTrackedDebuffRemaining(name)
   self:PruneTrackedDebuffs()
 
-  local targetKey = self:GetTargetKey()
-  if not targetKey then
+  local record = self:GetTrackedDebuffRecord(name)
+  if not record or not record.expiresAt then
     return 0
   end
 
-  local targetDebuffs = self.state.trackedDebuffs[targetKey]
-  if not targetDebuffs or not targetDebuffs[name] then
-    return 0
-  end
-
-  local remaining = targetDebuffs[name] - GetTime()
+  local remaining = record.expiresAt - GetTime()
   if remaining < 0 then
-    targetDebuffs[name] = nil
     return 0
   end
 
   return remaining
+end
+
+function addon:GetPendingDebuffRemaining(name, targetKey)
+  self:PrunePendingTargetDebuffs()
+
+  local record = self:GetPendingDebuffRecord(name, targetKey)
+  if not record or not record.duration then
+    return 0
+  end
+
+  return record.duration
+end
+
+function addon:ClearPendingTargetDebuff(name, targetKey)
+  targetKey = targetKey or self:GetTargetKey()
+  if not targetKey then
+    return
+  end
+
+  local targetDebuffs = self.state.pendingDebuffs[targetKey]
+  if not targetDebuffs then
+    return
+  end
+
+  targetDebuffs[name] = nil
+  if not next(targetDebuffs) then
+    self.state.pendingDebuffs[targetKey] = nil
+  end
+end
+
+function addon:ConfirmPendingTargetDebuff(name, targetKey, spellId)
+  local pending = self:GetPendingDebuffRecord(name, targetKey)
+  if not pending or not pending.duration or pending.duration <= 0 then
+    return 0
+  end
+
+  self:TrackTargetDebuff(name, pending.duration, targetKey, {
+    source = "pendingConfirm",
+    spellId = spellId or pending.spellId,
+  })
+  self:ClearPendingTargetDebuff(name, targetKey)
+  return pending.duration
+end
+
+function addon:GetDebuffTooltipName(unit, index)
+  if not self.tooltip or not self.tooltip.SetUnitDebuff then
+    return nil
+  end
+
+  self.tooltip:ClearLines()
+  self.tooltip:SetUnitDebuff(unit, index)
+  return RogueAutoTooltipTextLeft1 and RogueAutoTooltipTextLeft1:GetText() or nil
+end
+
+function addon:ScanTargetDebuff(name)
+  if not UnitExists("target") then
+    return nil
+  end
+
+  local expectedTexture = self.targetDebuffTextures[name]
+  local knownSpellId = self.targetDebuffSpellIds[name]
+  local textureMatch = nil
+
+  for index = 1, 16 do
+    local texture, applications, debuffType, duration, expirationTime, caster, isStealable, shouldConsolidate, spellId = UnitDebuff("target", index)
+    if not texture then
+      break
+    end
+
+    local tooltipName = self:GetDebuffTooltipName("target", index)
+    if tooltipName == name then
+      if spellId then
+        self.targetDebuffSpellIds[name] = spellId
+      end
+      return {
+        found = true,
+        spellId = spellId,
+        texture = texture,
+        matchType = "name",
+      }
+    end
+
+    if knownSpellId and spellId and knownSpellId == spellId then
+      return {
+        found = true,
+        spellId = spellId,
+        texture = texture,
+        matchType = "spellId",
+      }
+    end
+
+    if expectedTexture then
+      local normalized = string.lower(string.gsub(texture, ".*\\", ""))
+      if normalized == expectedTexture and not textureMatch then
+        textureMatch = {
+          found = true,
+          spellId = spellId,
+          texture = texture,
+          matchType = "texture",
+        }
+      end
+    end
+  end
+
+  return textureMatch
 end
 
 function addon:IsTargetDebuffActive(name)
@@ -1851,60 +2117,53 @@ function addon:IsTargetDebuffActive(name)
     return false, 0
   end
 
+  local targetKey = self:GetTargetKey()
+  local policy = self:GetDebuffTrackingPolicy(name)
+  local auraMatch = self:ScanTargetDebuff(name)
   local trackedRemaining = self:GetTrackedDebuffRemaining(name)
-  if self.selfOwnedTargetDebuffs and self.selfOwnedTargetDebuffs[name] then
+  local pendingRemaining = self:GetPendingDebuffRemaining(name, targetKey)
+
+  if auraMatch and auraMatch.matchType ~= "texture" then
     if trackedRemaining > 0 then
       return true, trackedRemaining
     end
 
-    local pendingDuration = self:ConsumePendingTargetDebuffDuration(name)
-    if pendingDuration and pendingDuration > 0 then
-      self:TrackTargetDebuff(name, pendingDuration)
-      return true, pendingDuration
+    local confirmedDuration = self:ConfirmPendingTargetDebuff(name, targetKey, auraMatch.spellId)
+    if confirmedDuration > 0 then
+      return true, confirmedDuration
+    end
+
+    if policy == "sharedPresence" then
+      local observedDuration = self:SeedObservedTargetDebuff(name, targetKey, auraMatch.spellId)
+      if observedDuration > 0 then
+        return true, observedDuration
+      end
+      return true, self.refreshWindow.targetDebuff + 1
     end
 
     return false, 0
-  end
-
-  if self:FindUnitDebuffByName("target", name) then
-    local remaining = self:GetTrackedDebuffRemaining(name)
-    if remaining <= 0 then
-      local pendingDuration = self:ConsumePendingTargetDebuffDuration(name)
-      if pendingDuration and pendingDuration > 0 then
-        self:TrackTargetDebuff(name, pendingDuration)
-        remaining = pendingDuration
-      else
-        remaining = self:SeedObservedTargetDebuff(name)
-      end
-    end
-    return true, remaining
   end
 
   if trackedRemaining > 0 then
     return true, trackedRemaining
   end
 
-  local expectedTexture = self.targetDebuffTextures[name]
-  if expectedTexture then
-    for index = 1, 16 do
-      local texture = UnitDebuff("target", index)
-      if not texture then
-        break
-      end
+  if pendingRemaining > 0 then
+    return true, pendingRemaining
+  end
 
-      local normalized = string.lower(string.gsub(texture, ".*\\", ""))
-      if normalized == expectedTexture then
-        if trackedRemaining <= 0 then
-          local pendingDuration = self:ConsumePendingTargetDebuffDuration(name)
-          if pendingDuration and pendingDuration > 0 then
-            self:TrackTargetDebuff(name, pendingDuration)
-            trackedRemaining = pendingDuration
-          else
-            trackedRemaining = self:SeedObservedTargetDebuff(name)
-          end
-        end
-        return true, trackedRemaining
+  if auraMatch and auraMatch.matchType == "texture" then
+    local confirmedDuration = self:ConfirmPendingTargetDebuff(name, targetKey, auraMatch.spellId)
+    if confirmedDuration > 0 then
+      return true, confirmedDuration
+    end
+
+    if policy == "sharedPresence" then
+      local observedDuration = self:SeedObservedTargetDebuff(name, targetKey, auraMatch.spellId)
+      if observedDuration > 0 then
+        return true, observedDuration
       end
+      return true, self.refreshWindow.targetDebuff + 1
     end
   end
 
@@ -1917,7 +2176,9 @@ function addon:TrackComboDebuff(name, comboPoints)
     return
   end
 
-  self:TrackTargetDebuff(name, duration)
+  self:TrackTargetDebuff(name, duration, nil, {
+    source = "combo",
+  })
 end
 
 function addon:CanSpendComboPoints(minComboPoints)
@@ -2006,6 +2267,11 @@ function addon:Cast(name)
   end
 
   self:Debug("Casting " .. name)
+  self.state.lastSpellAttempt = {
+    name = name,
+    targetKey = self:GetTargetKey(),
+    at = GetTime(),
+  }
   CastSpellByName(name)
 
   if name == "Pick Pocket" then
@@ -2025,11 +2291,17 @@ end
 function addon:TryCastWithComboTracking(name, comboPoints)
   if self:Cast(name) then
     if name == "Rupture" then
-      self:QueuePendingTargetDebuff(name, self:GetComboDebuffDuration(name, comboPoints))
+      self:QueuePendingTargetDebuff(name, self:GetComboDebuffDuration(name, comboPoints), nil, {
+        source = "comboPending",
+      })
     elseif name == "Expose Armor" then
-      self:TrackTargetDebuff(name, 30)
+      self:QueuePendingTargetDebuff(name, 30, nil, {
+        source = "sharedPending",
+      })
     elseif name == "Shadow of Death" then
-      self:TrackTargetDebuff(name, 12)
+      self:QueuePendingTargetDebuff(name, 12, nil, {
+        source = "strictPending",
+      })
     end
     return true
   end
@@ -2042,15 +2314,21 @@ function addon:GetPreferredBuilder()
   local forcedSpell = self.builderModes[mode]
   if forcedSpell and self:HasSpell(forcedSpell) then
     if forcedSpell == "Backstab" and (not self:IsDaggerEquipped() or self:IsBehindBlocked()) then
+      if self:HasSpell("Hemorrhage") then
+        return "Hemorrhage"
+      end
       return self:HasSpell("Sinister Strike") and "Sinister Strike" or forcedSpell
     end
     return forcedSpell
   end
 
+  if self:HasSpell("Backstab") and self:IsDaggerEquipped() and not self:IsBehindBlocked() then
+    return "Backstab"
+  end
+
   local preferredSpells = {
     "Noxious Assault",
     "Hemorrhage",
-    "Backstab",
     "Sinister Strike",
   }
 
@@ -2085,9 +2363,6 @@ function addon:GetStealthOpener(mode)
   if mode == "bleed" then
     if self:HasSpell("Garrote") and self:CanAttemptBehindAction() then
       return "Garrote"
-    end
-    if self:HasSpell("Cheap Shot") then
-      return "Cheap Shot"
     end
     return nil
   end
@@ -2154,6 +2429,10 @@ function addon:TryMaintainBuff(name)
     return false
   end
 
+  if name == "Slice and Dice" and not self:ShouldInvestInSliceAndDice() then
+    return false
+  end
+
   if self:GetComboPoints() <= 0 then
     return false
   end
@@ -2213,18 +2492,19 @@ function addon:ShouldPreferExecuteFinisher()
 end
 
 function addon:ShouldFavorImmediateDamage()
-  if not UnitExists("target") or UnitIsDead("target") then
-    return false
-  end
-
-  if UnitClassification and UnitClassification("target") ~= "normal" then
-    return false
-  end
-
-  return self:GetTargetHealthPct() <= math.max(RogueAutoDB.core.executeHealthPct, 60)
+  return self:ShouldForceImmediateDamage(self:GetFightProfile())
 end
 
 function addon:TryPreferredBuilder()
+  local builderMode = RogueAutoDB and RogueAutoDB.builder and RogueAutoDB.builder.mode
+  local shouldTryBackstab = self:HasSpell("Backstab")
+    and self:IsDaggerEquipped()
+    and not self:IsBehindBlocked()
+    and (builderMode == "backstab" or builderMode == "auto")
+  if shouldTryBackstab and self:TryCast("Backstab") then
+    return true
+  end
+
   if RogueAutoDB.core.softDefensives.ghostlyStrike and self:HasSpell("Ghostly Strike") then
     local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
     if self:GetComboPoints() < 5 and (not active or remaining < 2) and self:TryCast("Ghostly Strike") then
@@ -2327,13 +2607,21 @@ function addon:OnUiError(message)
   end
 
   local lower = string.lower(message)
-  if string.find(lower, "behind your target") or string.find(lower, "must be behind") then
-    self:MarkBehindBlocked()
+  local lastAttempt = self.state.lastSpellAttempt
+  local recentAttempt = lastAttempt and lastAttempt.at and (GetTime() - lastAttempt.at) <= 1
+
+  if recentAttempt and (string.find(lower, "behind your target") or string.find(lower, "must be behind")) then
+    if lastAttempt.name == "Backstab" or lastAttempt.name == "Garrote" or lastAttempt.name == "Ambush" then
+      self:MarkBehindBlocked(lastAttempt.targetKey)
+    end
   end
 
-  if self.state.pendingPickPocketTarget then
+  if recentAttempt and lastAttempt.name == "Pick Pocket" and self.state.pendingPickPocketTarget then
     if string.find(lower, "too far away") or string.find(lower, "out of range") or string.find(lower, "line of sight") or string.find(lower, "closer") then
       self:RevertPendingPickPocketAttempt()
+    else
+      self:SuppressTargetSpell("Pick Pocket", 10, lastAttempt.targetKey)
+      self:ClearPendingPickPocketAttempt()
     end
   end
 end
@@ -2378,7 +2666,9 @@ end
 function addon:OnTargetChanged()
   self:PruneTrackedDebuffs()
   self:PrunePendingTargetDebuffs()
+  self:PruneSuppressedTargetSpells()
   self.state.currentTargetKey = nil
+  self.state.lastSpellAttempt = nil
   self:ClearPendingPickPocketAttempt()
 end
 

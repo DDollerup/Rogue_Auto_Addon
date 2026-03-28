@@ -5,8 +5,8 @@ local function consumeBuilderAttempt(self)
   return true
 end
 
-local function runDirectDamageDealer(self)
-  if self:TryMaintainBuff("Slice and Dice") then
+local function runDirectDamageDealer(self, profile)
+  if self:ShouldInvestInSliceAndDice(profile) and self:TryMaintainBuff("Slice and Dice") then
     return true
   end
 
@@ -135,9 +135,13 @@ function addon:GetBleedMaintenancePlan()
   }
 end
 
-function addon:RunDirectGuaranteeStep()
+function addon:RunDirectGuaranteeStep(profile)
   local settings = self:GetDirectSettings()
   if settings.sliceAndDiceFirst or not settings.guaranteePrimaryDebuff then
+    return false
+  end
+
+  if not self:ShouldInvestInPrimaryDebuff("direct", profile) then
     return false
   end
 
@@ -192,15 +196,21 @@ function addon:Bleed()
     return
   end
 
+  local profile = self:GetFightProfile()
+
   if self:RunDamagePreamble("bleed") then
     return
   end
 
-  if self:ShouldSwitchToDirectDamageDealer("bleed") and runDirectDamageDealer(self) then
+  if self:ShouldSwitchToDirectDamageDealer("bleed") and runDirectDamageDealer(self, profile) then
     return
   end
 
-  if self:RunMaintenancePlan(self:GetBleedMaintenancePlan()) then
+  if self:ShouldForceImmediateDamage(profile) and runDirectDamageDealer(self, profile) then
+    return
+  end
+
+  if self:ShouldInvestInPrimaryDebuff("bleed", profile) and self:RunMaintenancePlan(self:GetBleedMaintenancePlan()) then
     return
   end
 
@@ -212,25 +222,25 @@ function addon:Direct()
     return
   end
 
+  local profile = self:GetFightProfile()
+
   if self:RunDamagePreamble("direct") then
     return
   end
 
-  if self:RunDirectGuaranteeStep() then
+  if self:RunDirectGuaranteeStep(profile) then
     return
   end
 
-  if self:ShouldSwitchToDirectDamageDealer("direct") and runDirectDamageDealer(self) then
+  if self:ShouldSwitchToDirectDamageDealer("direct") and runDirectDamageDealer(self, profile) then
     return
   end
 
-  if self:ShouldFavorImmediateDamage() then
-    if runDirectDamageDealer(self) then
-      return
-    end
+  if self:ShouldForceImmediateDamage(profile) and runDirectDamageDealer(self, profile) then
+    return
   end
 
-  if self:RunMaintenancePlan(self:GetDirectMaintenancePlan()) then
+  if self:ShouldInvestInPrimaryDebuff("direct", profile) and self:RunMaintenancePlan(self:GetDirectMaintenancePlan()) then
     return
   end
 
