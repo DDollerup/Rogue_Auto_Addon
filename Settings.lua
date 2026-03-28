@@ -81,26 +81,21 @@ addon.builderOptions = {
   { key = "noxious", label = "Noxious" },
 }
 
-addon.directFinisherOptions = {
-  { key = "eviscerate", label = "Eviscerate" },
-  { key = "envenom", label = "Envenom" },
-}
-
 addon.macroDefinitions = {
   {
     id = "bleed",
     macro = "/script RogueAuto:Bleed()",
-    description = "Bleed: stealth opener plus rupture setup, then direct-finisher damage while Rupture remains active, with toggles for order and Rupture guarantee.",
+    description = "Bleed: stealth opener plus heuristic combo-point spending around Slice and Dice, Rupture, Shadow of Death, and direct finishers based on learned target durability.",
   },
   {
     id = "direct",
     macro = "/script RogueAuto:Direct()",
-    description = "Direct: stealth opener plus Expose Armor setup, then direct-finisher damage once Expose Armor is active, with toggles for order, guarantee, and finisher choice.",
+    description = "Direct: stealth opener plus heuristic combo-point spending around Slice and Dice, Expose Armor, Shadow of Death, and direct finishers based on learned target durability.",
   },
   {
     id = "interrupt",
     macro = "/script RogueAuto:Interrupt()",
-    description = "Interrupt: ranged interrupt tools first, then Kick, Kidney Shot, Gouge, and optional Blind.",
+    description = "Interrupt: ranged interrupt tools first, then Kick, Gouge, heuristic Kidney Shot fallback, and optional Blind.",
   },
   {
     id = "defensive",
@@ -142,19 +137,6 @@ addon.settingDefinitions = {
     path = { "core", "bleed", "guaranteePrimaryDebuff" },
     label = "Guarantee Rupture before buff upkeep",
   },
-  bleedDebuffMinCP = {
-    path = { "core", "bleed", "primaryDebuffMinCP" },
-    label = "Rupture combo minimum",
-    min = 1,
-    max = 5,
-    step = 1,
-    normalize = function(self, value)
-      return self:ClampValue(math.floor(value + 0.5), 1, 5)
-    end,
-    display = function(value)
-      return "Rupture combo minimum: " .. tostring(value)
-    end,
-  },
   directSliceAndDiceFirst = {
     path = { "core", "direct", "sliceAndDiceFirst" },
     label = "Slice and Dice before Expose Armor",
@@ -162,25 +144,6 @@ addon.settingDefinitions = {
   guaranteeDirectDebuff = {
     path = { "core", "direct", "guaranteePrimaryDebuff" },
     label = "Guarantee Expose Armor before short-fight damage",
-  },
-  directDebuffMinCP = {
-    path = { "core", "direct", "primaryDebuffMinCP" },
-    label = "Expose Armor combo minimum",
-    min = 1,
-    max = 5,
-    step = 1,
-    normalize = function(self, value)
-      return self:ClampValue(math.floor(value + 0.5), 1, 5)
-    end,
-    display = function(value)
-      return "Expose Armor combo minimum: " .. tostring(value)
-    end,
-  },
-  directFinisher = {
-    path = { "core", "direct", "finisher" },
-    label = "Direct damage finisher",
-    options = addon.directFinisherOptions,
-    help = "Used after Expose Armor or Rupture is already active. Slice and Dice upkeep still happens first when enabled.",
   },
   softFeint = {
     path = { "core", "softDefensives", "feint" },
@@ -197,32 +160,6 @@ addon.settingDefinitions = {
   useBlind = {
     path = { "interrupt", "useBlind" },
     label = "Allow Blind in interrupt button",
-  },
-  kidneyMinCP = {
-    path = { "interrupt", "kidneyMinCP" },
-    label = "Kidney Shot combo minimum",
-    min = 1,
-    max = 5,
-    step = 1,
-    normalize = function(self, value)
-      return self:ClampValue(math.floor(value + 0.5), 1, 5)
-    end,
-    display = function(value)
-      return "Kidney Shot combo minimum: " .. tostring(value)
-    end,
-  },
-  executeHealthPct = {
-    path = { "core", "executeHealthPct" },
-    label = "Direct finisher below",
-    min = 5,
-    max = 100,
-    step = 1,
-    normalize = function(self, value)
-      return self:ClampValue(math.floor(value + 0.5), 5, 100)
-    end,
-    display = function(value)
-      return "Direct finisher below: " .. tostring(value) .. "%"
-    end,
   },
   evasionPct = {
     path = { "panic", "evasionPct" },
@@ -285,11 +222,11 @@ addon.uiSections = {
   },
   {
     title = "Rotation: Bleed",
-    items = { "bleedSliceAndDiceFirst", "guaranteeBleedDebuff", "bleedDebuffMinCP" },
+    items = { "bleedSliceAndDiceFirst", "guaranteeBleedDebuff" },
   },
   {
     title = "Rotation: Direct",
-    items = { "directSliceAndDiceFirst", "guaranteeDirectDebuff", "directDebuffMinCP" },
+    items = { "directSliceAndDiceFirst", "guaranteeDirectDebuff" },
   },
   {
     title = "Defensives",
@@ -297,16 +234,11 @@ addon.uiSections = {
   },
   {
     title = "Interrupt",
-    items = { "useBlind", "kidneyMinCP" },
+    items = { "useBlind" },
   },
   {
     title = "Thresholds",
-    items = { "executeHealthPct", "evasionPct", "vanishPct" },
-  },
-  {
-    title = "Direct Finisher",
-    help = "Select which finisher the Bleed and Direct macros use after their setup debuff is established.",
-    items = { "directFinisher" },
+    items = { "evasionPct", "vanishPct" },
   },
   {
     title = "Highlights",
@@ -366,30 +298,12 @@ addon.slashCommandDefinitions = {
     end,
   },
   {
-    command = "rupturecp",
-    type = "number",
-    setting = "bleedDebuffMinCP",
-    usage = "<cp>",
-    success = function(value)
-      return "Rupture combo minimum set to " .. tostring(value) .. "."
-    end,
-  },
-  {
     command = "directguarantee",
     type = "toggle",
     setting = "guaranteeDirectDebuff",
     usage = "on|off",
     success = function(value)
       return "Direct debuff guarantee " .. (value and "enabled" or "disabled") .. "."
-    end,
-  },
-  {
-    command = "exposecp",
-    type = "number",
-    setting = "directDebuffMinCP",
-    usage = "<cp>",
-    success = function(value)
-      return "Expose Armor combo minimum set to " .. tostring(value) .. "."
     end,
   },
   {
@@ -432,31 +346,6 @@ addon.slashCommandDefinitions = {
     },
     success = function(value)
       return "Direct priority now starts with " .. (value and "Slice and Dice" or "Expose Armor") .. "."
-    end,
-  },
-  {
-    command = "execute",
-    type = "number",
-    setting = "executeHealthPct",
-    usage = "<pct>",
-    success = function(value)
-      return "Direct finisher threshold set to " .. tostring(value) .. "%."
-    end,
-  },
-  {
-    command = "finisher",
-    type = "enum",
-    setting = "directFinisher",
-    usage = "eviscerate|envenom",
-    values = {
-      eviscerate = "eviscerate",
-      envenom = "envenom",
-    },
-    success = function(value)
-      if value == "envenom" then
-        return "Direct finisher set to Envenom."
-      end
-      return "Direct finisher set to Eviscerate."
     end,
   },
   {
