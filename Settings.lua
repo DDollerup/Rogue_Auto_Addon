@@ -83,113 +83,43 @@ addon.builderOptions = {
 
 addon.macroDefinitions = {
   {
-    id = "bleed",
-    macro = "/script RogueAuto:Bleed()",
-    description = "Bleed: stealth opener plus heuristic combo-point spending around Slice and Dice, Rupture, Shadow of Death, and direct finishers based on learned target durability.",
+    id = "builder",
+    macro = "/script RogueAuto:Builder()",
+    description = "Builder: builds combo points with the best legal builder, auto-Kicks active casts, and can use emergency Kidney Shot when Kick is unavailable and the target is not learned as stun-immune.",
   },
   {
-    id = "direct",
-    macro = "/script RogueAuto:Direct()",
-    description = "Direct: stealth opener plus heuristic combo-point spending around Slice and Dice, Expose Armor, Shadow of Death, and direct finishers based on learned target durability.",
-  },
-  {
-    id = "interrupt",
-    macro = "/script RogueAuto:Interrupt()",
-    description = "Interrupt: ranged interrupt tools first, then Kick, then heuristic Kidney Shot fallback.",
-  },
-  {
-    id = "defensive",
-    macro = "/script RogueAuto:Defensive()",
-    description = "Defensive: Vanish and Evasion at thresholds, then Flourish, Ghostly Strike, and Feint.",
+    id = "opener",
+    macro = "/script RogueAuto:Opener(\"Garrote\")",
+    description = "Opener(hint): use an explicit opener like Garrote, Ambush, Cheap Shot, or Pick Pocket. Example macros: /script RogueAuto:Opener(\"Garrote\") or /script RogueAuto:Opener(\"Ambush\").",
   },
 }
 
 addon.settingDefinitions = {
   builderMode = {
     path = { "builder", "mode" },
-  },
-  nearestFallback = {
-    path = { "targeting", "nearestFallback" },
-    label = "Nearest target fallback",
-  },
-  autoStartAttack = {
-    path = { "targeting", "autoStartAttack" },
-    label = "Auto start attack",
-  },
-  integratedStealth = {
-    path = { "stealth", "integrated" },
-    label = "Integrated stealth openers",
+    normalize = function(self, value)
+      if value == nil or value == "" then
+        return "auto"
+      end
+
+      for _, option in ipairs(self.builderOptions) do
+        if option.key == value then
+          return value
+        end
+      end
+
+      return "auto"
+    end,
   },
   pickPocketHumanoids = {
     path = { "stealth", "pickPocketHumanoids" },
-    label = "Pick Pocket humanoids first",
+    label = "Pick Pocket before opener when eligible",
+    help = "Only affects Opener(hint).",
   },
-  keepSliceAndDice = {
-    path = { "core", "keepSliceAndDice" },
-    label = "Maintain Slice and Dice in DPS macros",
-    help = "Shared across Bleed and Direct.",
-  },
-  bleedSliceAndDiceFirst = {
-    path = { "core", "bleed", "sliceAndDiceFirst" },
-    label = "Slice and Dice before Rupture",
-  },
-  guaranteeBleedDebuff = {
-    path = { "core", "bleed", "guaranteePrimaryDebuff" },
-    label = "Guarantee Rupture before buff upkeep",
-  },
-  directSliceAndDiceFirst = {
-    path = { "core", "direct", "sliceAndDiceFirst" },
-    label = "Slice and Dice before Expose Armor",
-  },
-  guaranteeDirectDebuff = {
-    path = { "core", "direct", "guaranteePrimaryDebuff" },
-    label = "Guarantee Expose Armor before short-fight damage",
-  },
-  softFeint = {
-    path = { "core", "softDefensives", "feint" },
-    label = "Use Feint in DPS buttons",
-  },
-  softGhostlyStrike = {
-    path = { "core", "softDefensives", "ghostlyStrike" },
-    label = "Use Ghostly Strike in DPS buttons",
-  },
-  softFlourish = {
-    path = { "core", "softDefensives", "flourish" },
-    label = "Use Flourish in DPS buttons",
-  },
-  useBlind = {
-    path = { "interrupt", "useBlind" },
-    label = "Blind interrupt fallback (unused)",
-  },
-  evasionPct = {
-    path = { "panic", "evasionPct" },
-    label = "Evasion",
-    min = 5,
-    max = 100,
-    step = 1,
-    normalize = function(self, value)
-      return self:ClampValue(math.floor(value + 0.5), 5, 100)
-    end,
-    display = function(value)
-      return "Evasion: " .. tostring(value) .. "%"
-    end,
-  },
-  vanishPct = {
-    path = { "panic", "vanishPct" },
-    label = "Vanish",
-    min = 5,
-    max = 100,
-    step = 1,
-    normalize = function(self, value)
-      return self:ClampValue(math.floor(value + 0.5), 5, 100)
-    end,
-    display = function(value)
-      return "Vanish: " .. tostring(value) .. "%"
-    end,
-  },
-  debug = {
-    path = { "debug" },
-    label = "Enable debug chat output",
+  builderGhostlyStrike = {
+    path = { "builder", "useGhostlyStrike" },
+    label = "Prioritize Ghostly Strike in Auto",
+    help = "Only affects Builder() while builder mode is Auto.",
   },
   highlightDuration = {
     path = { "notifications", "highlightDuration" },
@@ -207,103 +137,32 @@ addon.settingDefinitions = {
 }
 
 addon.uiSections = {
-  { title = "Builder", kind = "builder" },
   {
-    title = "Targeting",
-    items = { "nearestFallback", "autoStartAttack" },
+    title = "Builder",
+    kind = "builder",
+    help = "Auto uses Ghostly Strike when enabled, then Backstab, Surprise Attack on dodge, Noxious Assault or Hemorrhage if learned, otherwise Sinister Strike. Non-auto modes use your selected primary builder unless it is unavailable or illegal.",
+    items = { "builderGhostlyStrike" },
   },
   {
-    title = "Stealth/Openers",
-    items = { "integratedStealth", "pickPocketHumanoids" },
-  },
-  {
-    title = "Rotation: Shared",
-    items = { "keepSliceAndDice" },
-  },
-  {
-    title = "Rotation: Bleed",
-    items = { "bleedSliceAndDiceFirst", "guaranteeBleedDebuff" },
-  },
-  {
-    title = "Rotation: Direct",
-    items = { "directSliceAndDiceFirst", "guaranteeDirectDebuff" },
-  },
-  {
-    title = "Defensives",
-    items = { "softFeint", "softGhostlyStrike", "softFlourish" },
-  },
-  {
-    title = "Interrupt",
-    items = { "useBlind" },
-  },
-  {
-    title = "Thresholds",
-    items = { "evasionPct", "vanishPct" },
+    title = "Openers",
+    help = "Opener(hint) only attempts the explicit opener you ask for, but can try Pick Pocket first when eligible.",
+    items = { "pickPocketHumanoids" },
   },
   {
     title = "Highlights",
     items = { "highlightDuration" },
   },
   { title = "Macros", kind = "macros" },
-  {
-    title = "Misc",
-    items = { "debug" },
-  },
 }
 
 addon.slashCommandDefinitions = {
-  {
-    command = "debug",
-    type = "toggle",
-    setting = "debug",
-    usage = "on|off",
-    success = function(value)
-      return "Debug " .. (value and "enabled" or "disabled") .. "."
-    end,
-  },
-  {
-    command = "fallback",
-    type = "toggle",
-    setting = "nearestFallback",
-    usage = "on|off",
-    success = function(value)
-      return "Nearest fallback " .. (value and "enabled" or "disabled") .. "."
-    end,
-  },
   {
     command = "pickpocket",
     type = "toggle",
     setting = "pickPocketHumanoids",
     usage = "on|off",
     success = function(value)
-      return "Pick Pocket opener " .. (value and "enabled" or "disabled") .. "."
-    end,
-  },
-  {
-    command = "snd",
-    type = "toggle",
-    setting = "keepSliceAndDice",
-    usage = "on|off",
-    success = function(value)
-      return "Slice and Dice upkeep " .. (value and "enabled" or "disabled") .. "."
-    end,
-  },
-  {
-    command = "bleedguarantee",
-    type = "toggle",
-    setting = "guaranteeBleedDebuff",
-    usage = "on|off",
-    success = function(value)
-      return "Bleed debuff guarantee " .. (value and "enabled" or "disabled") .. "."
-    end,
-  },
-  {
-    command = "directguarantee",
-    type = "toggle",
-    setting = "guaranteeDirectDebuff",
-    usage = "on|off",
-    success = function(value)
-      return "Direct debuff guarantee " .. (value and "enabled" or "disabled") .. "."
+      return "Pick Pocket before opener " .. (value and "enabled" or "disabled") .. "."
     end,
   },
   {
@@ -323,47 +182,12 @@ addon.slashCommandDefinitions = {
     end,
   },
   {
-    command = "bleedorder",
-    type = "enum",
-    setting = "bleedSliceAndDiceFirst",
-    usage = "snd|rupture",
-    values = {
-      snd = true,
-      rupture = false,
-    },
+    command = "builderghostly",
+    type = "toggle",
+    setting = "builderGhostlyStrike",
+    usage = "on|off",
     success = function(value)
-      return "Bleed priority now starts with " .. (value and "Slice and Dice" or "Rupture") .. "."
-    end,
-  },
-  {
-    command = "directorder",
-    type = "enum",
-    setting = "directSliceAndDiceFirst",
-    usage = "snd|expose",
-    values = {
-      snd = true,
-      expose = false,
-    },
-    success = function(value)
-      return "Direct priority now starts with " .. (value and "Slice and Dice" or "Expose Armor") .. "."
-    end,
-  },
-  {
-    command = "evasion",
-    type = "number",
-    setting = "evasionPct",
-    usage = "<pct>",
-    success = function(value)
-      return "Evasion threshold set to " .. tostring(value) .. "%."
-    end,
-  },
-  {
-    command = "vanish",
-    type = "number",
-    setting = "vanishPct",
-    usage = "<pct>",
-    success = function(value)
-      return "Vanish threshold set to " .. tostring(value) .. "%."
+      return "Builder Ghostly Strike " .. (value and "enabled" or "disabled") .. "."
     end,
   },
 }

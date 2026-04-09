@@ -14,6 +14,7 @@ addon.observedDebuffDurations = {
 }
 addon.closeRangeSpells = {
   "Kick",
+  "Surprise Attack",
   "Sinister Strike",
   "Hemorrhage",
   "Backstab",
@@ -36,29 +37,7 @@ addon.defaults = {
   },
   builder = {
     mode = "auto",
-  },
-  core = {
-    keepSliceAndDice = true,
-    bleed = {
-      sliceAndDiceFirst = true,
-      guaranteePrimaryDebuff = true,
-    },
-    direct = {
-      sliceAndDiceFirst = false,
-      guaranteePrimaryDebuff = true,
-    },
-    softDefensives = {
-      feint = true,
-      ghostlyStrike = true,
-      flourish = true,
-    },
-  },
-  panic = {
-    evasionPct = 45,
-    vanishPct = 20,
-  },
-  interrupt = {
-    useBlind = false,
+    useGhostlyStrike = false,
   },
   minimap = {
     angle = 220,
@@ -76,9 +55,12 @@ addon.defaults = {
 addon.state = {
   knownSpells = {},
   spellEnergyCosts = {},
+  spellTooltipText = {},
   lastEnergy = nil,
   firstEnergyTick = nil,
   riposteReadyUntil = 0,
+  surpriseAttackReadyUntil = 0,
+  surpriseAttackTargetKey = nil,
   behindBlockedUntil = 0,
   behindBlockedTargetKey = nil,
   lastUiError = nil,
@@ -97,11 +79,14 @@ addon.state = {
   learnedTargetKey = nil,
   learningFight = nil,
   activeEnemyCast = nil,
+  pendingKidneyShotCheck = nil,
   activeRotationMode = nil,
+  activeOpenerHint = nil,
   combatSession = nil,
   pickPocketLootSession = nil,
   activeNotices = {},
   cachedPlayerCritChance = nil,
+  selfBuffTimeline = {},
 }
 
 addon.damageCategories = {
@@ -149,7 +134,6 @@ addon.noticeDefaultY = -120
 addon.pickPocketFallbackTexture = "Interface\\Icons\\INV_Misc_Bag_10"
 addon.coinTexture = "Interface\\Icons\\INV_Misc_Coin_01"
 addon.pickPocketTitleTexture = "Interface\\Icons\\INV_Misc_Bag_10"
-addon.playerStatUpdateInterval = 0.25
 
 addon.bleedSpells = {
   ["Garrote"] = true,
@@ -176,6 +160,18 @@ addon.buffAliases = {
 
 addon.buffTextures = {
   ["Slice and Dice"] = "ability_rogue_slicedice",
+}
+
+addon.selfBuffTimelineTrackedSpells = {
+  "Slice and Dice",
+  "Envenom",
+  "Ghostly Strike",
+  "Sprint",
+  "Evasion",
+  "Blade Flurry",
+  "Adrenaline Rush",
+  "Cold Blood",
+  "Vanish",
 }
 
 addon.dotBaseDurations = {
@@ -376,80 +372,6 @@ addon.noticeFrames = {
 }
 
 addon.noticeFadeDuration = 0.35
-addon.heuristicOverlayFadeDuration = 0.2
-
-local function createHeuristicOverlayFrame()
-  local overlay = CreateFrame("Frame", "RogueAutoHeuristicOverlay", UIParent)
-  overlay:SetWidth(268)
-  overlay:SetHeight(126)
-  overlay:SetPoint("TOP", UIParent, "TOP", 0, -36)
-  overlay:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true,
-    tileSize = 16,
-    edgeSize = 14,
-    insets = { left = 4, right = 4, top = 4, bottom = 4 },
-  })
-  overlay:SetBackdropColor(0.05, 0.05, 0.05, 0.88)
-  overlay:SetBackdropBorderColor(1, 0.82, 0, 0.68)
-  overlay:SetFrameStrata("MEDIUM")
-  overlay:Hide()
-
-  local title = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  title:SetPoint("TOPLEFT", overlay, "TOPLEFT", 12, -12)
-  title:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", -12, -12)
-  title:SetJustifyH("LEFT")
-  title:SetTextColor(1, 0.9, 0.35)
-  title:SetText("Heuristic")
-  overlay.title = title
-
-  local divider = overlay:CreateTexture(nil, "ARTWORK")
-  divider:SetHeight(1)
-  divider:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-  divider:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", -12, 0)
-  divider:SetTexture(1, 0.82, 0, 0.22)
-  overlay.divider = divider
-
-  local action = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  action:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, -8)
-  action:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", -12, 0)
-  action:SetJustifyH("LEFT")
-  action:SetTextColor(1, 0.96, 0.78)
-  overlay.action = action
-
-  local context = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  context:SetPoint("TOPLEFT", action, "BOTTOMLEFT", 0, -4)
-  context:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", -12, 0)
-  context:SetJustifyH("LEFT")
-  context:SetTextColor(0.88, 0.88, 0.88)
-  overlay.context = context
-
-  local timers = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  timers:SetPoint("TOPLEFT", context, "BOTTOMLEFT", 0, -2)
-  timers:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", -12, 0)
-  timers:SetJustifyH("LEFT")
-  timers:SetTextColor(0.72, 0.86, 0.72)
-  overlay.timers = timers
-
-  overlay.reasons = {}
-  for index = 1, 3 do
-    local reason = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    if index == 1 then
-      reason:SetPoint("TOPLEFT", timers, "BOTTOMLEFT", 0, -6)
-    else
-      reason:SetPoint("TOPLEFT", overlay.reasons[index - 1], "BOTTOMLEFT", 0, -2)
-    end
-    reason:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", -12, 0)
-    reason:SetJustifyH("LEFT")
-    reason:SetTextColor(0.82, 0.82, 0.82)
-    overlay.reasons[index] = reason
-  end
-
-  return overlay
-end
-
-addon.heuristicOverlay = createHeuristicOverlayFrame()
 
 local function deepCopy(value)
   if type(value) ~= "table" then
@@ -582,52 +504,14 @@ function addon:ResetDB()
 end
 
 function addon:MigrateSettings()
-  if not RogueAutoDB or not RogueAutoDB.core then
+  if not RogueAutoDB or not RogueAutoDB.builder then
     return
   end
 
-  local core = RogueAutoDB.core
-  core.bleed = mergeDefaults(core.bleed, deepCopy(self.defaults.core.bleed))
-  core.direct = mergeDefaults(core.direct, deepCopy(self.defaults.core.direct))
-  RogueAutoDB.notifications = mergeDefaults(RogueAutoDB.notifications, deepCopy(self.defaults.notifications))
-  RogueAutoDB.learning = mergeDefaults(RogueAutoDB.learning, deepCopy(self.defaults.learning))
-
-  if core.bleedSliceAndDiceFirst ~= nil then
-    core.bleed.sliceAndDiceFirst = core.bleedSliceAndDiceFirst
-    core.bleedSliceAndDiceFirst = nil
+  local mode = RogueAutoDB.builder.mode
+  if mode == nil or mode == "" then
+    RogueAutoDB.builder.mode = "auto"
   end
-
-  if core.guaranteeBleedDebuff ~= nil then
-    core.bleed.guaranteePrimaryDebuff = core.guaranteeBleedDebuff
-    core.guaranteeBleedDebuff = nil
-  end
-
-  if core.directSliceAndDiceFirst ~= nil then
-    core.direct.sliceAndDiceFirst = core.directSliceAndDiceFirst
-    core.directSliceAndDiceFirst = nil
-  end
-
-  if core.guaranteeDirectDebuff ~= nil then
-    core.direct.guaranteePrimaryDebuff = core.guaranteeDirectDebuff
-    core.guaranteeDirectDebuff = nil
-  end
-end
-
-function addon:IsTargetDebuffPresent(name)
-  local active = self:IsTargetDebuffActive(name)
-  return active == true
-end
-
-function addon:ShouldSwitchToDirectDamageDealer(mode)
-  if mode == "direct" then
-    return self:IsTargetDebuffPresent("Expose Armor")
-  end
-
-  if mode == "bleed" then
-    return self:IsTargetDebuffPresent("Rupture")
-  end
-
-  return false
 end
 
 function addon:GetHighlightDuration()
@@ -642,238 +526,6 @@ end
 
 function addon:GetNoticeFadeDuration()
   return self.noticeFadeDuration or 0.35
-end
-
-local function formatPlayerStatPct(value)
-  if not value then
-    return nil
-  end
-
-  return string.format("%.1f%%", value)
-end
-
-function addon:EnsurePlayerStatFrame()
-  if self.playerStatFrame then
-    return self.playerStatFrame
-  end
-
-  if not PlayerFrameManaBar then
-    return nil
-  end
-
-  local statFrame = CreateFrame("Frame", "RogueAutoPlayerStatFrame", UIParent)
-  statFrame:SetHeight(12)
-  statFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "BOTTOMLEFT", 0, -18)
-  statFrame:SetWidth(100)
-  local statusBar = CreateFrame("StatusBar", nil, statFrame, "TextStatusBar")
-  statusBar:SetAllPoints(statFrame)
-  statusBar:SetMinMaxValues(0, 1)
-  statusBar:SetValue(1)
-  statusBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-  statusBar:SetStatusBarColor(0, 0, 0, 0)
-  statFrame.statusBar = statusBar
-
-  local bg = statusBar:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints(statusBar)
-  bg:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-  bg:SetVertexColor(0, 0, 0, 0)
-  statusBar.bg = bg
-
-  local border = statusBar:CreateTexture(nil, "OVERLAY")
-  border:SetWidth(120)
-  border:SetHeight(18)
-  border:SetPoint("TOPLEFT", statusBar, "TOPLEFT", -12, 0)
-  border:SetTexture("Interface\\CharacterFrame\\UI-CharacterFrame-GroupIndicator")
-  border:SetTexCoord(0.0234375, 0.6875, 1.0, 0.0)
-  statFrame.border = border
-
-  local label = statFrame:CreateFontString(nil, "OVERLAY")
-  label:SetPoint("CENTER", statFrame, "CENTER", 0, 0)
-  label:SetFont(STANDARD_TEXT_FONT, 8, "OUTLINE")
-  label:SetTextColor(1, 1, 1)
-  label:SetJustifyH("CENTER")
-  statFrame.label = label
-
-  self.playerStatFrame = statFrame
-  return statFrame
-end
-
-function addon:EnsureCooldownListFrame()
-  if self.cooldownListFrame then
-    return self.cooldownListFrame
-  end
-
-  local statFrame = self:EnsurePlayerStatFrame()
-  if not statFrame then
-    return nil
-  end
-
-  local listFrame = CreateFrame("Frame", "RogueAutoCooldownListFrame", UIParent)
-  listFrame:SetWidth(116)
-  listFrame:SetHeight(76)
-  listFrame:SetPoint("TOPLEFT", statFrame, "BOTTOMLEFT", 0, -7)
-  listFrame.rows = {}
-
-  for index = 1, 4 do
-    local row = CreateFrame("Frame", nil, listFrame)
-    row:SetWidth(116)
-    row:SetHeight(16)
-    row:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, -((index - 1) * 18))
-    row:Hide()
-
-    local icon = row:CreateTexture(nil, "ARTWORK")
-    icon:SetWidth(16)
-    icon:SetHeight(16)
-    icon:SetPoint("LEFT", row, "LEFT", 0, 0)
-    row.icon = icon
-
-    local barHost = CreateFrame("Frame", nil, row)
-    barHost:SetWidth(94)
-    barHost:SetHeight(10)
-    barHost:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-    row.barHost = barHost
-
-    local bgBar = barHost:CreateTexture(nil, "BACKGROUND")
-    bgBar:SetAllPoints(barHost)
-    bgBar:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    bgBar:SetVertexColor(0, 0, 0, 0.22)
-    row.bgBar = bgBar
-
-    local fillBar = barHost:CreateTexture(nil, "ARTWORK")
-    fillBar:SetPoint("TOPLEFT", barHost, "TOPLEFT", 0, 0)
-    fillBar:SetPoint("BOTTOMLEFT", barHost, "BOTTOMLEFT", 0, 0)
-    fillBar:SetWidth(94)
-    fillBar:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    fillBar:SetVertexColor(0, 0, 0, 0.52)
-    row.fillBar = fillBar
-
-    local timeText = row:CreateFontString(nil, "OVERLAY")
-    timeText:SetPoint("CENTER", barHost, "CENTER", 0, 0)
-    timeText:SetFont(STANDARD_TEXT_FONT, 7, "OUTLINE")
-    timeText:SetTextColor(1, 1, 1)
-    timeText:SetJustifyH("CENTER")
-    row.timeText = timeText
-
-    listFrame.rows[index] = row
-  end
-
-  self.cooldownListFrame = listFrame
-  return listFrame
-end
-
-function addon:GetSpellCooldownInfo(name)
-  local spellIndex = self:GetSpellIndex(name)
-  if not spellIndex then
-    return nil
-  end
-
-  local startTime, duration = GetSpellCooldown(spellIndex, BOOKTYPE_SPELL)
-  if not startTime or not duration or duration <= 1.5 then
-    return nil
-  end
-
-  local remaining = (startTime + duration) - GetTime()
-  if remaining <= 0 then
-    return nil
-  end
-
-  return remaining, duration, GetSpellTexture and GetSpellTexture(spellIndex, BOOKTYPE_SPELL) or nil
-end
-
-function addon:GetTrackedCooldowns()
-  local cooldowns = {}
-
-  for _, spellName in ipairs(self.cooldownTrackedSpells) do
-    if self:HasSpell(spellName) then
-      local remaining, duration, texture = self:GetSpellCooldownInfo(spellName)
-      if remaining and duration then
-        table.insert(cooldowns, {
-          name = spellName,
-          remaining = remaining,
-          duration = duration,
-          texture = texture,
-        })
-      end
-    end
-  end
-
-  table.sort(cooldowns, function(a, b)
-    if a.remaining == b.remaining then
-      return a.name < b.name
-    end
-    return a.remaining < b.remaining
-  end)
-
-  return cooldowns
-end
-
-function addon:UpdateCooldownListFrame(force)
-  local now = GetTime()
-  if not force and self.state.nextCooldownListUpdate and now < self.state.nextCooldownListUpdate then
-    return
-  end
-
-  self.state.nextCooldownListUpdate = now + 0.1
-
-  local listFrame = self:EnsureCooldownListFrame()
-  if not listFrame then
-    return
-  end
-
-  local cooldowns = self:GetTrackedCooldowns()
-  if table.getn(cooldowns) == 0 then
-    listFrame:Hide()
-    return
-  end
-
-  local visibleRows = math.min(table.getn(cooldowns), table.getn(listFrame.rows))
-  listFrame:SetHeight((visibleRows * 18) - 2)
-
-  for index, row in ipairs(listFrame.rows) do
-    local cooldown = cooldowns[index]
-    if cooldown then
-      local ratio = cooldown.duration > 0 and (cooldown.remaining / cooldown.duration) or 0
-      if ratio < 0 then
-        ratio = 0
-      elseif ratio > 1 then
-        ratio = 1
-      end
-
-      local fillWidth = math.max(1, math.floor(94 * ratio + 0.5))
-      row.icon:SetTexture(cooldown.texture or "Interface\\Icons\\INV_Misc_QuestionMark")
-      row.fillBar:SetWidth(fillWidth)
-      row.timeText:SetText(string.format("%.1f", cooldown.remaining))
-      row:Show()
-    else
-      row:Hide()
-    end
-  end
-
-  listFrame:Show()
-end
-
-function addon:UpdatePlayerStatFrame(force)
-  local now = GetTime()
-  if not force and self.state.nextPlayerStatUpdate and now < self.state.nextPlayerStatUpdate then
-    return
-  end
-
-  self.state.nextPlayerStatUpdate = now + (self.playerStatUpdateInterval or 0.25)
-
-  local statFrame = self:EnsurePlayerStatFrame()
-  if not statFrame then
-    return
-  end
-
-  local dodgeChance = GetDodgeChance and GetDodgeChance() or nil
-
-  if not dodgeChance then
-    statFrame:Hide()
-    return
-  end
-
-  statFrame.label:SetText("Dodge Chance " .. (formatPlayerStatPct(dodgeChance) or "--"))
-  statFrame:Show()
 end
 
 local function addHeuristicReason(reasons, text)
@@ -898,631 +550,6 @@ local function formatShortSeconds(value)
   end
 
   return string.format("%.1fs", value)
-end
-
-function addon:GetEncounterTypeLabel(encounterType)
-  if encounterType == "dungeon_elite" then
-    return "Dungeon Elite"
-  elseif encounterType == "dungeon_trash" then
-    return "Dungeon Trash"
-  elseif encounterType == "party_world" then
-    return "Party World"
-  end
-
-  return "Solo World"
-end
-
-function addon:GetModeLabel(mode)
-  if not mode then
-    return "Unknown"
-  end
-
-  if mode == "bleed" then
-    return "Bleed"
-  elseif mode == "direct" then
-    return "Direct"
-  elseif mode == "interrupt" then
-    return "Interrupt"
-  elseif mode == "defensive" then
-    return "Defensive"
-  end
-
-  return mode
-end
-
-function addon:HasMeaningfulHeuristicTarget()
-  return self.state.activeRotationMode
-    and self:IsHostileTarget()
-    and (UnitAffectingCombat("player") or self:IsStealthed())
-end
-
-function addon:GetContextSummaryText(context)
-  if not context then
-    return nil
-  end
-
-  return self:GetEncounterTypeLabel(context.encounterType)
-    .. " | "
-    .. string.upper(string.sub(context.durabilityTier or "medium", 1, 1))
-    .. string.sub(context.durabilityTier or "medium", 2)
-    .. " | "
-    .. tostring(context.comboPoints or 0)
-    .. " CP"
-end
-
-function addon:GetContextTimerText(context)
-  if not context then
-    return nil
-  end
-
-  local parts = {}
-  table.insert(parts, "Fight " .. (formatShortSeconds(context.remainingFightDuration) or "--"))
-  if context.sndActive and context.sndRemaining and context.sndRemaining > 0 then
-    table.insert(parts, "SnD " .. formatShortSeconds(context.sndRemaining))
-  end
-  if context.primarySpell and context.primaryActive and context.primaryRemaining and context.primaryRemaining > 0 then
-    table.insert(parts, context.primarySpell .. " " .. formatShortSeconds(context.primaryRemaining))
-  end
-
-  return table.concat(parts, " | ")
-end
-
-function addon:GetOpenerDecision(mode)
-  local opener = self:GetStealthOpener(mode)
-  if not opener then
-    return nil
-  end
-
-  local reasons = {}
-  if opener == "Pick Pocket" then
-    addHeuristicReason(reasons, "Stealthed and target is pickpocketable")
-    addHeuristicReason(reasons, "Loot opener is available before combat")
-  elseif opener == "Garrote" then
-    addHeuristicReason(reasons, "Stealth opener is ready from behind")
-    addHeuristicReason(reasons, "Bleed mode favors setup damage")
-  elseif opener == "Ambush" then
-    addHeuristicReason(reasons, "Behind target with dagger")
-    addHeuristicReason(reasons, "Direct opener favors burst entry")
-  elseif opener == "Cheap Shot" then
-    addHeuristicReason(reasons, "Fallback stealth opener is available")
-    addHeuristicReason(reasons, "Behind opener is not legal right now")
-  end
-
-  return {
-    action = opener,
-    reasons = reasons,
-    category = "opener",
-  }
-end
-
-function addon:GetSoftDefensiveDecision()
-  if not self:IsTargetTargetingPlayer() then
-    return nil
-  end
-
-  if RogueAutoDB.core.softDefensives.feint and self:HasSpell("Feint") and self:CanCast("Feint") then
-    return {
-      action = "Feint",
-      reasons = {
-        "Target is focused on you",
-        "Soft defensive fires before damage spenders",
-      },
-      category = "softDefensive",
-    }
-  end
-
-  if RogueAutoDB.core.softDefensives.ghostlyStrike and self:HasSpell("Ghostly Strike") and self:CanCast("Ghostly Strike") then
-    local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
-    if self:GetComboPoints() == 0 and (not active or remaining < 2) then
-      return {
-        action = "Ghostly Strike",
-        reasons = {
-          "Early dodge value is available",
-          "Buff is missing or expiring",
-        },
-        category = "softDefensive",
-      }
-    end
-  end
-
-  if RogueAutoDB.core.softDefensives.flourish and self:HasSpell("Flourish") and self:GetComboPoints() > 0 and self:CanCast("Flourish") then
-    local active, remaining = self:FindPlayerBuff(self.buffAliases.flourish)
-    if not active or remaining < 2 then
-      return {
-        action = "Flourish",
-        reasons = {
-          "Soft defensive utility is available",
-          "Combo-point buff window is open",
-        },
-        category = "softDefensive",
-      }
-    end
-  end
-
-  return nil
-end
-
-function addon:GetRiposteDecision()
-  if not self:HasSpell("Riposte") then
-    return nil
-  end
-
-  if GetTime() > (self.state.riposteReadyUntil or 0) or not self:CanCast("Riposte") then
-    return nil
-  end
-
-  return {
-    action = "Riposte",
-    reasons = {
-      "Riposte window is active",
-      "Counterattack is ready now",
-    },
-    category = "riposte",
-  }
-end
-
-function addon:GetBuilderDecision(context, modeHint)
-  local builder, explanation = self:GetPreferredBuilder(context)
-  if not builder then
-    return nil
-  end
-
-  local reasons = explanation and explanation.reasons or {}
-  if table.getn(reasons) == 0 then
-    if builder == "Backstab" then
-      addHeuristicReason(reasons, "Behind target with dagger")
-    elseif builder == "Noxious Assault" then
-      addHeuristicReason(reasons, "Poison-focused builder wins")
-    elseif builder == "Hemorrhage" then
-      addHeuristicReason(reasons, "Bleed setup favors Hemorrhage")
-    else
-      addHeuristicReason(reasons, "Reliable front-facing builder")
-    end
-  end
-
-  return {
-    action = builder,
-    reasons = reasons,
-    category = "builder",
-  }
-end
-
-function addon:GetBuilderPhaseUtilityDecision()
-  if not RogueAutoDB.core.softDefensives.ghostlyStrike then
-    return nil
-  end
-
-  if not self:HasSpell("Ghostly Strike") or not self:CanCast("Ghostly Strike") then
-    return nil
-  end
-
-  local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
-  if self:GetComboPoints() < 5 and (not active or remaining < 2) then
-    return {
-      action = "Ghostly Strike",
-      reasons = {
-        "Builder phase takes early dodge value",
-        "Ghostly buff is missing or expiring",
-      },
-      category = "builderUtility",
-    }
-  end
-
-  return nil
-end
-
-function addon:GetInterruptDecision()
-  local reasons = {}
-  if self:HasSpell("Deadly Throw") and self:GetRangedWeaponType() == "Thrown" then
-    local inRange = self:IsSpellInRangeSafe("Deadly Throw", "target")
-    if inRange == 1 and not self:IsInMeleeRange() and self:CanCast("Deadly Throw") then
-      return {
-        action = "Deadly Throw",
-        reasons = {
-          "Target is outside melee",
-          "Ranged stop tool is available",
-        },
-        category = "interrupt",
-      }
-    end
-  end
-
-  local shootSpell = self:GetShootSpell()
-  if shootSpell then
-    local inRange = self:IsSpellInRangeSafe(shootSpell, "target")
-    if inRange == 1 and not self:IsInMeleeRange() and self:CanCast(shootSpell) then
-      return {
-        action = shootSpell,
-        reasons = {
-          "Target is outside melee",
-          "Using ranged pressure while closing",
-        },
-        category = "interrupt",
-      }
-    end
-  end
-
-  if self:IsInMeleeRange() and self:CanCast("Kick") then
-    return {
-      action = "Kick",
-      reasons = {
-        "Direct interrupt is in range",
-        "Urgency beats payoff stacking",
-      },
-      category = "interrupt",
-    }
-  end
-
-  local context = self:GetComboPointContext("interrupt")
-  local spellName = self:GetComboPointDecision("interrupt", context)
-  if spellName then
-    return {
-      action = spellName,
-      reasons = {
-        "User asked for an urgent stop",
-        "Combo-point control fallback is ready",
-      },
-      category = "interrupt",
-      context = context,
-    }
-  end
-
-  return {
-    action = "No Stop Tool",
-    reasons = {
-      "No interrupt is currently usable",
-      "Need range, energy, combo points, or cooldowns",
-    },
-    category = "interrupt",
-  }
-end
-
-function addon:GetDefensiveDecision()
-  local healthPct = self:GetPlayerHealthPct()
-
-  if self:HasSpell("Vanish") and healthPct <= self:GetSetting("vanishPct") and self:CanCast("Vanish") then
-    return {
-      action = "Vanish",
-      reasons = {
-        "Health is under Vanish threshold",
-        "Emergency reset is available",
-      },
-      category = "defensive",
-    }
-  end
-
-  if self:HasSpell("Evasion") and self:CanCast("Evasion") then
-    local active, remaining = self:FindPlayerBuff("Evasion")
-    if (not active or remaining < 2) and healthPct <= self:GetSetting("evasionPct") then
-      return {
-        action = "Evasion",
-        reasons = {
-          "Health is under Evasion threshold",
-          "Dodge cooldown is available",
-        },
-        category = "defensive",
-      }
-    end
-  end
-
-  if self:HasSpell("Flourish") and self:GetComboPoints() > 0 and self:CanCast("Flourish") then
-    local active, remaining = self:FindPlayerBuff("Flourish")
-    if not active or remaining < 2 then
-      return {
-        action = "Flourish",
-        reasons = {
-          "Defensive filler is available",
-          "Combo-point utility is active",
-        },
-        category = "defensive",
-      }
-    end
-  end
-
-  if self:HasSpell("Ghostly Strike") and self:CanCast("Ghostly Strike") then
-    local active, remaining = self:FindPlayerBuff("Ghostly Strike")
-    if not active or remaining < 2 then
-      return {
-        action = "Ghostly Strike",
-        reasons = {
-          "Dodge buff is missing or expiring",
-          "Cheap defensive value comes next",
-        },
-        category = "defensive",
-      }
-    end
-  end
-
-  if self:CanCast("Feint") then
-    return {
-      action = "Feint",
-      reasons = {
-        "No stronger defensive won",
-        "Feint is the next mitigation step",
-      },
-      category = "defensive",
-    }
-  end
-
-  return {
-    action = "Hold",
-    reasons = {
-      "No defensive action is currently usable",
-    },
-    category = "defensive",
-  }
-end
-
-function addon:BuildHeuristicDecisionSnapshot(mode)
-  if not mode or not self:HasMeaningfulHeuristicTarget() then
-    return nil
-  end
-
-  if mode == "interrupt" then
-    local interruptDecision = self:GetInterruptDecision()
-    if not interruptDecision then
-      return nil
-    end
-    local context = interruptDecision.context or self:GetComboPointContext("interrupt")
-    return {
-      mode = mode,
-      action = interruptDecision.action,
-      category = interruptDecision.category,
-      context = context,
-      reasons = interruptDecision.reasons,
-      contextText = context and self:GetContextSummaryText(context) or "Interrupt",
-      timerText = context and self:GetContextTimerText(context) or nil,
-    }
-  end
-
-  if mode == "defensive" then
-    local defensiveDecision = self:GetDefensiveDecision()
-    if not defensiveDecision then
-      return nil
-    end
-    return {
-      mode = mode,
-      action = defensiveDecision.action,
-      category = defensiveDecision.category,
-      contextText = "Defensive | " .. string.format("%.0f%% HP", self:GetPlayerHealthPct()),
-      timerText = nil,
-      reasons = defensiveDecision.reasons,
-    }
-  end
-
-  local context = self:GetComboPointContext(mode)
-  if not context then
-    return nil
-  end
-
-  local opener = self:GetOpenerDecision(mode)
-  if opener then
-    return {
-      mode = mode,
-      action = opener.action,
-      category = opener.category,
-      context = context,
-      contextText = self:GetContextSummaryText(context),
-      timerText = self:GetContextTimerText(context),
-      reasons = opener.reasons,
-  }
-  end
-
-  local kickDecision = self:GetRotationKickDecision(context)
-  if kickDecision then
-    return {
-      mode = mode,
-      action = kickDecision.action,
-      category = kickDecision.category,
-      context = context,
-      contextText = self:GetContextSummaryText(context),
-      timerText = self:GetContextTimerText(context),
-      reasons = kickDecision.reasons,
-    }
-  end
-
-  local softDefensive = self:GetSoftDefensiveDecision()
-  if softDefensive then
-    return {
-      mode = mode,
-      action = softDefensive.action,
-      category = softDefensive.category,
-      context = context,
-      contextText = self:GetContextSummaryText(context),
-      timerText = self:GetContextTimerText(context),
-      reasons = softDefensive.reasons,
-    }
-  end
-
-  local riposte = self:GetRiposteDecision()
-  if riposte then
-    return {
-      mode = mode,
-      action = riposte.action,
-      category = riposte.category,
-      context = context,
-      contextText = self:GetContextSummaryText(context),
-      timerText = self:GetContextTimerText(context),
-      reasons = riposte.reasons,
-    }
-  end
-
-  if self:ShouldPreferExecuteFinisher(mode, context) then
-    local finisher = self:GetBestDirectFinisherSpell(context)
-    if finisher then
-      if not self:CanCastWithoutBreakingKickReserve(finisher, context) then
-        local reserveDecision = self:GetKickReserveDecision(context)
-        if reserveDecision then
-          return {
-            mode = mode,
-            action = reserveDecision.action,
-            category = reserveDecision.category,
-            context = context,
-            contextText = self:GetContextSummaryText(context),
-            timerText = self:GetContextTimerText(context),
-            reasons = reserveDecision.reasons,
-          }
-        end
-      end
-      return {
-        mode = mode,
-        action = finisher,
-        category = "execute",
-        context = context,
-        contextText = self:GetContextSummaryText(context),
-        timerText = self:GetContextTimerText(context),
-        reasons = {
-          "Target is in kill range",
-          "Immediate finisher beats more setup",
-        },
-      }
-    end
-  end
-
-  local spender, spenderInfo = self:GetComboPointDecision(mode, context)
-  if spender then
-    if not self:CanCastWithoutBreakingKickReserve(spender, context) then
-      local reserveDecision = self:GetKickReserveDecision(context)
-      if reserveDecision then
-        return {
-          mode = mode,
-          action = reserveDecision.action,
-          category = reserveDecision.category,
-          context = context,
-          contextText = self:GetContextSummaryText(context),
-          timerText = self:GetContextTimerText(context),
-          reasons = reserveDecision.reasons,
-        }
-      end
-    end
-    return {
-      mode = mode,
-      action = spender,
-      category = "spender",
-      context = context,
-      contextText = self:GetContextSummaryText(context),
-      timerText = self:GetContextTimerText(context),
-      reasons = spenderInfo and spenderInfo.reasons or {},
-    }
-  end
-
-  local builderUtility = self:GetBuilderPhaseUtilityDecision()
-  if builderUtility then
-    if not self:CanCastWithoutBreakingKickReserve(builderUtility.action, context) then
-      local reserveDecision = self:GetKickReserveDecision(context)
-      if reserveDecision then
-        return {
-          mode = mode,
-          action = reserveDecision.action,
-          category = reserveDecision.category,
-          context = context,
-          contextText = self:GetContextSummaryText(context),
-          timerText = self:GetContextTimerText(context),
-          reasons = reserveDecision.reasons,
-        }
-      end
-    end
-    return {
-      mode = mode,
-      action = builderUtility.action,
-      category = builderUtility.category,
-      context = context,
-      contextText = self:GetContextSummaryText(context),
-      timerText = self:GetContextTimerText(context),
-      reasons = builderUtility.reasons,
-    }
-  end
-
-  local builderDecision = self:GetBuilderDecision(context, mode)
-  if builderDecision then
-    if not self:CanCastWithoutBreakingKickReserve(builderDecision.action, context) then
-      local reserveDecision = self:GetKickReserveDecision(context)
-      if reserveDecision then
-        return {
-          mode = mode,
-          action = reserveDecision.action,
-          category = reserveDecision.category,
-          context = context,
-          contextText = self:GetContextSummaryText(context),
-          timerText = self:GetContextTimerText(context),
-          reasons = reserveDecision.reasons,
-        }
-      end
-    end
-    return {
-      mode = mode,
-      action = builderDecision.action,
-      category = builderDecision.category,
-      context = context,
-      contextText = self:GetContextSummaryText(context),
-      timerText = self:GetContextTimerText(context),
-      reasons = builderDecision.reasons,
-    }
-  end
-
-  return nil
-end
-
-function addon:ShouldShowHeuristicOverlay()
-  return self:HasMeaningfulHeuristicTarget()
-end
-
-function addon:UpdateHeuristicOverlay(force)
-  local now = GetTime()
-  if not force and self.state.nextHeuristicOverlayUpdate and now < self.state.nextHeuristicOverlayUpdate then
-    return
-  end
-
-  self.state.nextHeuristicOverlayUpdate = now + 0.15
-
-  local overlay = self.heuristicOverlay
-  if not overlay then
-    return
-  end
-
-  local visible = self:ShouldShowHeuristicOverlay()
-  local snapshot = visible and self:BuildHeuristicDecisionSnapshot(self.state.activeRotationMode) or nil
-  visible = visible and snapshot ~= nil
-
-  if visible then
-    overlay.title:SetText("Heuristic: " .. self:GetModeLabel(snapshot.mode))
-    overlay.action:SetText(snapshot.action or "--")
-    overlay.context:SetText(snapshot.contextText or self:GetModeLabel(snapshot.mode))
-    overlay.timers:SetText(snapshot.timerText or "")
-
-    for index = 1, 3 do
-      local line = snapshot.reasons and snapshot.reasons[index] or nil
-      overlay.reasons[index]:SetText(line or "")
-      if line then
-        overlay.reasons[index]:Show()
-      else
-        overlay.reasons[index]:Hide()
-      end
-    end
-
-    overlay.targetAlpha = 1
-    if not overlay:IsShown() then
-      overlay:SetAlpha(0)
-      overlay:Show()
-    end
-  else
-    overlay.targetAlpha = 0
-  end
-
-  local targetAlpha = overlay.targetAlpha or 0
-  local currentAlpha = overlay:GetAlpha() or 0
-  local fadeDuration = self.heuristicOverlayFadeDuration or 0.2
-  local step = fadeDuration > 0 and (0.15 / fadeDuration) or 1
-  if targetAlpha > currentAlpha then
-    currentAlpha = math.min(targetAlpha, currentAlpha + step)
-  elseif targetAlpha < currentAlpha then
-    currentAlpha = math.max(targetAlpha, currentAlpha - step)
-  end
-
-  overlay:SetAlpha(currentAlpha)
-  if currentAlpha <= 0 and targetAlpha <= 0 then
-    overlay:Hide()
-  end
 end
 
 function addon:UpdateNoticeFramePositions()
@@ -2079,25 +1106,10 @@ function addon:CapturePickPocketLootWindow()
   end
 end
 
-function addon:GetRotationSettings(mode)
-  if not RogueAutoDB or not RogueAutoDB.core then
-    return nil
-  end
-
-  return RogueAutoDB.core[mode]
-end
-
-function addon:GetBleedSettings()
-  return self:GetRotationSettings("bleed")
-end
-
-function addon:GetDirectSettings()
-  return self:GetRotationSettings("direct")
-end
-
 function addon:RefreshKnownSpells()
   self.state.knownSpells = {}
   self.state.spellEnergyCosts = {}
+  self.state.spellTooltipText = {}
 
   for spellIndex = 1, 200 do
     local name = GetSpellName(spellIndex, BOOKTYPE_SPELL)
@@ -2128,6 +1140,404 @@ function addon:IsSpellReady(name)
   end
 
   return duration == 0
+end
+
+function addon:GetSpellCooldownInfo(name)
+  local spellIndex = self:GetSpellIndex(name)
+  if not spellIndex then
+    return nil
+  end
+
+  local startTime, duration = GetSpellCooldown(spellIndex, BOOKTYPE_SPELL)
+  if not startTime or not duration or duration <= 1.5 then
+    return nil
+  end
+
+  local remaining = (startTime + duration) - GetTime()
+  if remaining <= 0 then
+    return nil
+  end
+
+  return remaining, duration, GetSpellTexture and GetSpellTexture(spellIndex, BOOKTYPE_SPELL) or nil
+end
+
+function addon:EnsureCooldownListFrame()
+  if self.cooldownListFrame then
+    return self.cooldownListFrame
+  end
+
+  if not PlayerFrameManaBar then
+    return nil
+  end
+
+  local listFrame = CreateFrame("Frame", "RogueAutoCooldownListFrame", UIParent)
+  listFrame:SetWidth(116)
+  listFrame:SetHeight(76)
+  listFrame:SetPoint("TOPLEFT", PlayerFrameManaBar, "BOTTOMLEFT", 20, -8)
+  listFrame.rows = {}
+
+  for index = 1, 4 do
+    local row = CreateFrame("Frame", nil, listFrame)
+    row:SetWidth(116)
+    row:SetHeight(16)
+    row:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, -((index - 1) * 18))
+    row:Hide()
+
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetWidth(16)
+    icon:SetHeight(16)
+    icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.icon = icon
+
+    local barHost = CreateFrame("Frame", nil, row)
+    barHost:SetWidth(94)
+    barHost:SetHeight(10)
+    barHost:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+    row.barHost = barHost
+
+    local bgBar = barHost:CreateTexture(nil, "BACKGROUND")
+    bgBar:SetAllPoints(barHost)
+    bgBar:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    bgBar:SetVertexColor(0, 0, 0, 0.22)
+    row.bgBar = bgBar
+
+    local fillBar = barHost:CreateTexture(nil, "ARTWORK")
+    fillBar:SetPoint("TOPRIGHT", barHost, "TOPRIGHT", 0, 0)
+    fillBar:SetPoint("BOTTOMRIGHT", barHost, "BOTTOMRIGHT", 0, 0)
+    fillBar:SetWidth(94)
+    fillBar:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    fillBar:SetVertexColor(0, 0, 0, 0.52)
+    row.fillBar = fillBar
+
+    local timeText = row:CreateFontString(nil, "OVERLAY")
+    timeText:SetPoint("CENTER", barHost, "CENTER", 0, 0)
+    timeText:SetFont(STANDARD_TEXT_FONT, 7, "OUTLINE")
+    timeText:SetTextColor(1, 1, 1)
+    timeText:SetJustifyH("CENTER")
+    row.timeText = timeText
+
+    listFrame.rows[index] = row
+  end
+
+  self.cooldownListFrame = listFrame
+  return listFrame
+end
+
+function addon:EnsureSelfBuffTimelineFrame()
+  if self.selfBuffTimelineFrame then
+    return self.selfBuffTimelineFrame
+  end
+
+  local timelineFrame = CreateFrame("Frame", "RogueAutoSelfBuffTimelineFrame", UIParent)
+  timelineFrame:SetWidth(228)
+  timelineFrame:SetHeight(56)
+  timelineFrame:SetFrameStrata("HIGH")
+  timelineFrame:SetClampedToScreen(true)
+  timelineFrame.rows = {}
+
+  for index = 1, 4 do
+    local row = CreateFrame("Frame", nil, timelineFrame)
+    row:SetWidth(228)
+    row:SetHeight(12)
+    row:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 0, -((index - 1) * 14))
+    row:Hide()
+
+    local track = row:CreateTexture(nil, "BACKGROUND")
+    track:SetWidth(228)
+    track:SetHeight(2)
+    track:SetPoint("LEFT", row, "LEFT", 0, 0)
+    track:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    track:SetVertexColor(1, 0.88, 0.1, 0.18)
+    row.track = track
+
+    local progress = row:CreateTexture(nil, "ARTWORK")
+    progress:SetHeight(2)
+    progress:SetPoint("LEFT", track, "LEFT", 0, 0)
+    progress:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    progress:SetVertexColor(1, 0.9, 0.18, 0.85)
+    row.progress = progress
+
+    local iconHolder = CreateFrame("Frame", nil, row)
+    iconHolder:SetWidth(9)
+    iconHolder:SetHeight(9)
+    iconHolder:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.iconHolder = iconHolder
+
+    local icon = iconHolder:CreateTexture(nil, "OVERLAY")
+    icon:SetAllPoints(iconHolder)
+    row.icon = icon
+
+    local border = iconHolder:CreateTexture(nil, "BORDER")
+    border:SetAllPoints(iconHolder)
+    border:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+    row.iconBorder = border
+
+    local glow = iconHolder:CreateTexture(nil, "ARTWORK")
+    glow:SetWidth(18)
+    glow:SetHeight(18)
+    glow:SetPoint("CENTER", iconHolder, "CENTER", 0, 0)
+    glow:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    glow:SetVertexColor(1, 0.9, 0.2, 0.12)
+    row.glow = glow
+
+    timelineFrame.rows[index] = row
+  end
+
+  self.selfBuffTimelineFrame = timelineFrame
+  return timelineFrame
+end
+
+function addon:PositionSelfBuffTimelineFrame()
+  local timelineFrame = self:EnsureSelfBuffTimelineFrame()
+  if not timelineFrame then
+    return nil
+  end
+
+  timelineFrame:ClearAllPoints()
+
+  if PlayerFrame and PlayerFrame.IsShown and PlayerFrame:IsShown() then
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 72, -2)
+  elseif PlayerFrameManaBar and PlayerFrameManaBar.IsShown and PlayerFrameManaBar:IsShown() then
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 20, 18)
+  else
+    timelineFrame:SetPoint("BOTTOM", UIParent, "BOTTOM", -250, 255)
+  end
+
+  return timelineFrame
+end
+
+function addon:GetSelfBuffTimelineIcon(name, fallbackTexture)
+  if fallbackTexture then
+    return fallbackTexture
+  end
+
+  local spellIndex = self:GetSpellIndex(name)
+  if spellIndex and GetSpellTexture then
+    return GetSpellTexture(spellIndex, BOOKTYPE_SPELL)
+  end
+
+  local textureName = self.buffTextures[name]
+  if textureName then
+    return "Interface\\Icons\\" .. textureName
+  end
+
+  return "Interface\\Icons\\INV_Misc_QuestionMark"
+end
+
+function addon:GetTrackedPlayerBuffStates()
+  local trackedNames = {}
+  for _, spellName in ipairs(self.selfBuffTimelineTrackedSpells) do
+    if self:HasSpell(spellName) then
+      trackedNames[spellName] = true
+    end
+  end
+
+  if not next(trackedNames) then
+    return {}
+  end
+
+  local activeBuffs = {}
+  for index = 0, 31 do
+    local buffIndex = GetPlayerBuff(index, "HELPFUL")
+    if buffIndex < 0 then
+      break
+    end
+
+    local remaining = GetPlayerBuffTimeLeft(buffIndex) or 0
+    local texture = GetPlayerBuffTexture and GetPlayerBuffTexture(buffIndex) or nil
+
+    self.tooltip:ClearLines()
+    self.tooltip:SetPlayerBuff(buffIndex)
+    local name = RogueAutoTooltipTextLeft1 and RogueAutoTooltipTextLeft1:GetText() or nil
+
+    if name and trackedNames[name] and remaining > 0 then
+      activeBuffs[name] = {
+        name = name,
+        remaining = remaining,
+        texture = texture,
+      }
+    end
+  end
+
+  return activeBuffs
+end
+
+function addon:GetVisibleSelfBuffTimelineEntries()
+  local activeBuffs = self:GetTrackedPlayerBuffStates()
+  local now = GetTime()
+  local visible = {}
+
+  for spellName, info in pairs(activeBuffs) do
+    local record = self.state.selfBuffTimeline[spellName] or {}
+    if not record.totalDuration
+      or info.remaining > (record.lastRemaining or 0) + 0.4
+      or info.remaining > record.totalDuration + 0.4 then
+      record.totalDuration = info.remaining
+      record.startedAt = now
+    end
+
+    record.lastRemaining = info.remaining
+    record.lastSeenAt = now
+    record.texture = self:GetSelfBuffTimelineIcon(spellName, info.texture)
+    self.state.selfBuffTimeline[spellName] = record
+
+    table.insert(visible, {
+      name = spellName,
+      remaining = info.remaining,
+      duration = record.totalDuration or info.remaining,
+      texture = record.texture,
+    })
+  end
+
+  for spellName, record in pairs(self.state.selfBuffTimeline) do
+    if not activeBuffs[spellName] or (record.lastSeenAt and (now - record.lastSeenAt) > 0.3) then
+      self.state.selfBuffTimeline[spellName] = nil
+    end
+  end
+
+  table.sort(visible, function(a, b)
+    if a.remaining == b.remaining then
+      return a.name < b.name
+    end
+    return a.remaining < b.remaining
+  end)
+
+  return visible
+end
+
+function addon:UpdateSelfBuffTimelineFrame(force)
+  local now = GetTime()
+  if not force and self.state.nextSelfBuffTimelineUpdate and now < self.state.nextSelfBuffTimelineUpdate then
+    return
+  end
+
+  self.state.nextSelfBuffTimelineUpdate = now + 0.05
+
+  local timelineFrame = self:PositionSelfBuffTimelineFrame()
+  if not timelineFrame then
+    return
+  end
+
+  local visible = self:GetVisibleSelfBuffTimelineEntries()
+  if table.getn(visible) == 0 then
+    timelineFrame:Hide()
+    return
+  end
+
+  local visibleRows = math.min(table.getn(visible), table.getn(timelineFrame.rows))
+  timelineFrame:SetHeight((visibleRows * 14) - 2)
+
+  for index, row in ipairs(timelineFrame.rows) do
+    local buff = visible[index]
+    if buff then
+      local duration = buff.duration or buff.remaining
+      if duration <= 0 then
+        duration = buff.remaining
+      end
+
+      local ratio = duration > 0 and (buff.remaining / duration) or 0
+      if ratio < 0 then
+        ratio = 0
+      elseif ratio > 1 then
+        ratio = 1
+      end
+
+      local progress = 1 - ratio
+      local iconSize = math.floor((8 + (progress * 10)) + 0.5)
+      local maxOffset = math.max(0, row:GetWidth() - iconSize)
+      local xOffset = math.floor((maxOffset * progress) + 0.5)
+      local progressWidth = math.max(1, math.floor(xOffset + (iconSize * 0.5)))
+
+      row.progress:SetWidth(progressWidth)
+      row.iconHolder:ClearAllPoints()
+      row.iconHolder:SetPoint("LEFT", row, "LEFT", xOffset, 0)
+      row.iconHolder:SetWidth(iconSize)
+      row.iconHolder:SetHeight(iconSize)
+      row.glow:SetWidth(iconSize + 8)
+      row.glow:SetHeight(iconSize + 8)
+      row.icon:SetTexture(buff.texture)
+
+      local glowAlpha = 0.1 + (progress * 0.18)
+      row.glow:SetVertexColor(1, 0.9, 0.2, glowAlpha)
+      row:Show()
+    else
+      row:Hide()
+    end
+  end
+
+  timelineFrame:Show()
+end
+
+function addon:GetTrackedCooldowns()
+  local cooldowns = {}
+
+  for _, spellName in ipairs(self.cooldownTrackedSpells) do
+    if self:HasSpell(spellName) then
+      local remaining, duration, texture = self:GetSpellCooldownInfo(spellName)
+      if remaining and duration then
+        table.insert(cooldowns, {
+          name = spellName,
+          remaining = remaining,
+          duration = duration,
+          texture = texture,
+        })
+      end
+    end
+  end
+
+  table.sort(cooldowns, function(a, b)
+    if a.remaining == b.remaining then
+      return a.name < b.name
+    end
+    return a.remaining < b.remaining
+  end)
+
+  return cooldowns
+end
+
+function addon:UpdateCooldownListFrame(force)
+  local now = GetTime()
+  if not force and self.state.nextCooldownListUpdate and now < self.state.nextCooldownListUpdate then
+    return
+  end
+
+  self.state.nextCooldownListUpdate = now + 0.1
+
+  local listFrame = self:EnsureCooldownListFrame()
+  if not listFrame then
+    return
+  end
+
+  local cooldowns = self:GetTrackedCooldowns()
+  if table.getn(cooldowns) == 0 then
+    listFrame:Hide()
+    return
+  end
+
+  local visibleRows = math.min(table.getn(cooldowns), table.getn(listFrame.rows))
+  listFrame:SetHeight((visibleRows * 18) - 2)
+
+  for index, row in ipairs(listFrame.rows) do
+    local cooldown = cooldowns[index]
+    if cooldown then
+      local ratio = cooldown.duration > 0 and (cooldown.remaining / cooldown.duration) or 0
+      if ratio < 0 then
+        ratio = 0
+      elseif ratio > 1 then
+        ratio = 1
+      end
+
+      local fillWidth = math.max(1, math.floor(94 * ratio + 0.5))
+      row.icon:SetTexture(cooldown.texture or "Interface\\Icons\\INV_Misc_QuestionMark")
+      row.fillBar:SetWidth(fillWidth)
+      row.timeText:SetText(string.format("%.1f", cooldown.remaining))
+      row:Show()
+    else
+      row:Hide()
+    end
+  end
+
+  listFrame:Show()
 end
 
 function addon:GetComboPoints()
@@ -2180,6 +1590,99 @@ function addon:GetSpellEnergyCost(name)
 
   self.state.spellEnergyCosts[name] = false
   return nil
+end
+
+function addon:GetSpellTooltipText(name)
+  local cached = self.state.spellTooltipText[name]
+  if cached ~= nil then
+    if cached == false then
+      return nil
+    end
+    return cached
+  end
+
+  local spellIndex = self:GetSpellIndex(name)
+  if not spellIndex or not self.tooltip.SetSpell then
+    self.state.spellTooltipText[name] = false
+    return nil
+  end
+
+  self.tooltip:ClearLines()
+  self.tooltip:SetSpell(spellIndex, BOOKTYPE_SPELL)
+
+  local lines = {}
+  for index = 2, 10 do
+    local leftLine = _G["RogueAutoTooltipTextLeft" .. tostring(index)]
+    local rightLine = _G["RogueAutoTooltipTextRight" .. tostring(index)]
+    local leftText = leftLine and leftLine:GetText()
+    local rightText = rightLine and rightLine:GetText()
+
+    if leftText and leftText ~= "" then
+      table.insert(lines, leftText)
+    end
+    if rightText and rightText ~= "" then
+      table.insert(lines, rightText)
+    end
+  end
+
+  if table.getn(lines) == 0 then
+    self.state.spellTooltipText[name] = false
+    return nil
+  end
+
+  local text = table.concat(lines, "\n")
+  self.state.spellTooltipText[name] = text
+  return text
+end
+
+function addon:SpellTooltipRequiresTargetDodge(name)
+  local tooltipText = self:GetSpellTooltipText(name)
+  if not tooltipText then
+    return false
+  end
+
+  return string.find(string.lower(tooltipText), "after the target dodges") ~= nil
+end
+
+function addon:IsSurpriseAttackReady(targetKey)
+  if GetTime() >= (self.state.surpriseAttackReadyUntil or 0) then
+    self.state.surpriseAttackTargetKey = nil
+    return false
+  end
+
+  targetKey = targetKey or self:GetTargetKey()
+  if self.state.surpriseAttackTargetKey and targetKey and self.state.surpriseAttackTargetKey ~= targetKey then
+    return false
+  end
+
+  return true
+end
+
+function addon:MarkSurpriseAttackReady(targetKey, duration)
+  self.state.surpriseAttackTargetKey = targetKey or self:GetTargetKey()
+  self.state.surpriseAttackReadyUntil = GetTime() + (duration or 5)
+end
+
+function addon:CanUseSurpriseAttack()
+  if not self:HasSpell("Surprise Attack") then
+    return false
+  end
+
+  local requiresTargetDodge = self:SpellTooltipRequiresTargetDodge("Surprise Attack")
+  if requiresTargetDodge then
+    if not self:IsSurpriseAttackReady() then
+      return false
+    end
+
+    if IsUsableSpell then
+      local usable = IsUsableSpell("Surprise Attack")
+      if usable == false then
+        return false
+      end
+    end
+  end
+
+  return true
 end
 
 function addon:GetPlayerHealthPct()
@@ -2610,6 +2113,116 @@ function addon:GetInterruptLearningProfile()
   return entry, self:GetInterruptLearningConfidence(entry)
 end
 
+function addon:GetStunImmunityConfidence(entry)
+  if not entry then
+    return 0
+  end
+
+  local immuneSamples = entry.stunImmuneSamples or 0
+  local successSamples = entry.stunSuccessSamples or 0
+  local totalSamples = immuneSamples + successSamples
+  if totalSamples <= 0 then
+    return 0
+  end
+
+  local ratio = immuneSamples / totalSamples
+  local sampleFactor = self:ClampUnitValue(totalSamples / 3)
+  local score = ratio * sampleFactor
+  if immuneSamples > 0 and successSamples == 0 then
+    score = math.max(score, 0.8)
+  end
+
+  return self:ClampUnitValue(score)
+end
+
+function addon:RecordKidneyShotLearning(result, sample)
+  if not sample then
+    return
+  end
+
+  local entry = self:EnsureMobLearningEntry(
+    sample.classification,
+    sample.learningKey,
+    sample.name,
+    sample.creatureType,
+    sample.level
+  )
+  if not entry then
+    return
+  end
+
+  if result == "immune" then
+    entry.stunImmuneSamples = (entry.stunImmuneSamples or 0) + 1
+    entry.lastStunImmuneSeen = time and time() or 0
+  elseif result == "success" then
+    entry.stunSuccessSamples = (entry.stunSuccessSamples or 0) + 1
+    entry.lastStunSuccessSeen = time and time() or 0
+  else
+    return
+  end
+
+  entry.stunImmuneConfidence = self:GetStunImmunityConfidence(entry)
+  self:UpdateLearningDerivedFields(entry)
+end
+
+function addon:BuildCurrentTargetLearningSample()
+  if not self:IsHostileTarget() then
+    return nil
+  end
+
+  local name = UnitName("target")
+  local learningKey = self:NormalizeMobLearningKey(name)
+  if not learningKey then
+    return nil
+  end
+
+  return {
+    targetKey = self:GetTargetKey(),
+    learningKey = learningKey,
+    classification = self:GetTargetClassification(),
+    name = name,
+    creatureType = UnitCreatureType("target") or "unknown",
+    level = UnitLevel("target") or 0,
+  }
+end
+
+function addon:BeginPendingKidneyShotCheck()
+  local sample = self:BuildCurrentTargetLearningSample()
+  if not sample then
+    self.state.pendingKidneyShotCheck = nil
+    return
+  end
+
+  sample.expiresAt = GetTime() + 1.0
+  self.state.pendingKidneyShotCheck = sample
+end
+
+function addon:ClearPendingKidneyShotCheck()
+  self.state.pendingKidneyShotCheck = nil
+end
+
+function addon:UpdatePendingKidneyShotCheck()
+  local pending = self.state.pendingKidneyShotCheck
+  if not pending then
+    return
+  end
+
+  if pending.targetKey ~= self:GetTargetKey() then
+    self.state.pendingKidneyShotCheck = nil
+    return
+  end
+
+  if self:FindUnitDebuffByName("target", "Kidney Shot") then
+    self:RecordKidneyShotLearning("success", pending)
+    self.state.pendingKidneyShotCheck = nil
+    return
+  end
+
+  if pending.expiresAt and GetTime() >= pending.expiresAt then
+    self.state.pendingKidneyShotCheck = nil
+  end
+end
+
 function addon:PruneActiveEnemyCast()
   local castInfo = self.state.activeEnemyCast
   if not castInfo then
@@ -2627,8 +2240,163 @@ function addon:PruneActiveEnemyCast()
   end
 end
 
+function addon:HasReliableNoActiveTargetCast()
+  if not self:IsHostileTarget() then
+    return true
+  end
+
+  local checked = false
+
+  if UnitCastingInfo then
+    checked = true
+    local name = UnitCastingInfo("target")
+    if name and name ~= "" then
+      return false
+    end
+  end
+
+  if UnitChannelInfo then
+    checked = true
+    local name = UnitChannelInfo("target")
+    if name and name ~= "" then
+      return false
+    end
+  end
+
+  if CastingInfo then
+    checked = true
+    local name = CastingInfo("target")
+    if name and name ~= "" then
+      return false
+    end
+  end
+
+  if ChannelInfo then
+    checked = true
+    local name = ChannelInfo("target")
+    if name and name ~= "" then
+      return false
+    end
+  end
+
+  if TargetFrameSpellBar then
+    checked = true
+    if TargetFrameSpellBar:IsShown() then
+      return false
+    end
+  end
+
+  return checked
+end
+
+function addon:GetLiveTargetCastInfo()
+  if not self:IsHostileTarget() then
+    return nil
+  end
+
+  local spellName = nil
+  local endTime = nil
+  local sawCastBar = false
+
+  if UnitCastingInfo then
+    local name, _, _, _, castEndTimeMs = UnitCastingInfo("target")
+    if name and name ~= "" then
+      spellName = name
+      if castEndTimeMs then
+        endTime = castEndTimeMs / 1000
+      end
+    end
+  end
+
+  if (not spellName or spellName == "") and UnitChannelInfo then
+    local name, _, _, _, channelEndTimeMs = UnitChannelInfo("target")
+    if name and name ~= "" then
+      spellName = name
+      if channelEndTimeMs then
+        endTime = channelEndTimeMs / 1000
+      end
+    end
+  end
+
+  if (not spellName or spellName == "") and CastingInfo then
+    local name = CastingInfo("target")
+    if name and name ~= "" then
+      spellName = name
+      sawCastBar = true
+    end
+  end
+
+  if (not spellName or spellName == "") and ChannelInfo then
+    local name = ChannelInfo("target")
+    if name and name ~= "" then
+      spellName = name
+      sawCastBar = true
+    end
+  end
+
+  if (not spellName or spellName == "") and TargetFrameSpellBar and TargetFrameSpellBar:IsShown() then
+    sawCastBar = true
+    local text = nil
+    if TargetFrameSpellBarText and TargetFrameSpellBarText.GetText then
+      text = TargetFrameSpellBarText:GetText()
+    elseif TargetFrameSpellBar.Text and TargetFrameSpellBar.Text.GetText then
+      text = TargetFrameSpellBar.Text:GetText()
+    end
+
+    if text and text ~= "" then
+      spellName = text
+    end
+  end
+
+  if not spellName or spellName == "" then
+    if not sawCastBar then
+      return nil
+    end
+
+    spellName = "Unknown Cast"
+  end
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey then
+    return nil
+  end
+
+  return {
+    targetKey = targetKey,
+    casterName = UnitName("target"),
+    spellName = spellName,
+    startedAt = GetTime(),
+    expiresAt = endTime or (GetTime() + 1.5),
+    source = "live",
+  }
+end
+
+function addon:RefreshActiveEnemyCast()
+  local liveCast = self:GetLiveTargetCastInfo()
+  if not liveCast then
+    if self.state.activeEnemyCast and self:HasReliableNoActiveTargetCast() then
+      self.state.activeEnemyCast = nil
+    end
+    return
+  end
+
+  local current = self.state.activeEnemyCast
+  if not current
+    or current.targetKey ~= liveCast.targetKey
+    or current.spellName ~= liveCast.spellName
+    or current.source == "live" then
+    self.state.activeEnemyCast = liveCast
+    return
+  end
+
+  if current.expiresAt and liveCast.expiresAt and liveCast.expiresAt > current.expiresAt then
+    current.expiresAt = liveCast.expiresAt
+  end
+end
+
 function addon:GetActiveEnemyCast()
   self:PruneActiveEnemyCast()
+  self:RefreshActiveEnemyCast()
   return self.state.activeEnemyCast
 end
 
@@ -2705,7 +2473,8 @@ function addon:IsHostileTarget()
   end
 
   if UnitCanAttack then
-    return UnitCanAttack("player", "target") == 1
+    local canAttack = UnitCanAttack("player", "target")
+    return canAttack == 1 or canAttack == true
   end
 
   return true
@@ -3020,27 +2789,6 @@ function addon:GetFightProfile()
   return "normal"
 end
 
-function addon:ShouldInvestInPrimaryDebuff(mode, profile, encounterType)
-  profile = profile or self:GetFightProfile()
-  if encounterType == "dungeon_elite" then
-    return true
-  end
-  return profile ~= "trash_short"
-end
-
-function addon:ShouldInvestInSliceAndDice(profile, encounterType)
-  profile = profile or self:GetFightProfile()
-  if encounterType == "dungeon_elite" then
-    return true
-  end
-  return profile ~= "trash_short"
-end
-
-function addon:ShouldForceImmediateDamage(profile)
-  profile = profile or self:GetFightProfile()
-  return profile == "trash_short"
-end
-
 function addon:HasReliablePoisonStateOnTarget()
   if not UnitExists("target") then
     return false
@@ -3059,272 +2807,6 @@ function addon:HasReliablePoisonStateOnTarget()
   end
 
   return false
-end
-
-function addon:GetPrimaryDebuffName(mode)
-  if mode == "bleed" then
-    return "Rupture"
-  end
-
-  if mode == "direct" then
-    return "Expose Armor"
-  end
-
-  return nil
-end
-
-function addon:GetSliceAndDiceComboThreshold(context)
-  if not context or context.durabilityTier == "low" then
-    return 99
-  end
-  return context.encounterType == "dungeon_elite" and 3 or 2
-end
-
-function addon:GetPrimaryDebuffComboThreshold(mode, context)
-  if not context then
-    return 99
-  end
-
-  if mode == "bleed" then
-    if context.durabilityTier == "medium" then
-      return 2
-    elseif context.durabilityTier == "high" then
-      return 3
-    end
-    return 99
-  end
-
-  if mode == "direct" then
-    if context.durabilityTier == "high" then
-      return 3
-    elseif context.durabilityTier == "medium" then
-      return 3
-    end
-  end
-
-  return 99
-end
-
-function addon:GetFinisherComboThreshold(context)
-  if not context then
-    return 5
-  end
-
-  if context.durabilityTier == "low" then
-    return 2
-  end
-
-  if context.durabilityTier == "medium" then
-    return 3
-  end
-
-  return 4
-end
-
-function addon:GetPrimaryMinimumPayoff(mode, context)
-  if not context then
-    return 999
-  end
-
-  if mode == "bleed" then
-    if context.encounterType == "dungeon_elite" then
-      return 4.5
-    end
-    if context.encounterType == "dungeon_trash" then
-      return 3.5
-    end
-    if context.encounterType == "party_world" then
-      return 3.5
-    end
-    return 2.5
-  end
-
-  if context.encounterType == "dungeon_elite" then
-    return 6
-  end
-  if context.encounterType == "dungeon_trash" then
-    return 4.5
-  end
-  if context.encounterType == "party_world" then
-    return 4.75
-  end
-  return 4.25
-end
-
-function addon:GetSliceAndDicePayoff(context)
-  if not context or not RogueAutoDB.core.keepSliceAndDice or context.durabilityTier == "low" then
-    return -99
-  end
-
-  local minComboPoints = self:GetSliceAndDiceComboThreshold(context)
-  if context.comboPoints < minComboPoints then
-    return -99
-  end
-
-  local duration = self:GetComboBuffDuration("Slice and Dice", context.comboPoints)
-  if not duration then
-    return -99
-  end
-
-  local currentRemaining = context.sndActive and (context.sndRemaining or 0) or 0
-  local consumedNew = math.min(duration, context.remainingFightDuration)
-  local consumedCurrent = math.min(currentRemaining, context.remainingFightDuration)
-  local netGain = consumedNew - consumedCurrent
-  local leftover = math.max(duration - context.remainingFightDuration, 0)
-  local comboPenalty = math.max(context.comboPoints - 2, 0) * 0.7
-  local encounterPenalty = 0
-  if context.encounterType == "solo_world" then
-    encounterPenalty = 1.1
-  elseif context.encounterType == "dungeon_trash" then
-    encounterPenalty = 0.45
-  elseif context.encounterType == "party_world" then
-    encounterPenalty = 0.25
-  else
-    encounterPenalty = -0.5
-  end
-
-  return netGain
-    - (leftover * 0.55)
-    - comboPenalty
-    - encounterPenalty
-    - ((context.wastePenalty or 0) * 4)
-end
- 
-function addon:GetPrimaryDebuffPayoff(mode, context)
-  if not context or not context.primarySpell then
-    return -99
-  end
-
-  local minComboPoints = self:GetPrimaryDebuffComboThreshold(mode, context)
-  if context.comboPoints < minComboPoints then
-    return -99
-  end
-
-  local newDuration = mode == "bleed"
-    and self:GetComboDebuffDuration(context.primarySpell, context.comboPoints)
-    or self.observedDebuffDurations[context.primarySpell]
-  if not newDuration or newDuration <= 0 then
-    return -99
-  end
-
-  local currentRemaining = context.primaryActive and (context.primaryRemaining or 0) or 0
-  if context.primaryActive and currentRemaining >= self.refreshWindow.targetDebuff and currentRemaining >= (newDuration * 0.45) then
-    return -99
-  end
-
-  local consumedNew = math.min(newDuration, context.remainingFightDuration)
-  local consumedCurrent = math.min(currentRemaining, context.remainingFightDuration)
-  local netGain = consumedNew - consumedCurrent
-  local leftover = math.max(newDuration - context.remainingFightDuration, 0)
-  local score = netGain
-    - (leftover * (mode == "bleed" and 0.22 or 0.16))
-    - self:GetPrimaryMinimumPayoff(mode, context)
-    - ((context.wastePenalty or 0) * 2.5)
-
-  if context.durabilityTier == "high" then
-    score = score + 0.8
-  elseif context.durabilityTier == "low" then
-    score = score - 2.5
-  end
-
-  if mode == "direct" and context.encounterType == "solo_world" then
-    score = score - 0.35
-  end
-
-  if mode == "bleed" and context.encounterType == "dungeon_elite" then
-    score = score + 0.5
-  end
-
-  return score
-end
-
-function addon:GetShadowOfDeathPayoff(context)
-  if not context
-    or not self:HasSpell("Shadow of Death")
-    or not context.primaryActive
-    or context.comboPoints < 5 then
-    return -99
-  end
-
-  if context.shadowActive and context.shadowRemaining >= self.refreshWindow.targetDebuff then
-    return -99
-  end
-
-  if context.encounterType ~= "dungeon_elite" and context.durabilityTier ~= "high" then
-    return -99
-  end
-
-  local consumed = math.min(12, context.remainingFightDuration)
-  return consumed - 8 - ((context.wastePenalty or 0) * 2)
-end
-
-function addon:GetDirectFinisherPayoff(context)
-  if not context then
-    return -99
-  end
-
-  local minComboPoints = self:GetFinisherComboThreshold(context)
-  if context.comboPoints < minComboPoints then
-    return -99
-  end
-
-  local score = (context.comboPoints * 1.4)
-  if context.targetHealthPct <= 35 then
-    score = score + 1.5
-  elseif context.targetHealthPct <= 50 then
-    score = score + 0.6
-  end
-
-  if context.remainingFightDuration < 4 then
-    score = score + 1.4
-  elseif context.remainingFightDuration < 7 then
-    score = score + 0.6
-  end
-
-  if context.durabilityTier == "low" then
-    score = score + 1.1
-  elseif context.durabilityTier == "high" then
-    score = score - 0.25
-  end
-
-  if context.encounterType == "dungeon_elite" and context.targetHealthPct > 50 then
-    score = score - 0.75
-  end
-
-  if context.encounterType == "solo_world" then
-    score = score + 0.35
-  end
-
-  return score
-end
-
-function addon:ShouldAttemptPrimaryDebuff(mode, context)
-  return self:GetPrimaryDebuffPayoff(mode, context) > 0
-end
-
-function addon:GetBestDirectFinisherSpell(context)
-  if self:HasSpell("Envenom")
-    and context
-    and context.durabilityTier ~= "low"
-    and context.comboPoints >= 4
-    and context.remainingFightDuration >= 5
-    and context.poisonReliable then
-    return "Envenom"
-  end
-
-  if self:HasSpell("Eviscerate") then
-    return "Eviscerate"
-  end
-
-  if self:HasSpell("Envenom") then
-    return "Envenom"
-  end
-
-  return nil
-end
-
-function addon:ShouldUseSliceAndDice(context)
-  return self:GetSliceAndDicePayoff(context) > 0
 end
 
 function addon:MaybeBeginLearningFight()
@@ -3523,14 +3005,6 @@ function addon:GetComboPointContext(mode)
       remainingFightDuration = (liveRemainingFightDuration * 0.45) + (remainingFightDuration * 0.55)
     end
   end
-  local sndActive, sndRemaining = self:FindPlayerBuff("Slice and Dice")
-  local primaryName = self:GetPrimaryDebuffName(mode)
-  local primaryActive, primaryRemaining = false, 0
-  if primaryName then
-    primaryActive, primaryRemaining = self:IsTargetDebuffActive(primaryName)
-  end
-  local shadowActive, shadowRemaining = self:IsTargetDebuffActive("Shadow of Death")
-
   local context = {
     mode = mode,
     comboPoints = comboPoints,
@@ -3550,21 +3024,7 @@ function addon:GetComboPointContext(mode)
     remainingFightDuration = remainingFightDuration,
     liveRemainingFightDuration = liveRemainingFightDuration,
     poisonReliable = self:HasReliablePoisonStateOnTarget(),
-    sndActive = sndActive,
-    sndRemaining = sndRemaining,
-    primarySpell = primaryName,
-    primaryActive = primaryActive,
-    primaryRemaining = primaryRemaining,
-    shadowActive = shadowActive,
-    shadowRemaining = shadowRemaining,
   }
-
-  context.sndThreshold = self:GetSliceAndDiceComboThreshold(context)
-  context.primaryThreshold = self:GetPrimaryDebuffComboThreshold(mode, context)
-  context.primaryPayoff = self:GetPrimaryDebuffPayoff(mode, context)
-  context.sndPayoff = self:GetSliceAndDicePayoff(context)
-  context.shadowPayoff = self:GetShadowOfDeathPayoff(context)
-  context.finisherPayoff = self:GetDirectFinisherPayoff(context)
 
   self.state.activeRotationMode = mode
   self:UpdateLearningFightFromContext(context)
@@ -3590,11 +3050,7 @@ function addon:ShouldKickCurrentTarget()
 end
 
 function addon:ShouldReserveKickEnergy(context)
-  if not context or context.mode == "interrupt" then
-    return false
-  end
-
-  if not self:HasSpell("Kick") or not self:IsSpellReady("Kick") then
+  if not context then
     return false
   end
 
@@ -3607,6 +3063,19 @@ function addon:ShouldReserveKickEnergy(context)
   end
 
   if context.targetHealthPct <= 22 or context.remainingFightDuration <= 3 then
+    return false
+  end
+
+  local reserveViaKick = self:HasSpell("Kick") and self:IsSpellReady("Kick")
+  local reserveViaKidney = false
+  if not reserveViaKick
+    and context.comboPoints > 0
+    and self:HasSpell("Kidney Shot")
+    and not self:IsTargetStunImmune(context) then
+    reserveViaKidney = true
+  end
+
+  if not reserveViaKick and not reserveViaKidney then
     return false
   end
 
@@ -3626,6 +3095,73 @@ function addon:ShouldReserveKickEnergy(context)
   return castConfidence >= 0.45
 end
 
+function addon:ShouldConservativelyBlockKidneyShot(context)
+  if not context then
+    return false
+  end
+
+  if context.classification == "worldboss" then
+    return true
+  end
+
+  if context.encounterType == "dungeon_elite" then
+    local baseline = context.baselineHealth or 0
+    local expected = context.expectedMaxHealth or 0
+    if expected >= 6000 then
+      return true
+    end
+    if baseline > 0 and expected >= (baseline * 2.5) then
+      return true
+    end
+    if (context.expectedFightDuration or 0) >= 40 then
+      return true
+    end
+  end
+
+  return false
+end
+
+function addon:IsTargetStunImmune(context)
+  context = context or self:GetComboPointContext(self.state.activeRotationMode or "finisher")
+  local entry = context and context.learningProfile or self:GetMobLearningProfile()
+  if entry then
+    local immuneSamples = entry.stunImmuneSamples or 0
+    local successSamples = entry.stunSuccessSamples or 0
+    if successSamples > immuneSamples and successSamples > 0 then
+      return false
+    end
+    if immuneSamples > 0 then
+      return self:GetStunImmunityConfidence(entry) >= 0.6
+    end
+  end
+
+  return self:ShouldConservativelyBlockKidneyShot(context)
+end
+
+function addon:CanUseKidneyShotInterrupt(context)
+  if not context or context.comboPoints <= 0 then
+    return false
+  end
+
+  if not self:GetActiveEnemyCast() then
+    return false
+  end
+
+  if not self:HasSpell("Kidney Shot") or not self:IsInMeleeRange() then
+    return false
+  end
+
+  if self:CanCast("Kick") then
+    return false
+  end
+
+  if self:IsTargetStunImmune(context) then
+    return false
+  end
+
+  return self:CanCast("Kidney Shot")
+end
+
 function addon:CanCastWithoutBreakingKickReserve(name, context)
   if not name or name == "Kick" or name == "Kidney Shot" then
     return true
@@ -3641,142 +3177,6 @@ function addon:CanCastWithoutBreakingKickReserve(name, context)
   end
 
   return (self:GetEnergy() - energyCost) >= self:GetKickEnergyCost()
-end
-
-function addon:GetRotationKickDecision(context)
-  if not self:ShouldKickCurrentTarget() then
-    return nil
-  end
-
-  local activeCast = self:GetActiveEnemyCast()
-  local reasons = {}
-  addHeuristicReason(reasons, "Target is casting right now")
-  if activeCast and activeCast.spellName then
-    addHeuristicReason(reasons, activeCast.spellName .. " is interrupt-worthy")
-  else
-    addHeuristicReason(reasons, "Kick preempts normal damage")
-  end
-
-  return {
-    action = "Kick",
-    reasons = reasons,
-    category = "kick",
-    context = context,
-  }
-end
-
-function addon:GetKickReserveDecision(context)
-  if not context or not self:ShouldReserveKickEnergy(context) then
-    return nil
-  end
-
-  local kickCost = self:GetKickEnergyCost()
-  if self:GetEnergy() >= (kickCost + 35) then
-    return nil
-  end
-
-  local reasons = {
-    "Holding energy for a learned caster target",
-    "Kick reserve is worth more than a normal spender",
-  }
-
-  local activeCast = self:GetActiveEnemyCast()
-  if activeCast and activeCast.spellName then
-    reasons[1] = "Holding energy for " .. activeCast.spellName
-  end
-
-  return {
-    action = "Hold for Kick",
-    reasons = reasons,
-    category = "kickReserve",
-  }
-end
-
-function addon:GetComboPointDecision(mode, context)
-  if not context or context.comboPoints <= 0 then
-    return nil
-  end
-
-  if mode == "interrupt" then
-    if self:HasSpell("Kidney Shot") and context.comboPoints >= 1 then
-      return "Kidney Shot", {
-        reasons = {
-          "Urgent stop uses combo-point control",
-          "No higher-priority interrupt won",
-        },
-      }
-    end
-    return nil
-  end
-
-  local primaryReady = context.primarySpell
-    and context.comboPoints >= context.primaryThreshold
-    and context.primaryPayoff > 0
-  local primaryMissing = primaryReady and not context.primaryActive
-  local primaryUrgent = primaryMissing and context.remainingFightDuration >= (mode == "bleed" and 3 or 4)
-
-  if primaryUrgent then
-    local reasons = {}
-    addHeuristicReason(reasons, "Primary debuff is missing and payoff is positive")
-    if mode == "bleed" then
-      addHeuristicReason(reasons, "Bleed mode establishes Rupture before cash-out")
-    else
-      addHeuristicReason(reasons, "Direct mode establishes Expose Armor before burst")
-    end
-    if context.liveRemainingFightDuration and context.liveRemainingFightDuration < (context.expectedFightDuration * 0.8) then
-      addHeuristicReason(reasons, "Live pace is faster than learned average")
-    end
-    return context.primarySpell, { reasons = reasons }
-  end
-
-  if self:ShouldUseSliceAndDice(context)
-    and context.sndPayoff >= context.finisherPayoff
-    and context.sndPayoff >= context.primaryPayoff then
-    local reasons = {}
-    addHeuristicReason(reasons, "Projected SnD gain beats finisher payoff")
-    addHeuristicReason(reasons, "Projected waste is acceptable here")
-    if context.encounterType == "dungeon_elite" then
-      addHeuristicReason(reasons, "Elite context supports more upkeep")
-    end
-    return "Slice and Dice", { reasons = reasons }
-  end
-
-  if primaryReady and (not context.primaryActive or context.primaryPayoff >= (context.finisherPayoff + 0.25)) then
-    local reasons = {}
-    addHeuristicReason(reasons, "Primary debuff payoff beats direct finisher")
-    if context.primaryActive then
-      addHeuristicReason(reasons, "Primary debuff is ready for refresh")
-    else
-      addHeuristicReason(reasons, "Primary debuff is not active yet")
-    end
-    return context.primarySpell, { reasons = reasons }
-  end
-
-  if self:HasSpell("Shadow of Death")
-    and context.shadowPayoff > context.finisherPayoff
-    and context.shadowPayoff > 0 then
-    return "Shadow of Death", {
-      reasons = {
-        "Shadow of Death beats direct finisher payoff",
-        "Durable target can consume the debuff window",
-      },
-    }
-  end
-
-  local finisherSpell = self:GetBestDirectFinisherSpell(context)
-  if finisherSpell and context.finisherPayoff > 0 then
-    local reasons = {}
-    addHeuristicReason(reasons, "Direct finisher payoff is highest")
-    if context.targetHealthPct <= 50 then
-      addHeuristicReason(reasons, "Target is entering kill range")
-    end
-    if context.primaryPayoff <= 0 then
-      addHeuristicReason(reasons, "Setup payoff is too low right now")
-    end
-    return finisherSpell, { reasons = reasons }
-  end
-
-  return nil
 end
 
 function addon:IsStealthed()
@@ -3927,20 +3327,6 @@ function addon:IsPickPocketRange()
   return true
 end
 
-function addon:GetRangedWeaponType()
-  local link = GetInventoryItemLink("player", 18)
-  if not link or not GetItemInfo then
-    return nil
-  end
-
-  local _, _, _, _, _, itemType, subType = GetItemInfo(link)
-  if itemType ~= "Weapon" then
-    return nil
-  end
-
-  return subType
-end
-
 function addon:IsDaggerEquipped()
   local mainHand = GetInventoryItemLink("player", 16)
   if not mainHand or not GetItemInfo then
@@ -4021,6 +3407,22 @@ function addon:FindUnitDebuffByName(unit, name)
   end
 
   return false
+end
+
+function addon:HasTargetArmorReductionDebuff()
+  if not UnitExists("target") then
+    return false
+  end
+
+  if self:FindUnitDebuffByName("target", "Sunder Armor") then
+    return true, "Sunder Armor"
+  end
+
+  if self:FindUnitDebuffByName("target", "Expose Armor") then
+    return true, "Expose Armor"
+  end
+
+  return false, nil
 end
 
 function addon:BuildTargetFingerprint()
@@ -4535,6 +3937,15 @@ function addon:IsTargetDebuffActive(name)
     return false, 0
   end
 
+  if name == "Expose Armor" then
+    local armorReduced, sourceName = self:HasTargetArmorReductionDebuff()
+    if armorReduced then
+      if sourceName == "Sunder Armor" then
+        return true, self.refreshWindow.targetDebuff + 1
+      end
+    end
+  end
+
   local targetKey = self:GetTargetKey()
   local policy = self:GetDebuffTrackingPolicy(name)
   local auraMatch = self:ScanTargetDebuff(name)
@@ -4629,8 +4040,7 @@ function addon:StartAttack()
     return
   end
 
-  -- Never break stealth before the opener logic gets a chance to run.
-  if RogueAutoDB.stealth.integrated and self:IsStealthed() then
+  if self:IsStealthed() then
     return
   end
 
@@ -4648,8 +4058,50 @@ function addon:IsTargetTargetingPlayer()
   return UnitExists("targettarget") and UnitIsUnit("targettarget", "player")
 end
 
+function addon:DoesTargetAppearToBeOnPlayer()
+  if self:IsTargetTargetingPlayer() then
+    return true
+  end
+
+  if not UnitExists("target") then
+    return false
+  end
+
+  local playerName = UnitName("player")
+  local targetTargetName = UnitName("targettarget")
+  if playerName and targetTargetName and string.lower(playerName) == string.lower(targetTargetName) then
+    return true
+  end
+
+  return false
+end
+
+function addon:ShouldUseBuilderFeint()
+  if self:GetCurrentGroupSize() <= 0 then
+    return false
+  end
+
+  if not self:DoesTargetAppearToBeOnPlayer() then
+    return false
+  end
+
+  return self:CanCast("Feint")
+end
+
+function addon:TryBuilderFeint()
+  if not self:ShouldUseBuilderFeint() then
+    return false
+  end
+
+  return self:TryCast("Feint")
+end
+
 function addon:CanCast(name)
   if not self:HasSpell(name) then
+    return false
+  end
+
+  if name == "Surprise Attack" and not self:CanUseSurpriseAttack() then
     return false
   end
 
@@ -4696,6 +4148,8 @@ function addon:Cast(name)
     self:BeginPickPocketAttempt()
   elseif name == "Kick" then
     self.state.activeEnemyCast = nil
+  elseif name == "Kidney Shot" then
+    self:BeginPendingKidneyShotCheck()
   end
 
   self:MarkLearningSetupCast(name)
@@ -4733,42 +4187,66 @@ end
 
 function addon:GetPreferredBuilder(context)
   local mode = RogueAutoDB.builder.mode
-  local forcedSpell = self.builderModes[mode]
-  if forcedSpell and self:HasSpell(forcedSpell) then
-    if forcedSpell == "Backstab" and (not self:IsDaggerEquipped() or self:IsBehindBlocked()) then
-      if self:HasSpell("Hemorrhage") then
-        return "Hemorrhage", {
-          reasons = {
-            "Backstab mode is blocked by position or weapon",
-            "Hemorrhage is the best fallback",
-          },
-        }
-      end
-      if self:HasSpell("Sinister Strike") then
-        return "Sinister Strike", {
-          reasons = {
-            "Backstab mode is blocked by position or weapon",
-            "Sinister Strike is the reliable fallback",
-          },
-        }
-      end
-      return forcedSpell, {
+  context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
+  local modeHint = context and context.mode or self.state.activeRotationMode or "builder"
+
+  if mode == "auto" then
+    if self:GetBuilderSpellScore("Backstab", context, modeHint) then
+      return "Backstab", {
         reasons = {
-          "Builder mode is forcing this spell",
+          "Behind target with dagger",
+          "Backstab is the top auto builder",
         },
       }
     end
-    return forcedSpell, {
-      reasons = {
-        "Builder mode is forcing this spell",
-      },
-    }
+
+    if self:CanUseSurpriseAttack() and self:CanCast("Surprise Attack") then
+      return "Surprise Attack", {
+        reasons = {
+          "Target dodge window enables Surprise Attack",
+          "Surprise Attack is prioritized over Sinister Strike",
+        },
+      }
+    end
+
+    if context and context.poisonReliable and self:GetBuilderSpellScore("Noxious Assault", context, modeHint) then
+      return "Noxious Assault", {
+        reasons = {
+          "Auto prefers Noxious Assault with poison synergy",
+        },
+      }
+    end
+
+    if self:GetBuilderSpellScore("Hemorrhage", context, modeHint) then
+      return "Hemorrhage", {
+        reasons = {
+          "Auto prefers Hemorrhage when learned",
+        },
+      }
+    end
+
+    if self:GetBuilderSpellScore("Noxious Assault", context, modeHint) then
+      return "Noxious Assault", {
+        reasons = {
+          "Auto falls back to Noxious Assault when learned",
+        },
+      }
+    end
+
+    if self:GetBuilderSpellScore("Sinister Strike", context, modeHint) then
+      return "Sinister Strike", {
+        reasons = {
+          "Sinister Strike is the auto fallback",
+        },
+      }
+    end
+
+    return nil
   end
 
-  context = context or self:GetComboPointContext(self.state.activeRotationMode or "direct")
+  local preferredSpell = self.builderModes[mode]
   local bestSpell = nil
   local bestScore = nil
-  local modeHint = context and context.mode or self.state.activeRotationMode or "direct"
   local candidateSpells = {
     "Backstab",
     "Noxious Assault",
@@ -4776,29 +4254,47 @@ function addon:GetPreferredBuilder(context)
     "Sinister Strike",
   }
 
-  for _, spellName in ipairs(candidateSpells) do
-    local score = self:GetBuilderSpellScore(spellName, context, modeHint)
-    if score and (not bestScore or score > bestScore) then
-      bestScore = score
-      bestSpell = spellName
+  if preferredSpell then
+    local preferredScore = self:GetBuilderSpellScore(preferredSpell, context, modeHint)
+    if preferredScore then
+      bestSpell = preferredSpell
+      bestScore = preferredScore
     end
+  end
+
+  if not bestSpell then
+    for _, spellName in ipairs(candidateSpells) do
+      if spellName ~= preferredSpell then
+        local score = self:GetBuilderSpellScore(spellName, context, modeHint)
+        if score and (not bestScore or score > bestScore) then
+          bestScore = score
+          bestSpell = spellName
+        end
+      end
+    end
+  end
+
+  if bestSpell == "Sinister Strike" and self:CanUseSurpriseAttack() then
+    bestSpell = "Surprise Attack"
   end
 
   if bestSpell then
     local reasons = {}
+    if bestSpell == preferredSpell then
+      addHeuristicReason(reasons, "Selected primary builder is legal")
+    elseif preferredSpell then
+      addHeuristicReason(reasons, "Selected primary builder was unavailable or illegal")
+    end
     if bestSpell == "Backstab" then
       addHeuristicReason(reasons, "Behind target with dagger")
-      addHeuristicReason(reasons, "Backstab wins the builder score")
+      addHeuristicReason(reasons, "Backstab wins the fallback score")
     elseif bestSpell == "Noxious Assault" then
       addHeuristicReason(reasons, "Poison-synergy builder wins")
-      if context and context.mode == "direct" then
-        addHeuristicReason(reasons, "Direct mode leans into burst builder value")
-      end
     elseif bestSpell == "Hemorrhage" then
-      addHeuristicReason(reasons, "Hemorrhage wins the stable front-facing score")
-      if context and context.mode == "bleed" then
-        addHeuristicReason(reasons, "Bleed mode favors bleed-friendly setup")
-      end
+      addHeuristicReason(reasons, "Hemorrhage is the best legal fallback")
+    elseif bestSpell == "Surprise Attack" then
+      addHeuristicReason(reasons, "Target dodge window enables Surprise Attack")
+      addHeuristicReason(reasons, "Surprise Attack is prioritized over Sinister Strike")
     elseif bestSpell == "Sinister Strike" then
       addHeuristicReason(reasons, "Reliable front-facing fallback")
       if context and context.durabilityTier == "low" then
@@ -4815,7 +4311,7 @@ function addon:GetPreferredBuilder(context)
 end
 
 function addon:GetBuilderSpellScore(spellName, context, modeHint)
-  if not self:HasSpell(spellName) then
+  if not self:CanCast(spellName) then
     return nil
   end
 
@@ -4829,6 +4325,8 @@ function addon:GetBuilderSpellScore(spellName, context, modeHint)
       score = score + 0.5
     elseif modeHint == "bleed" then
       score = score + 0.15
+    elseif modeHint == "builder" then
+      score = score + 0.2
     end
     if context and context.encounterType == "dungeon_elite" then
       score = score + 0.3
@@ -4851,7 +4349,7 @@ function addon:GetBuilderSpellScore(spellName, context, modeHint)
   end
 
   if spellName == "Hemorrhage" then
-    local score = 3.45
+    local score = 3.15
     if modeHint == "bleed" then
       score = score + 0.6
     end
@@ -4864,7 +4362,7 @@ function addon:GetBuilderSpellScore(spellName, context, modeHint)
   if spellName == "Sinister Strike" then
     local score = 3.3
     if context and context.durabilityTier == "low" then
-      score = score + 0.35
+      score = score + 0.15
     end
     return score
   end
@@ -4872,56 +4370,84 @@ function addon:GetBuilderSpellScore(spellName, context, modeHint)
   return nil
 end
 
-function addon:GetStealthOpener(mode)
-  if not RogueAutoDB.stealth.integrated or not self:IsStealthed() then
+function addon:ResolveOpenerHint(hint)
+  if not hint then
     return nil
   end
 
-  if self:CanAttemptPickPocket() then
+  local normalized = string.lower(trim(hint))
+  if normalized == "pick pocket" or normalized == "pickpocket" then
     return "Pick Pocket"
-  end
-
-  if mode == "bleed" then
-    if self:HasSpell("Garrote") and self:CanAttemptBehindAction() then
-      return "Garrote"
-    end
-    return nil
-  end
-
-  if self:HasSpell("Ambush") and self:IsDaggerEquipped() and self:CanAttemptBehindAction() then
+  elseif normalized == "garrote" then
+    return "Garrote"
+  elseif normalized == "ambush" then
     return "Ambush"
-  end
-  if self:HasSpell("Cheap Shot") then
+  elseif normalized == "cheap shot" or normalized == "cheapshot" then
     return "Cheap Shot"
   end
 
   return nil
 end
 
-function addon:TrySoftDefensives()
-  if not self:IsTargetTargetingPlayer() then
+function addon:CanAttemptSpecificOpener(name)
+  if not name or not self:IsStealthed() then
     return false
   end
 
-  if RogueAutoDB.core.softDefensives.feint and self:HasSpell("Feint") and self:TryCast("Feint") then
+  if name == "Pick Pocket" then
+    return self:CanAttemptPickPocket()
+  end
+
+  if not self:HasSpell(name) then
+    return false
+  end
+
+  if name == "Garrote" then
+    return self:CanAttemptBehindAction()
+  end
+
+  if name == "Ambush" then
+    return self:IsDaggerEquipped() and self:CanAttemptBehindAction()
+  end
+
+  if name == "Cheap Shot" then
     return true
   end
 
-  if RogueAutoDB.core.softDefensives.ghostlyStrike and self:HasSpell("Ghostly Strike") then
-    local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
-    if self:GetComboPoints() == 0 and (not active or remaining < 2) and self:TryCast("Ghostly Strike") then
-      return true
-    end
-  end
-
-  if RogueAutoDB.core.softDefensives.flourish and self:HasSpell("Flourish") and self:GetComboPoints() > 0 then
-    local active, remaining = self:FindPlayerBuff(self.buffAliases.flourish)
-    if (not active or remaining < 2) and self:TryCast("Flourish") then
-      return true
-    end
-  end
-
   return false
+end
+
+function addon:TryOpenerHint(hint)
+  local opener = self:ResolveOpenerHint(hint)
+  if not opener then
+    return false
+  end
+
+  if not self:IsStealthed() then
+    return false
+  end
+
+  if opener == "Pick Pocket" then
+    if self:CanAttemptSpecificOpener(opener) then
+      self.state.activeOpenerHint = opener
+      return self:TryCast(opener)
+    end
+    return false
+  end
+
+  if RogueAutoDB.stealth.pickPocketHumanoids and self:CanAttemptPickPocket() then
+    self.state.activeOpenerHint = opener
+    if self:TryCast("Pick Pocket") then
+      return true
+    end
+  end
+
+  if not self:CanAttemptSpecificOpener(opener) then
+    return false
+  end
+
+  self.state.activeOpenerHint = opener
+  return self:TryCast(opener)
 end
 
 function addon:TryRiposte()
@@ -4954,116 +4480,24 @@ function addon:TryRotationKick()
   return false
 end
 
-function addon:TryMaintainBuff(name)
-  if not self:HasSpell(name) then
+function addon:TryEmergencyKidneyInterrupt(mode)
+  local context = self:GetComboPointContext(mode or self.state.activeRotationMode or "finisher")
+  if not self:CanUseKidneyShotInterrupt(context) then
     return false
   end
 
-  if name == "Slice and Dice" and not RogueAutoDB.core.keepSliceAndDice then
-    return false
-  end
-
-  if name == "Slice and Dice" and not self:ShouldInvestInSliceAndDice() then
-    return false
-  end
-
-  if self:GetComboPoints() <= 0 then
-    return false
-  end
-
-  local active, remaining = self:FindPlayerBuff(name)
-  if (not active or remaining < self.refreshWindow.playerBuff) and self:TryCast(name) then
-    return true
-  end
-
-  return false
-end
-
-function addon:TryMaintainTargetDebuff(name, comboThreshold)
-  if not self:HasSpell(name) then
-    return false
-  end
-
-  if self:GetComboPoints() < (comboThreshold or 1) then
-    return false
-  end
-
-  local active, remaining = self:IsTargetDebuffActive(name)
-  if active and remaining == 0 then
-    return false
-  end
-
-  if (not active or remaining < self.refreshWindow.targetDebuff) then
-    return self:TryCastWithComboTracking(name, self:GetComboPoints())
-  end
-
-  return false
-end
-
-function addon:ShouldForceDebuffBeforeBuff(name, comboThreshold)
-  if not self:HasSpell(name) then
-    return false
-  end
-
-  local active = self:IsTargetDebuffActive(name)
-  if active then
-    return false
-  end
-
-  return self:GetComboPoints() < (comboThreshold or 1)
-end
-
-function addon:ShouldPreferExecuteFinisher(mode, context)
-  context = context or self:GetComboPointContext(mode or "direct")
-  local finisherSpell = self:GetBestDirectFinisherSpell(context)
-  if not finisherSpell then
-    return false
-  end
-
-  if not context or context.comboPoints <= 0 then
-    return false
-  end
-
-  if context.primarySpell
-    and context.primaryPayoff
-    and context.primaryPayoff > 0
-    and context.comboPoints >= context.primaryThreshold
-    and not context.primaryActive then
-    return false
-  end
-
-  if context.durabilityTier == "low" then
-    return context.targetHealthPct <= 50
-  end
-
-  if context.durabilityTier == "medium" then
-    return context.targetHealthPct <= 30
-  end
-
-  return context.targetHealthPct <= 20
-end
-
-function addon:ShouldFavorImmediateDamage()
-  return self:ShouldForceImmediateDamage(self:GetFightProfile())
+  return self:TryCast("Kidney Shot")
 end
 
 function addon:TryPreferredBuilder()
-  local builderMode = RogueAutoDB and RogueAutoDB.builder and RogueAutoDB.builder.mode
-  local modeHint = self.state.activeRotationMode or "direct"
+  local modeHint = self.state.activeRotationMode or "builder"
   local context = self:GetComboPointContext(modeHint)
-  local shouldTryBackstab = self:HasSpell("Backstab")
-    and self:IsDaggerEquipped()
-    and not self:IsBehindBlocked()
-    and builderMode == "backstab"
-  if shouldTryBackstab and self:CanCastWithoutBreakingKickReserve("Backstab", context) and self:TryCast("Backstab") then
-    return true
-  end
+  local mode = RogueAutoDB.builder.mode
 
-  if RogueAutoDB.core.softDefensives.ghostlyStrike and self:HasSpell("Ghostly Strike") then
+  if mode == "auto" and RogueAutoDB.builder.useGhostlyStrike and self:HasSpell("Ghostly Strike") then
     local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
     if self:GetComboPoints() < 5
       and (not active or remaining < 2)
-      and self:CanCastWithoutBreakingKickReserve("Ghostly Strike", context)
       and self:TryCast("Ghostly Strike") then
       return true
     end
@@ -5071,83 +4505,19 @@ function addon:TryPreferredBuilder()
 
   local builder = self:GetPreferredBuilder(context)
   if builder then
-    if not self:CanCastWithoutBreakingKickReserve(builder, context) then
-      return false
-    end
     return self:TryCast(builder)
   end
 
+  if mode ~= "auto" and RogueAutoDB.builder.useGhostlyStrike and self:HasSpell("Ghostly Strike") then
+    local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
+    if self:GetComboPoints() < 5
+      and (not active or remaining < 2)
+      and self:TryCast("Ghostly Strike") then
+      return true
+    end
+  end
+
   return false
-end
-
-function addon:TryExecuteFinisher(mode)
-  local context = self:GetComboPointContext(mode or "direct")
-  local finisherSpell = self:GetBestDirectFinisherSpell(context)
-  if not finisherSpell then
-    return false
-  end
-
-  if not context or context.comboPoints <= 0 then
-    return false
-  end
-
-  if not self:CanCastWithoutBreakingKickReserve(finisherSpell, context) then
-    return false
-  end
-
-  return self:TryCast(finisherSpell)
-end
-
-function addon:TryDirectFinisher(minComboPoints)
-  local context = self:GetComboPointContext("direct")
-  local finisherSpell = self:GetBestDirectFinisherSpell(context)
-  if not finisherSpell then
-    return false
-  end
-
-  if not context or context.comboPoints < (minComboPoints or 5) then
-    return false
-  end
-
-  return self:TryCast(finisherSpell)
-end
-
-function addon:TryHeuristicFinisher(mode)
-  local context = self:GetComboPointContext(mode)
-  local spellName = self:GetComboPointDecision(mode, context)
-  if not spellName then
-    return false
-  end
-
-  if not self:CanCastWithoutBreakingKickReserve(spellName, context) then
-    return false
-  end
-
-  if spellName == "Rupture" or spellName == "Expose Armor" or spellName == "Shadow of Death" then
-    return self:TryCastWithComboTracking(spellName, context.comboPoints)
-  end
-
-  return self:TryCast(spellName)
-end
-
-function addon:GetShootSpell()
-  local weaponType = self:GetRangedWeaponType()
-  if weaponType == "Thrown" then
-    return "Throw"
-  end
-  if weaponType == "Bows" then
-    return "Shoot Bow"
-  end
-  if weaponType == "Crossbows" then
-    return "Shoot Crossbow"
-  end
-  if weaponType == "Guns" then
-    return "Shoot Gun"
-  end
-  if weaponType == "Wands" then
-    return "Shoot"
-  end
-  return nil
 end
 
 function addon:OnVariablesLoaded()
@@ -5156,8 +4526,8 @@ end
 
 function addon:OnPlayerLogin()
   self:RefreshKnownSpells()
-  self:UpdatePlayerStatFrame(true)
   self:UpdateCooldownListFrame(true)
+  self:UpdateSelfBuffTimelineFrame(true)
   self:Debug("Loaded version " .. self.version)
 end
 
@@ -5171,6 +4541,7 @@ end
 
 function addon:OnCombatEnded()
   self.state.activeEnemyCast = nil
+  self:ClearPendingKidneyShotCheck()
   self:FinalizeLearningFight("combat_end")
   self:FinishCombatSession()
 end
@@ -5200,6 +4571,21 @@ function addon:OnCombatMiss(message)
   if string.find(lower, "parry") then
     self.state.riposteReadyUntil = GetTime() + 5
   end
+
+  local lastAttempt = self.state.lastSpellAttempt
+  local recentAttempt = lastAttempt and lastAttempt.at and (GetTime() - lastAttempt.at) <= 1
+  if string.find(lower, "dodge") then
+    local targetKey = self:GetTargetKey()
+    if recentAttempt and lastAttempt.targetKey then
+      targetKey = lastAttempt.targetKey
+    end
+    self:MarkSurpriseAttackReady(targetKey, 5)
+  end
+
+  if recentAttempt and lastAttempt.name == "Kidney Shot" and string.find(lower, "immune") then
+    self:RecordKidneyShotLearning("immune", self.state.pendingKidneyShotCheck or self:BuildCurrentTargetLearningSample())
+    self:ClearPendingKidneyShotCheck()
+  end
 end
 
 function addon:OnUiError(message)
@@ -5216,6 +4602,11 @@ function addon:OnUiError(message)
     if lastAttempt.name == "Backstab" or lastAttempt.name == "Garrote" or lastAttempt.name == "Ambush" then
       self:MarkBehindBlocked(lastAttempt.targetKey)
     end
+  end
+
+  if recentAttempt and lastAttempt.name == "Kidney Shot" and string.find(lower, "immune") then
+    self:RecordKidneyShotLearning("immune", self.state.pendingKidneyShotCheck or self:BuildCurrentTargetLearningSample())
+    self:ClearPendingKidneyShotCheck()
   end
 
   if recentAttempt and lastAttempt.name == "Pick Pocket" and self.state.pendingPickPocketTarget then
@@ -5275,9 +4666,11 @@ function addon:OnTargetChanged()
   self:PruneSuppressedTargetSpells()
   self:FinalizeLearningFight("target_change")
   self.state.activeEnemyCast = nil
+  self:ClearPendingKidneyShotCheck()
   self.state.currentTargetKey = nil
   self.state.learnedTargetKey = nil
   self.state.lastSpellAttempt = nil
+  self.state.activeOpenerHint = nil
   self:ClearPendingPickPocketAttempt()
 end
 
@@ -5291,9 +4684,14 @@ frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
 frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
 frame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF")
 frame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF")
 frame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF")
 frame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF")
 frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
 frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
 frame:RegisterEvent("UI_ERROR_MESSAGE")
@@ -5322,9 +4720,14 @@ frame:SetScript("OnEvent", function()
     addon:OnCombatMiss(arg1)
   elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
     addon:OnSpellSelfDamage(arg1)
-  elseif event == "CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE"
+  elseif event == "CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE"
+    or event == "CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF"
+    or event == "CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE"
+    or event == "CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF"
     or event == "CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE"
-    or event == "CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE" then
+    or event == "CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF"
+    or event == "CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE"
+    or event == "CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF" then
     addon:OnHostileSpellMessage(arg1)
   elseif event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" or event == "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE" then
     addon:OnSpellPeriodicDamage(arg1)
@@ -5345,7 +4748,7 @@ end)
 
 frame:SetScript("OnUpdate", function()
   addon:UpdateNoticeFrames()
-  addon:UpdatePlayerStatFrame(false)
+  addon:UpdatePendingKidneyShotCheck()
   addon:UpdateCooldownListFrame(false)
-  addon:UpdateHeuristicOverlay(false)
+  addon:UpdateSelfBuffTimelineFrame(false)
 end)

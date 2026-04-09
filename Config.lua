@@ -104,18 +104,16 @@ local buttonSpacing = 130
 
 local sectionIcons = {
   builder = "Interface\\Icons\\INV_Sword_04",
+  ["Builder"] = "Interface\\Icons\\INV_Sword_04",
+  ["Openers"] = "Interface\\Icons\\Ability_Stealth",
+  ["Finisher"] = "Interface\\Icons\\Ability_Rogue_Eviscerate",
+  ["Defensives"] = "Interface\\Icons\\Spell_Shadow_ShadowWard",
+  ["Thresholds"] = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+  ["Highlights"] = "Interface\\Icons\\INV_Misc_Spyglass_02",
+  ["Macros"] = "Interface\\Icons\\INV_Misc_Note_01",
+  ["Misc"] = "Interface\\Icons\\INV_Misc_Gear_01",
   macros = "Interface\\Icons\\INV_Misc_Note_01",
   ["Targeting"] = "Interface\\Icons\\Ability_Hunter_SniperShot",
-  ["Stealth/Openers"] = "Interface\\Icons\\Ability_Stealth",
-  ["Rotation: Shared"] = "Interface\\Icons\\Ability_Rogue_SliceDice",
-  ["Rotation: Bleed"] = "Interface\\Icons\\Ability_Rogue_Rupture",
-  ["Rotation: Direct"] = "Interface\\Icons\\Ability_CriticalStrike",
-  ["Defensives"] = "Interface\\Icons\\Spell_Shadow_ShadowWard",
-  ["Interrupt"] = "Interface\\Icons\\Ability_Kick",
-  ["Thresholds"] = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
-  ["Direct Finisher"] = "Interface\\Icons\\Ability_Rogue_Eviscerate",
-  ["Highlights"] = "Interface\\Icons\\INV_Misc_Spyglass_02",
-  ["Misc"] = "Interface\\Icons\\INV_Misc_Gear_01",
 }
 
 local function updateScrollBounds()
@@ -504,6 +502,19 @@ local function createSectionCard(parent, section, y)
   if section.kind == "builder" then
     local _, height = createBuilderControl(card, cursorY)
     cursorY = cursorY - height - 12
+    for _, settingId in ipairs(section.items or {}) do
+      local definition = addon.settingDefinitions[settingId]
+      local _, itemHeight
+      if definition.min then
+        _, itemHeight = createSliderControl(card, settingId, cursorY)
+      elseif definition.options then
+        _, itemHeight = createOptionButtonsControl(card, settingId, cursorY)
+      else
+        _, itemHeight = createToggleControl(card, settingId, cursorY)
+      end
+      cursorY = cursorY - itemHeight - 6
+    end
+    cursorY = cursorY - 10
   elseif section.kind == "macros" then
     local _, height = createMacroControl(card, cursorY)
     cursorY = cursorY - height - 12
