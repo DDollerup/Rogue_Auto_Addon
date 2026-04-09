@@ -1296,9 +1296,9 @@ function addon:PositionSelfBuffTimelineFrame()
   timelineFrame:ClearAllPoints()
 
   if PlayerFrame and PlayerFrame.IsShown and PlayerFrame:IsShown() then
-    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 72, -2)
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 74, 14)
   elseif PlayerFrameManaBar and PlayerFrameManaBar.IsShown and PlayerFrameManaBar:IsShown() then
-    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 20, 18)
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 20, 20)
   else
     timelineFrame:SetPoint("BOTTOM", UIParent, "BOTTOM", -250, 255)
   end
@@ -1327,13 +1327,7 @@ end
 function addon:GetTrackedPlayerBuffStates()
   local trackedNames = {}
   for _, spellName in ipairs(self.selfBuffTimelineTrackedSpells) do
-    if self:HasSpell(spellName) then
-      trackedNames[spellName] = true
-    end
-  end
-
-  if not next(trackedNames) then
-    return {}
+    trackedNames[spellName] = true
   end
 
   local activeBuffs = {}
