@@ -3281,7 +3281,7 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
     end
 
     if not active then
-      return comboPoints >= (shortFight and 5 or 4)
+      return comboPoints >= 1
     end
 
     if remaining <= refreshWindow then
@@ -3301,7 +3301,7 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
     end
 
     if not active then
-      return comboPoints >= 4
+      return comboPoints >= 1
     end
 
     if remaining <= refreshWindow then
