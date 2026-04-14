@@ -50,6 +50,12 @@ function addon:Builder()
     return
   end
 
+  local context = self:GetComboPointContext("builder")
+  local finisher = self:GetPreferredBuilderFinisher(context)
+  if finisher and self:TryCast(finisher) then
+    return
+  end
+
   self:TryPreferredBuilder()
 end
 

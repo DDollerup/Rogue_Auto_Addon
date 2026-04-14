@@ -85,7 +85,7 @@ addon.macroDefinitions = {
   {
     id = "builder",
     macro = "/script RogueAuto:Builder()",
-    description = "Builder: builds combo points with the best legal builder, auto-Kicks active casts, and can use emergency Kidney Shot when Kick is unavailable and the target is not learned as stun-immune.",
+    description = "Builder: builds combo points with the best legal builder, auto-Kicks active casts, can use emergency Kidney Shot when Kick is unavailable and the target is not learned as stun-immune, and can optionally spend combo points on finishers.",
   },
   {
     id = "opener",
@@ -121,6 +121,11 @@ addon.settingDefinitions = {
     label = "Prioritize Ghostly Strike in Auto",
     help = "Only affects Builder() while builder mode is Auto.",
   },
+  builderFinishers = {
+    path = { "builder", "useFinishers" },
+    label = "Allow Builder() to use finishers",
+    help = "Refreshes Slice and Dice, refreshes Envenom when Noxious Assault is learned, then uses Eviscerate.",
+  },
   highlightDuration = {
     path = { "notifications", "highlightDuration" },
     label = "Highlight duration",
@@ -140,8 +145,8 @@ addon.uiSections = {
   {
     title = "Builder",
     kind = "builder",
-    help = "Auto uses Ghostly Strike when enabled, then Backstab, Surprise Attack on dodge, Noxious Assault or Hemorrhage if learned, otherwise Sinister Strike. Non-auto modes use your selected primary builder unless it is unavailable or illegal.",
-    items = { "builderGhostlyStrike" },
+    help = "Auto scores Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Ghostly Strike is optional. Builder() can also be allowed to spend combo points by refreshing Slice and Dice, refreshing Envenom for Noxious builds, and then using Eviscerate.",
+    items = { "builderFinishers", "builderGhostlyStrike" },
   },
   {
     title = "Openers",
@@ -188,6 +193,15 @@ addon.slashCommandDefinitions = {
     usage = "on|off",
     success = function(value)
       return "Builder Ghostly Strike " .. (value and "enabled" or "disabled") .. "."
+    end,
+  },
+  {
+    command = "builderfinishers",
+    type = "toggle",
+    setting = "builderFinishers",
+    usage = "on|off",
+    success = function(value)
+      return "Builder finishers " .. (value and "enabled" or "disabled") .. "."
     end,
   },
 }

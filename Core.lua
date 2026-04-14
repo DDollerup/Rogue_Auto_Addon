@@ -38,6 +38,7 @@ addon.defaults = {
   builder = {
     mode = "auto",
     useGhostlyStrike = false,
+    useFinishers = false,
   },
   minimap = {
     angle = 220,
@@ -511,6 +512,10 @@ function addon:MigrateSettings()
   local mode = RogueAutoDB.builder.mode
   if mode == nil or mode == "" then
     RogueAutoDB.builder.mode = "auto"
+  end
+
+  if RogueAutoDB.builder.useFinishers == nil then
+    RogueAutoDB.builder.useFinishers = false
   end
 end
 
@@ -2992,6 +2997,7 @@ function addon:GetComboPointContext(mode)
   local expectedFightDuration = self:GetExpectedFightDuration(learningProfile, expectedMaxHealth, classification)
   local remainingFightDuration = expectedFightDuration * (targetHealthPct / 100)
   local liveRemainingFightDuration = self:GetLiveFightRemainingDuration(targetHealthPct)
+  local interruptConfidence = self:GetInterruptLearningConfidence(learningProfile)
   if liveRemainingFightDuration and liveRemainingFightDuration > 0 then
     if liveRemainingFightDuration < (remainingFightDuration * 0.75) then
       remainingFightDuration = (liveRemainingFightDuration * 0.75) + (remainingFightDuration * 0.25)
@@ -3012,6 +3018,7 @@ function addon:GetComboPointContext(mode)
     learningProfile = learningProfile,
     profileConfidence = self:GetLearningConfidence(learningProfile),
     wastePenalty = self:GetLearningWastePenalty(learningProfile),
+    interruptConfidence = interruptConfidence,
     expectedMaxHealth = expectedMaxHealth,
     baselineHealth = baselineHealth,
     expectedFightDuration = expectedFightDuration,
@@ -3019,6 +3026,7 @@ function addon:GetComboPointContext(mode)
     liveRemainingFightDuration = liveRemainingFightDuration,
     poisonReliable = self:HasReliablePoisonStateOnTarget(),
   }
+  context.reserveKick = self:ShouldReserveKickEnergy(context)
 
   self.state.activeRotationMode = mode
   self:UpdateLearningFightFromContext(context)
@@ -3171,6 +3179,192 @@ function addon:CanCastWithoutBreakingKickReserve(name, context)
   end
 
   return (self:GetEnergy() - energyCost) >= self:GetKickEnergyCost()
+end
+
+function addon:IsShortFightContext(context)
+  if not context then
+    return false
+  end
+
+  if context.remainingFightDuration and context.remainingFightDuration <= 6 then
+    return true
+  end
+
+  if context.durabilityTier == "low" and (context.profileConfidence or 0) >= 0.35 then
+    return true
+  end
+
+  if context.targetHealthPct and context.targetHealthPct <= 35 and (context.expectedFightDuration or 0) <= 10 then
+    return true
+  end
+
+  return false
+end
+
+function addon:IsLongFightContext(context)
+  if not context then
+    return false
+  end
+
+  if context.remainingFightDuration and context.remainingFightDuration >= 12 then
+    return true
+  end
+
+  if context.durabilityTier == "high" and (context.expectedFightDuration or 0) >= 10 then
+    return true
+  end
+
+  return false
+end
+
+function addon:ShouldUseBuilderGhostlyStrike(context)
+  if not RogueAutoDB.builder.useGhostlyStrike or not self:HasSpell("Ghostly Strike") then
+    return false
+  end
+
+  if self:GetComboPoints() >= 5 then
+    return false
+  end
+
+  local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
+  if active and remaining >= 2 then
+    return false
+  end
+
+  if context and not self:CanCastWithoutBreakingKickReserve("Ghostly Strike", context) then
+    return false
+  end
+
+  if context and self:IsShortFightContext(context) then
+    return false
+  end
+
+  if context and (context.profileConfidence or 0) >= 0.5 and (context.wastePenalty or 0) >= 0.25 then
+    return false
+  end
+
+  return self:CanCast("Ghostly Strike")
+end
+
+function addon:ShouldBuilderUseFinishers()
+  return RogueAutoDB and RogueAutoDB.builder and RogueAutoDB.builder.useFinishers == true
+end
+
+function addon:GetPlayerBuffRemaining(name)
+  local active, remaining = self:FindPlayerBuff(name)
+  if not active then
+    return 0
+  end
+
+  return remaining or 0
+end
+
+function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
+  if not spellName or comboPoints <= 0 or not self:HasSpell(spellName) then
+    return false
+  end
+
+  if not self:CanCast(spellName) or not self:CanCastWithoutBreakingKickReserve(spellName, context) then
+    return false
+  end
+
+  local shortFight = self:IsShortFightContext(context)
+  local longFight = self:IsLongFightContext(context)
+  local remainingFightDuration = context and context.remainingFightDuration or 0
+  local refreshWindow = self.refreshWindow.playerBuff or 2
+  local remaining = self:GetPlayerBuffRemaining(spellName)
+  local active = remaining > 0
+
+  if spellName == "Slice and Dice" then
+    if remainingFightDuration > 0 and remainingFightDuration < 5 then
+      return false
+    end
+
+    if not active then
+      return comboPoints >= (shortFight and 5 or 4)
+    end
+
+    if remaining <= refreshWindow then
+      return comboPoints >= 4 or (longFight and comboPoints >= 3)
+    end
+
+    return false
+  end
+
+  if spellName == "Envenom" then
+    if not self:HasSpell("Noxious Assault") then
+      return false
+    end
+
+    if remainingFightDuration > 0 and remainingFightDuration < 5 then
+      return false
+    end
+
+    if not active then
+      return comboPoints >= 4
+    end
+
+    if remaining <= refreshWindow then
+      return comboPoints >= 4 or (longFight and comboPoints >= 3)
+    end
+
+    return false
+  end
+
+  return false
+end
+
+function addon:GetPreferredBuilderFinisher(context)
+  if not self:ShouldBuilderUseFinishers() then
+    return nil
+  end
+
+  context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
+
+  local comboPoints = context and context.comboPoints or self:GetComboPoints()
+  if comboPoints <= 0 then
+    return nil
+  end
+
+  local shortFight = self:IsShortFightContext(context)
+  local noxiousBuild = self:HasSpell("Noxious Assault") and self:HasSpell("Envenom")
+  local refreshSnD = self:ShouldRefreshBuilderBuff("Slice and Dice", comboPoints, context)
+  local refreshEnvenom = noxiousBuild and self:ShouldRefreshBuilderBuff("Envenom", comboPoints, context)
+
+  if refreshSnD and refreshEnvenom then
+    local sndRemaining = self:GetPlayerBuffRemaining("Slice and Dice")
+    local envenomRemaining = self:GetPlayerBuffRemaining("Envenom")
+    if envenomRemaining > 0 and (sndRemaining == 0 or envenomRemaining < sndRemaining) then
+      return "Envenom"
+    end
+    return "Slice and Dice"
+  end
+
+  if refreshSnD then
+    return "Slice and Dice"
+  end
+
+  if refreshEnvenom then
+    return "Envenom"
+  end
+
+  if not self:HasSpell("Eviscerate") then
+    return nil
+  end
+
+  if not self:CanCast("Eviscerate") or not self:CanCastWithoutBreakingKickReserve("Eviscerate", context) then
+    return nil
+  end
+
+  if comboPoints >= 5 then
+    return "Eviscerate"
+  end
+
+  if shortFight and comboPoints >= 4 then
+    return "Eviscerate"
+  end
+
+  return nil
 end
 
 function addon:IsStealthed()
@@ -4183,55 +4377,64 @@ function addon:GetPreferredBuilder(context)
   local mode = RogueAutoDB.builder.mode
   context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
   local modeHint = context and context.mode or self.state.activeRotationMode or "builder"
+  local candidateSpells = {
+    "Backstab",
+    "Surprise Attack",
+    "Noxious Assault",
+    "Hemorrhage",
+    "Sinister Strike",
+  }
+
+  local function buildReasons(bestSpell, preferredSpell)
+    local reasons = {}
+    if context and context.reserveKick then
+      addHeuristicReason(reasons, "Holding enough energy to answer a cast")
+    end
+    if context and self:IsShortFightContext(context) then
+      addHeuristicReason(reasons, "Known short fight favors front-loaded damage")
+    elseif context and self:IsLongFightContext(context) then
+      addHeuristicReason(reasons, "Known durable fight favors sustained builder value")
+    end
+    if preferredSpell and bestSpell == preferredSpell then
+      addHeuristicReason(reasons, "Selected primary builder is legal")
+    elseif preferredSpell then
+      addHeuristicReason(reasons, "Selected primary builder was unavailable or weak here")
+    end
+    if bestSpell == "Backstab" then
+      addHeuristicReason(reasons, "Behind target with dagger")
+      addHeuristicReason(reasons, "Backstab is the strongest front-loaded builder")
+    elseif bestSpell == "Surprise Attack" then
+      addHeuristicReason(reasons, "Target dodge window enables Surprise Attack")
+      addHeuristicReason(reasons, "Surprise Attack beats Sinister Strike when ready")
+    elseif bestSpell == "Noxious Assault" then
+      addHeuristicReason(reasons, "Poison-synergy builder wins")
+    elseif bestSpell == "Hemorrhage" then
+      addHeuristicReason(reasons, "Hemorrhage is the best sustained fallback")
+    elseif bestSpell == "Sinister Strike" then
+      addHeuristicReason(reasons, "Reliable front-facing fallback")
+      if context and context.durabilityTier == "low" then
+        addHeuristicReason(reasons, "Low-durability target favors immediate damage")
+      end
+    end
+
+    return reasons
+  end
 
   if mode == "auto" then
-    if self:GetBuilderSpellScore("Backstab", context, modeHint) then
-      return "Backstab", {
-        reasons = {
-          "Behind target with dagger",
-          "Backstab is the top auto builder",
-        },
-      }
+    local bestSpell = nil
+    local bestScore = nil
+
+    for _, spellName in ipairs(candidateSpells) do
+      local score = self:GetBuilderSpellScore(spellName, context, modeHint)
+      if score and (not bestScore or score > bestScore) then
+        bestScore = score
+        bestSpell = spellName
+      end
     end
 
-    if self:CanUseSurpriseAttack() and self:CanCast("Surprise Attack") then
-      return "Surprise Attack", {
-        reasons = {
-          "Target dodge window enables Surprise Attack",
-          "Surprise Attack is prioritized over Sinister Strike",
-        },
-      }
-    end
-
-    if context and context.poisonReliable and self:GetBuilderSpellScore("Noxious Assault", context, modeHint) then
-      return "Noxious Assault", {
-        reasons = {
-          "Auto prefers Noxious Assault with poison synergy",
-        },
-      }
-    end
-
-    if self:GetBuilderSpellScore("Hemorrhage", context, modeHint) then
-      return "Hemorrhage", {
-        reasons = {
-          "Auto prefers Hemorrhage when learned",
-        },
-      }
-    end
-
-    if self:GetBuilderSpellScore("Noxious Assault", context, modeHint) then
-      return "Noxious Assault", {
-        reasons = {
-          "Auto falls back to Noxious Assault when learned",
-        },
-      }
-    end
-
-    if self:GetBuilderSpellScore("Sinister Strike", context, modeHint) then
-      return "Sinister Strike", {
-        reasons = {
-          "Sinister Strike is the auto fallback",
-        },
+    if bestSpell then
+      return bestSpell, {
+        reasons = buildReasons(bestSpell, nil),
       }
     end
 
@@ -4241,12 +4444,6 @@ function addon:GetPreferredBuilder(context)
   local preferredSpell = self.builderModes[mode]
   local bestSpell = nil
   local bestScore = nil
-  local candidateSpells = {
-    "Backstab",
-    "Noxious Assault",
-    "Hemorrhage",
-    "Sinister Strike",
-  }
 
   if preferredSpell then
     local preferredScore = self:GetBuilderSpellScore(preferredSpell, context, modeHint)
@@ -4268,36 +4465,13 @@ function addon:GetPreferredBuilder(context)
     end
   end
 
-  if bestSpell == "Sinister Strike" and self:CanUseSurpriseAttack() then
+  if bestSpell == "Sinister Strike" and self:GetBuilderSpellScore("Surprise Attack", context, modeHint) then
     bestSpell = "Surprise Attack"
   end
 
   if bestSpell then
-    local reasons = {}
-    if bestSpell == preferredSpell then
-      addHeuristicReason(reasons, "Selected primary builder is legal")
-    elseif preferredSpell then
-      addHeuristicReason(reasons, "Selected primary builder was unavailable or illegal")
-    end
-    if bestSpell == "Backstab" then
-      addHeuristicReason(reasons, "Behind target with dagger")
-      addHeuristicReason(reasons, "Backstab wins the fallback score")
-    elseif bestSpell == "Noxious Assault" then
-      addHeuristicReason(reasons, "Poison-synergy builder wins")
-    elseif bestSpell == "Hemorrhage" then
-      addHeuristicReason(reasons, "Hemorrhage is the best legal fallback")
-    elseif bestSpell == "Surprise Attack" then
-      addHeuristicReason(reasons, "Target dodge window enables Surprise Attack")
-      addHeuristicReason(reasons, "Surprise Attack is prioritized over Sinister Strike")
-    elseif bestSpell == "Sinister Strike" then
-      addHeuristicReason(reasons, "Reliable front-facing fallback")
-      if context and context.durabilityTier == "low" then
-        addHeuristicReason(reasons, "Low-durability target favors immediate builder damage")
-      end
-    end
-
     return bestSpell, {
-      reasons = reasons,
+      reasons = buildReasons(bestSpell, preferredSpell),
     }
   end
 
@@ -4307,6 +4481,35 @@ end
 function addon:GetBuilderSpellScore(spellName, context, modeHint)
   if not self:CanCast(spellName) then
     return nil
+  end
+
+  if not self:CanCastWithoutBreakingKickReserve(spellName, context) then
+    return nil
+  end
+
+  local shortFight = self:IsShortFightContext(context)
+  local longFight = self:IsLongFightContext(context)
+  local reliableProfile = context and (context.profileConfidence or 0) >= 0.55
+  local wastePenalty = context and (context.wastePenalty or 0) or 0
+
+  if spellName == "Surprise Attack" then
+    if not self:CanUseSurpriseAttack() then
+      return nil
+    end
+
+    local score = 4.45
+    if modeHint == "direct" then
+      score = score + 0.45
+    elseif modeHint == "builder" then
+      score = score + 0.15
+    end
+    if shortFight then
+      score = score + 0.35
+    end
+    if reliableProfile and wastePenalty >= 0.2 then
+      score = score + 0.1
+    end
+    return score
   end
 
   if spellName == "Backstab" then
@@ -4322,33 +4525,57 @@ function addon:GetBuilderSpellScore(spellName, context, modeHint)
     elseif modeHint == "builder" then
       score = score + 0.2
     end
+    if shortFight then
+      score = score + 0.35
+    end
     if context and context.encounterType == "dungeon_elite" then
       score = score + 0.3
+    end
+    if reliableProfile and wastePenalty >= 0.2 then
+      score = score + 0.15
     end
     return score
   end
 
   if spellName == "Noxious Assault" then
-    local score = 3.5
+    local score = 3.45
     if modeHint == "direct" then
       score = score + 0.45
     end
     if context and context.poisonReliable then
-      score = score + 0.35
+      score = score + 0.45
     end
     if context and context.durabilityTier == "high" then
       score = score + 0.25
+    end
+    if longFight then
+      score = score + 0.15
+    end
+    if shortFight then
+      score = score - 0.35
+    end
+    if reliableProfile and wastePenalty >= 0.2 then
+      score = score - 0.15
     end
     return score
   end
 
   if spellName == "Hemorrhage" then
-    local score = 3.15
+    local score = 3.2
     if modeHint == "bleed" then
       score = score + 0.6
     end
     if context and context.durabilityTier == "high" then
       score = score + 0.2
+    end
+    if longFight then
+      score = score + 0.15
+    end
+    if shortFight then
+      score = score - 0.25
+    end
+    if reliableProfile and wastePenalty >= 0.2 then
+      score = score - 0.1
     end
     return score
   end
@@ -4357,6 +4584,15 @@ function addon:GetBuilderSpellScore(spellName, context, modeHint)
     local score = 3.3
     if context and context.durabilityTier == "low" then
       score = score + 0.15
+    end
+    if shortFight then
+      score = score + 0.35
+    end
+    if context and context.reserveKick then
+      score = score + 0.1
+    end
+    if reliableProfile and wastePenalty >= 0.2 then
+      score = score + 0.1
     end
     return score
   end
@@ -4488,11 +4724,8 @@ function addon:TryPreferredBuilder()
   local context = self:GetComboPointContext(modeHint)
   local mode = RogueAutoDB.builder.mode
 
-  if mode == "auto" and RogueAutoDB.builder.useGhostlyStrike and self:HasSpell("Ghostly Strike") then
-    local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
-    if self:GetComboPoints() < 5
-      and (not active or remaining < 2)
-      and self:TryCast("Ghostly Strike") then
+  if mode == "auto" and self:ShouldUseBuilderGhostlyStrike(context) then
+    if self:TryCast("Ghostly Strike") then
       return true
     end
   end
@@ -4502,11 +4735,8 @@ function addon:TryPreferredBuilder()
     return self:TryCast(builder)
   end
 
-  if mode ~= "auto" and RogueAutoDB.builder.useGhostlyStrike and self:HasSpell("Ghostly Strike") then
-    local active, remaining = self:FindPlayerBuff(self.buffAliases.ghostlyStrike)
-    if self:GetComboPoints() < 5
-      and (not active or remaining < 2)
-      and self:TryCast("Ghostly Strike") then
+  if mode ~= "auto" and self:ShouldUseBuilderGhostlyStrike(context) then
+    if self:TryCast("Ghostly Strike") then
       return true
     end
   end
