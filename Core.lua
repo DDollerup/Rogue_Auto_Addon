@@ -88,6 +88,7 @@ addon.state = {
   activeNotices = {},
   cachedPlayerCritChance = nil,
   selfBuffTimeline = {},
+  trackedPlayerBuffs = {},
 }
 
 addon.damageCategories = {
@@ -185,10 +186,12 @@ addon.dotPerPointDurations = {
 
 addon.comboBuffBaseDurations = {
   ["Slice and Dice"] = 6,
+  ["Envenom"] = 6,
 }
 
 addon.comboBuffPerPointDurations = {
   ["Slice and Dice"] = 3,
+  ["Envenom"] = 0,
 }
 
 addon.targetDebuffTextures = {
@@ -461,6 +464,23 @@ local function inferPickPocketEntryTexture(text)
   end
 
   return addon.pickPocketFallbackTexture
+end
+
+local function normalizeTextureName(texture)
+  if not texture or texture == "" then
+    return nil
+  end
+
+  local normalized = string.lower(texture)
+  normalized = string.gsub(normalized, ".*\\", "")
+  normalized = string.gsub(normalized, ".*%/", "")
+  normalized = string.gsub(normalized, "%.blp$", "")
+  normalized = string.gsub(normalized, "%.tga$", "")
+  if normalized == "" then
+    return nil
+  end
+
+  return normalized
 end
 
 local function mergeDefaults(target, defaults)
@@ -1234,40 +1254,50 @@ function addon:EnsureSelfBuffTimelineFrame()
   end
 
   local timelineFrame = CreateFrame("Frame", "RogueAutoSelfBuffTimelineFrame", UIParent)
-  timelineFrame:SetWidth(244)
-  timelineFrame:SetHeight(72)
-  timelineFrame:SetFrameStrata("HIGH")
+  timelineFrame:SetWidth(188)
+  timelineFrame:SetHeight(86)
+  timelineFrame:SetFrameStrata("TOOLTIP")
   timelineFrame:SetFrameLevel((PlayerFrame and PlayerFrame:GetFrameLevel() or 1) + 12)
   timelineFrame:SetClampedToScreen(true)
   timelineFrame.rows = {}
+  timelineFrame:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 12,
+    insets = { left = 3, right = 3, top = 3, bottom = 3 },
+  })
+  timelineFrame:SetBackdropColor(0.03, 0.03, 0.03, 0.78)
+  timelineFrame:SetBackdropBorderColor(1, 0.82, 0, 0.72)
 
-  local backdrop = timelineFrame:CreateTexture(nil, "BACKGROUND")
-  backdrop:SetAllPoints(timelineFrame)
-  backdrop:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
-  backdrop:SetVertexColor(0.02, 0.02, 0.02, 0.22)
-  timelineFrame.backdrop = backdrop
+  local title = timelineFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  title:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 10, -8)
+  title:SetText("Buffs")
+  title:SetTextColor(1, 0.9, 0.35)
+  timelineFrame.title = title
 
   for index = 1, 4 do
     local row = CreateFrame("Frame", nil, timelineFrame)
-    row:SetWidth(228)
+    row:SetWidth(164)
     row:SetHeight(14)
-    row:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 8, -8 - ((index - 1) * 16))
+    row:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 10, -24 - ((index - 1) * 14))
     row:Hide()
-    row.trackWidth = 196
+    row.trackWidth = 130
 
     local track = row:CreateTexture(nil, "BACKGROUND")
     track:SetWidth(row.trackWidth)
-    track:SetHeight(3)
+    track:SetHeight(4)
     track:SetPoint("LEFT", row, "LEFT", 0, 0)
     track:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    track:SetVertexColor(1, 0.88, 0.1, 0.28)
+    track:SetVertexColor(1, 0.88, 0.1, 0.35)
     row.track = track
 
     local progress = row:CreateTexture(nil, "ARTWORK")
-    progress:SetHeight(3)
+    progress:SetHeight(4)
     progress:SetPoint("LEFT", track, "LEFT", 0, 0)
     progress:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    progress:SetVertexColor(1, 0.9, 0.18, 0.85)
+    progress:SetVertexColor(1, 0.9, 0.18, 0.95)
     row.progress = progress
 
     local iconHolder = CreateFrame("Frame", nil, row)
@@ -1294,8 +1324,8 @@ function addon:EnsureSelfBuffTimelineFrame()
     row.glow = glow
 
     local timeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    timeText:SetPoint("LEFT", track, "RIGHT", 8, 0)
-    timeText:SetWidth(24)
+    timeText:SetPoint("LEFT", track, "RIGHT", 6, 0)
+    timeText:SetWidth(30)
     timeText:SetJustifyH("RIGHT")
     timeText:SetTextColor(1, 0.95, 0.65)
     row.timeText = timeText
@@ -1316,11 +1346,11 @@ function addon:PositionSelfBuffTimelineFrame()
   timelineFrame:ClearAllPoints()
 
   if PlayerFrame and PlayerFrame.IsShown and PlayerFrame:IsShown() then
-    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 72, 22)
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 34, 6)
   elseif PlayerFrameManaBar and PlayerFrameManaBar.IsShown and PlayerFrameManaBar:IsShown() then
-    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 18, 26)
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 4, 12)
   else
-    timelineFrame:SetPoint("BOTTOM", UIParent, "BOTTOM", -248, 260)
+    timelineFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 140, 170)
   end
 
   return timelineFrame
@@ -1344,10 +1374,50 @@ function addon:GetSelfBuffTimelineIcon(name, fallbackTexture)
   return "Interface\\Icons\\INV_Misc_QuestionMark"
 end
 
+function addon:PruneTrackedPlayerBuffs()
+  local now = GetTime()
+
+  for buffName, expiresAt in pairs(self.state.trackedPlayerBuffs) do
+    if not expiresAt or expiresAt <= now then
+      self.state.trackedPlayerBuffs[buffName] = nil
+    end
+  end
+end
+
+function addon:TrackPlayerBuff(name, duration)
+  if not name or not duration or duration <= 0 then
+    return
+  end
+
+  self.state.trackedPlayerBuffs[name] = GetTime() + duration
+end
+
+function addon:GetTrackedPlayerBuffRemaining(name)
+  self:PruneTrackedPlayerBuffs()
+
+  local expiresAt = self.state.trackedPlayerBuffs[name]
+  if not expiresAt then
+    return 0
+  end
+
+  local remaining = expiresAt - GetTime()
+  if remaining <= 0 then
+    self.state.trackedPlayerBuffs[name] = nil
+    return 0
+  end
+
+  return remaining
+end
+
 function addon:GetTrackedPlayerBuffStates()
   local trackedNames = {}
+  local trackedTextures = {}
   for _, spellName in ipairs(self.selfBuffTimelineTrackedSpells) do
     trackedNames[normalizeSpellName(spellName)] = spellName
+    local textureName = normalizeTextureName(self:GetSelfBuffTimelineIcon(spellName))
+    if textureName then
+      trackedTextures[textureName] = spellName
+    end
   end
 
   local activeBuffs = {}
@@ -1365,12 +1435,26 @@ function addon:GetTrackedPlayerBuffStates()
     local name = RogueAutoTooltipTextLeft1 and RogueAutoTooltipTextLeft1:GetText() or nil
     local normalizedName = normalizeSpellName(name)
     local trackedName = normalizedName and trackedNames[normalizedName] or nil
+    if not trackedName then
+      trackedName = trackedTextures[normalizeTextureName(texture)]
+    end
 
     if trackedName and remaining > 0 then
       activeBuffs[trackedName] = {
         name = trackedName,
         remaining = remaining,
         texture = texture,
+      }
+    end
+  end
+
+  for spellName, expiresAt in pairs(self.state.trackedPlayerBuffs) do
+    local remaining = expiresAt - GetTime()
+    if remaining > 0 and not activeBuffs[spellName] then
+      activeBuffs[spellName] = {
+        name = spellName,
+        remaining = remaining,
+        texture = self:GetSelfBuffTimelineIcon(spellName),
       }
     end
   end
@@ -1441,7 +1525,7 @@ function addon:UpdateSelfBuffTimelineFrame(force)
   end
 
   local visibleRows = math.min(table.getn(visible), table.getn(timelineFrame.rows))
-  timelineFrame:SetHeight(16 + (visibleRows * 16))
+  timelineFrame:SetHeight(30 + (visibleRows * 14))
 
   for index, row in ipairs(timelineFrame.rows) do
     local buff = visible[index]
@@ -4209,6 +4293,8 @@ end
 
 function addon:FindPlayerBuff(name)
   local normalizedExpectedName = normalizeSpellName(name)
+  local normalizedExpectedTexture = normalizeTextureName(self:GetSelfBuffTimelineIcon(name))
+  local trackedRemaining = self:GetTrackedPlayerBuffRemaining(name)
 
   for index = 0, 31 do
     local buffIndex = GetPlayerBuff(index, "HELPFUL")
@@ -4216,23 +4302,30 @@ function addon:FindPlayerBuff(name)
       break
     end
 
-    local expectedTexture = self.buffTextures[name]
-    if expectedTexture and GetPlayerBuffTexture then
-      local texture = GetPlayerBuffTexture(buffIndex)
-      if texture then
-        local normalized = string.lower(string.gsub(texture, ".*\\", ""))
-        if normalized == expectedTexture then
-          return true, GetPlayerBuffTimeLeft(buffIndex) or 0
-        end
+    local texture = GetPlayerBuffTexture and GetPlayerBuffTexture(buffIndex) or nil
+    local normalizedTexture = normalizeTextureName(texture)
+    if normalizedExpectedTexture and normalizedTexture and normalizedTexture == normalizedExpectedTexture then
+      local remaining = GetPlayerBuffTimeLeft(buffIndex) or 0
+      if remaining <= 0 and trackedRemaining > 0 then
+        remaining = trackedRemaining
       end
+      return true, remaining
     end
 
     self.tooltip:ClearLines()
     self.tooltip:SetPlayerBuff(buffIndex)
     local text = RogueAutoTooltipTextLeft1 and RogueAutoTooltipTextLeft1:GetText()
     if normalizeSpellName(text) == normalizedExpectedName then
-      return true, GetPlayerBuffTimeLeft(buffIndex) or 0
+      local remaining = GetPlayerBuffTimeLeft(buffIndex) or 0
+      if remaining <= 0 and trackedRemaining > 0 then
+        remaining = trackedRemaining
+      end
+      return true, remaining
     end
+  end
+
+  if trackedRemaining > 0 then
+    return true, trackedRemaining
   end
 
   return false, 0
@@ -4987,6 +5080,7 @@ function addon:Cast(name)
     return false
   end
 
+  local comboPoints = self:GetComboPoints()
   self:Debug("Casting " .. name)
   self.state.lastSpellAttempt = {
     name = name,
@@ -5001,6 +5095,11 @@ function addon:Cast(name)
     self.state.activeEnemyCast = nil
   elseif name == "Kidney Shot" then
     self:BeginPendingKidneyShotCheck()
+  elseif name == "Slice and Dice" or name == "Envenom" then
+    local duration = self:GetComboBuffDuration(name, comboPoints)
+    if duration and duration > 0 then
+      self:TrackPlayerBuff(name, duration)
+    end
   end
 
   self:MarkLearningSetupCast(name)
