@@ -1234,37 +1234,45 @@ function addon:EnsureSelfBuffTimelineFrame()
   end
 
   local timelineFrame = CreateFrame("Frame", "RogueAutoSelfBuffTimelineFrame", UIParent)
-  timelineFrame:SetWidth(228)
-  timelineFrame:SetHeight(56)
+  timelineFrame:SetWidth(244)
+  timelineFrame:SetHeight(72)
   timelineFrame:SetFrameStrata("HIGH")
+  timelineFrame:SetFrameLevel((PlayerFrame and PlayerFrame:GetFrameLevel() or 1) + 12)
   timelineFrame:SetClampedToScreen(true)
   timelineFrame.rows = {}
+
+  local backdrop = timelineFrame:CreateTexture(nil, "BACKGROUND")
+  backdrop:SetAllPoints(timelineFrame)
+  backdrop:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+  backdrop:SetVertexColor(0.02, 0.02, 0.02, 0.22)
+  timelineFrame.backdrop = backdrop
 
   for index = 1, 4 do
     local row = CreateFrame("Frame", nil, timelineFrame)
     row:SetWidth(228)
-    row:SetHeight(12)
-    row:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 0, -((index - 1) * 14))
+    row:SetHeight(14)
+    row:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 8, -8 - ((index - 1) * 16))
     row:Hide()
+    row.trackWidth = 196
 
     local track = row:CreateTexture(nil, "BACKGROUND")
-    track:SetWidth(228)
-    track:SetHeight(2)
+    track:SetWidth(row.trackWidth)
+    track:SetHeight(3)
     track:SetPoint("LEFT", row, "LEFT", 0, 0)
     track:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    track:SetVertexColor(1, 0.88, 0.1, 0.18)
+    track:SetVertexColor(1, 0.88, 0.1, 0.28)
     row.track = track
 
     local progress = row:CreateTexture(nil, "ARTWORK")
-    progress:SetHeight(2)
+    progress:SetHeight(3)
     progress:SetPoint("LEFT", track, "LEFT", 0, 0)
     progress:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
     progress:SetVertexColor(1, 0.9, 0.18, 0.85)
     row.progress = progress
 
     local iconHolder = CreateFrame("Frame", nil, row)
-    iconHolder:SetWidth(9)
-    iconHolder:SetHeight(9)
+    iconHolder:SetWidth(12)
+    iconHolder:SetHeight(12)
     iconHolder:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.iconHolder = iconHolder
 
@@ -1278,12 +1286,19 @@ function addon:EnsureSelfBuffTimelineFrame()
     row.iconBorder = border
 
     local glow = iconHolder:CreateTexture(nil, "ARTWORK")
-    glow:SetWidth(18)
-    glow:SetHeight(18)
+    glow:SetWidth(22)
+    glow:SetHeight(22)
     glow:SetPoint("CENTER", iconHolder, "CENTER", 0, 0)
     glow:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    glow:SetVertexColor(1, 0.9, 0.2, 0.12)
+    glow:SetVertexColor(1, 0.9, 0.2, 0.18)
     row.glow = glow
+
+    local timeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    timeText:SetPoint("LEFT", track, "RIGHT", 8, 0)
+    timeText:SetWidth(24)
+    timeText:SetJustifyH("RIGHT")
+    timeText:SetTextColor(1, 0.95, 0.65)
+    row.timeText = timeText
 
     timelineFrame.rows[index] = row
   end
@@ -1301,11 +1316,11 @@ function addon:PositionSelfBuffTimelineFrame()
   timelineFrame:ClearAllPoints()
 
   if PlayerFrame and PlayerFrame.IsShown and PlayerFrame:IsShown() then
-    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 74, 14)
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 72, 22)
   elseif PlayerFrameManaBar and PlayerFrameManaBar.IsShown and PlayerFrameManaBar:IsShown() then
-    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 20, 20)
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 18, 26)
   else
-    timelineFrame:SetPoint("BOTTOM", UIParent, "BOTTOM", -250, 255)
+    timelineFrame:SetPoint("BOTTOM", UIParent, "BOTTOM", -248, 260)
   end
 
   return timelineFrame
@@ -1426,7 +1441,7 @@ function addon:UpdateSelfBuffTimelineFrame(force)
   end
 
   local visibleRows = math.min(table.getn(visible), table.getn(timelineFrame.rows))
-  timelineFrame:SetHeight((visibleRows * 14) - 2)
+  timelineFrame:SetHeight(16 + (visibleRows * 16))
 
   for index, row in ipairs(timelineFrame.rows) do
     local buff = visible[index]
@@ -1444,24 +1459,30 @@ function addon:UpdateSelfBuffTimelineFrame(force)
       end
 
       local progress = 1 - ratio
-      local iconSize = math.floor((8 + (progress * 10)) + 0.5)
-      local maxOffset = math.max(0, row:GetWidth() - iconSize)
+      local iconSize = math.floor((11 + (progress * 9)) + 0.5)
+      local maxOffset = math.max(0, row.trackWidth - iconSize)
       local xOffset = math.floor((maxOffset * progress) + 0.5)
       local progressWidth = math.max(1, math.floor(xOffset + (iconSize * 0.5)))
 
       row.progress:SetWidth(progressWidth)
       row.iconHolder:ClearAllPoints()
-      row.iconHolder:SetPoint("LEFT", row, "LEFT", xOffset, 0)
+      row.iconHolder:SetPoint("LEFT", row.track, "LEFT", xOffset, 0)
       row.iconHolder:SetWidth(iconSize)
       row.iconHolder:SetHeight(iconSize)
       row.glow:SetWidth(iconSize + 8)
       row.glow:SetHeight(iconSize + 8)
       row.icon:SetTexture(buff.texture)
+      if row.timeText then
+        row.timeText:SetText(formatShortSeconds(buff.remaining) or "")
+      end
 
       local glowAlpha = 0.1 + (progress * 0.18)
       row.glow:SetVertexColor(1, 0.9, 0.2, glowAlpha)
       row:Show()
     else
+      if row.timeText then
+        row.timeText:SetText("")
+      end
       row:Hide()
     end
   end
@@ -2054,12 +2075,297 @@ function addon:GetLearningWastePenalty(entry)
   return entry.wastePenalty or 0
 end
 
+function addon:GetLearningReferenceLevel(entry)
+  if not entry then
+    return 0
+  end
+
+  if entry.avgLevel and entry.avgLevel > 0 then
+    return entry.avgLevel
+  end
+
+  if entry.maxLevel and entry.maxLevel > 0 then
+    return entry.maxLevel
+  end
+
+  if entry.minLevel and entry.minLevel > 0 then
+    return entry.minLevel
+  end
+
+  return 0
+end
+
+function addon:IsFamilyLearningMatch(entry, creatureType, level)
+  if not entry then
+    return false
+  end
+
+  local entryCreatureType = entry.creatureType or "unknown"
+  if creatureType
+    and creatureType ~= "unknown"
+    and entryCreatureType ~= "unknown"
+    and entryCreatureType ~= creatureType then
+    return false
+  end
+
+  local entryLevel = self:GetLearningReferenceLevel(entry)
+  if level and level > 0 and entryLevel > 0 and math.abs(entryLevel - level) > 3 then
+    return false
+  end
+
+  return true
+end
+
+function addon:MergeInterruptSpellLearning(targetMap, sourceMap, weight)
+  if not targetMap or not sourceMap or not weight or weight <= 0 then
+    return
+  end
+
+  for spellKey, sourceEntry in pairs(sourceMap) do
+    local targetEntry = targetMap[spellKey] or {
+      name = sourceEntry.name,
+      count = 0,
+      outcomeSamples = 0,
+      harmfulCount = 0,
+      benignCount = 0,
+      damageEvents = 0,
+      controlEvents = 0,
+      drainEvents = 0,
+      healEvents = 0,
+      buffEvents = 0,
+      totalDamage = 0,
+      dangerTotal = 0,
+      avgDanger = 0,
+      maxDanger = 0,
+      lastSeen = 0,
+    }
+
+    targetEntry.name = sourceEntry.name or targetEntry.name
+    targetEntry.count = (targetEntry.count or 0) + ((sourceEntry.count or 0) * weight)
+    targetEntry.outcomeSamples = (targetEntry.outcomeSamples or 0) + ((sourceEntry.outcomeSamples or 0) * weight)
+    targetEntry.harmfulCount = (targetEntry.harmfulCount or 0) + ((sourceEntry.harmfulCount or 0) * weight)
+    targetEntry.benignCount = (targetEntry.benignCount or 0) + ((sourceEntry.benignCount or 0) * weight)
+    targetEntry.damageEvents = (targetEntry.damageEvents or 0) + ((sourceEntry.damageEvents or 0) * weight)
+    targetEntry.controlEvents = (targetEntry.controlEvents or 0) + ((sourceEntry.controlEvents or 0) * weight)
+    targetEntry.drainEvents = (targetEntry.drainEvents or 0) + ((sourceEntry.drainEvents or 0) * weight)
+    targetEntry.healEvents = (targetEntry.healEvents or 0) + ((sourceEntry.healEvents or 0) * weight)
+    targetEntry.buffEvents = (targetEntry.buffEvents or 0) + ((sourceEntry.buffEvents or 0) * weight)
+    targetEntry.totalDamage = (targetEntry.totalDamage or 0) + ((sourceEntry.totalDamage or 0) * weight)
+
+    local sourceOutcomeSamples = sourceEntry.outcomeSamples or 0
+    local sourceDangerTotal = sourceEntry.dangerTotal
+    if sourceDangerTotal == nil then
+      sourceDangerTotal = (sourceEntry.avgDanger or 0) * sourceOutcomeSamples
+    end
+    targetEntry.dangerTotal = (targetEntry.dangerTotal or 0) + (sourceDangerTotal * weight)
+    targetEntry.maxDanger = math.max(targetEntry.maxDanger or 0, sourceEntry.maxDanger or sourceEntry.avgDanger or 0)
+    targetEntry.lastSeen = math.max(targetEntry.lastSeen or 0, sourceEntry.lastSeen or 0)
+
+    if (targetEntry.outcomeSamples or 0) > 0 then
+      targetEntry.avgDanger = (targetEntry.dangerTotal or 0) / targetEntry.outcomeSamples
+    end
+
+    targetMap[spellKey] = targetEntry
+  end
+end
+
+function addon:BuildFamilyLearningProfile(classification, learningKey, creatureType, level)
+  local bucket = self:GetMobLearningBucket(classification)
+  if not bucket then
+    return nil
+  end
+
+  local totalWeight = 0
+  local profile = {
+    name = "Family Profile",
+    creatureType = creatureType or "unknown",
+    samples = 0,
+    durationSamples = 0,
+    avgMaxHealth = 0,
+    avgFightDuration = 0,
+    avgLevel = 0,
+    avgSnDLeftover = 0,
+    sndWasteSamples = 0,
+    avgPrimaryLeftover = 0,
+    primaryWasteSamples = 0,
+    primaryOpportunityCount = 0,
+    primaryOpportunityMisses = 0,
+    setupAttempts = 0,
+    abandonedSetups = 0,
+    castSamples = 0,
+    stunImmuneSamples = 0,
+    stunSuccessSamples = 0,
+    lastSeen = 0,
+    lastCastSeen = 0,
+    castSpells = {},
+    familyMembers = 0,
+    isFamilyProfile = true,
+  }
+
+  for key, entry in pairs(bucket) do
+    if key ~= learningKey and self:IsFamilyLearningMatch(entry, creatureType, level) then
+      local confidence = self:GetLearningConfidence(entry)
+      local sampleLoad = math.max(entry.samples or 0, entry.durationSamples or 0, entry.castSamples or 0)
+      if confidence >= 0.12 or sampleLoad >= 2 then
+        local entryLevel = self:GetLearningReferenceLevel(entry)
+        local levelWeight = 1
+        if level and level > 0 and entryLevel > 0 then
+          levelWeight = math.max(0.35, 1 - (math.abs(entryLevel - level) * 0.18))
+        end
+
+        local weight = (0.25 + (confidence * 0.75))
+          * math.max(0.35, math.min(sampleLoad, 6) / 6)
+          * levelWeight
+
+        if weight > 0 then
+          totalWeight = totalWeight + weight
+          profile.familyMembers = profile.familyMembers + 1
+          profile.samples = profile.samples + ((entry.samples or 0) * weight)
+          profile.durationSamples = profile.durationSamples + ((entry.durationSamples or 0) * weight)
+          profile.avgMaxHealth = profile.avgMaxHealth + ((entry.avgMaxHealth or 0) * weight)
+          profile.avgFightDuration = profile.avgFightDuration + ((entry.avgFightDuration or 0) * weight)
+          profile.avgLevel = profile.avgLevel + ((self:GetLearningReferenceLevel(entry) or 0) * weight)
+          profile.avgSnDLeftover = profile.avgSnDLeftover + ((entry.avgSnDLeftover or 0) * weight)
+          profile.sndWasteSamples = profile.sndWasteSamples + ((entry.sndWasteSamples or 0) * weight)
+          profile.avgPrimaryLeftover = profile.avgPrimaryLeftover + ((entry.avgPrimaryLeftover or 0) * weight)
+          profile.primaryWasteSamples = profile.primaryWasteSamples + ((entry.primaryWasteSamples or 0) * weight)
+          profile.primaryOpportunityCount = profile.primaryOpportunityCount + ((entry.primaryOpportunityCount or 0) * weight)
+          profile.primaryOpportunityMisses = profile.primaryOpportunityMisses + ((entry.primaryOpportunityMisses or 0) * weight)
+          profile.setupAttempts = profile.setupAttempts + ((entry.setupAttempts or 0) * weight)
+          profile.abandonedSetups = profile.abandonedSetups + ((entry.abandonedSetups or 0) * weight)
+          profile.castSamples = profile.castSamples + ((entry.castSamples or 0) * weight)
+          profile.stunImmuneSamples = profile.stunImmuneSamples + ((entry.stunImmuneSamples or 0) * weight)
+          profile.stunSuccessSamples = profile.stunSuccessSamples + ((entry.stunSuccessSamples or 0) * weight)
+          profile.lastSeen = math.max(profile.lastSeen or 0, entry.lastSeen or 0)
+          profile.lastCastSeen = math.max(profile.lastCastSeen or 0, entry.lastCastSeen or 0)
+          self:MergeInterruptSpellLearning(profile.castSpells, entry.castSpells, weight)
+        end
+      end
+    end
+  end
+
+  if totalWeight <= 0 then
+    return nil
+  end
+
+  profile.avgMaxHealth = profile.avgMaxHealth / totalWeight
+  profile.avgFightDuration = profile.avgFightDuration / totalWeight
+  profile.avgLevel = profile.avgLevel / totalWeight
+  profile.avgSnDLeftover = profile.avgSnDLeftover / totalWeight
+  profile.avgPrimaryLeftover = profile.avgPrimaryLeftover / totalWeight
+  profile.samples = profile.samples / totalWeight
+  profile.durationSamples = profile.durationSamples / totalWeight
+  profile.castSamples = profile.castSamples / totalWeight
+  profile.sndWasteSamples = profile.sndWasteSamples / totalWeight
+  profile.primaryWasteSamples = profile.primaryWasteSamples / totalWeight
+  profile.primaryOpportunityCount = profile.primaryOpportunityCount / totalWeight
+  profile.primaryOpportunityMisses = profile.primaryOpportunityMisses / totalWeight
+  profile.setupAttempts = profile.setupAttempts / totalWeight
+  profile.abandonedSetups = profile.abandonedSetups / totalWeight
+  profile.stunImmuneSamples = profile.stunImmuneSamples / totalWeight
+  profile.stunSuccessSamples = profile.stunSuccessSamples / totalWeight
+  profile.stunImmuneConfidence = self:GetStunImmunityConfidence(profile)
+  self:UpdateLearningDerivedFields(profile)
+  profile.confidence = self:ClampUnitValue((profile.confidence or 0) * 0.82)
+  return profile
+end
+
+function addon:BuildEffectiveLearningProfile(exactProfile, familyProfile)
+  if not exactProfile then
+    return familyProfile
+  end
+
+  if not familyProfile then
+    return exactProfile
+  end
+
+  local exactConfidence = self:GetLearningConfidence(exactProfile)
+  if exactConfidence >= 0.62
+    and (exactProfile.samples or 0) >= 2
+    and (exactProfile.durationSamples or 0) >= 1 then
+    return exactProfile
+  end
+
+  local familyConfidence = self:GetLearningConfidence(familyProfile)
+  local exactWeight = math.max(0.35, exactConfidence + 0.15)
+  local familyWeight = math.max(0.2, familyConfidence * 0.9)
+  local totalWeight = exactWeight + familyWeight
+
+  local profile = {
+    name = exactProfile.name or familyProfile.name,
+    creatureType = exactProfile.creatureType or familyProfile.creatureType or "unknown",
+    avgMaxHealth = (((exactProfile.avgMaxHealth or 0) * exactWeight) + ((familyProfile.avgMaxHealth or 0) * familyWeight)) / totalWeight,
+    avgFightDuration = (((exactProfile.avgFightDuration or 0) * exactWeight) + ((familyProfile.avgFightDuration or 0) * familyWeight)) / totalWeight,
+    avgLevel = (((self:GetLearningReferenceLevel(exactProfile) or 0) * exactWeight) + ((self:GetLearningReferenceLevel(familyProfile) or 0) * familyWeight)) / totalWeight,
+    avgSnDLeftover = (((exactProfile.avgSnDLeftover or 0) * exactWeight) + ((familyProfile.avgSnDLeftover or 0) * familyWeight)) / totalWeight,
+    avgPrimaryLeftover = (((exactProfile.avgPrimaryLeftover or 0) * exactWeight) + ((familyProfile.avgPrimaryLeftover or 0) * familyWeight)) / totalWeight,
+    samples = (((exactProfile.samples or 0) * exactWeight) + ((familyProfile.samples or 0) * familyWeight)) / totalWeight,
+    durationSamples = (((exactProfile.durationSamples or 0) * exactWeight) + ((familyProfile.durationSamples or 0) * familyWeight)) / totalWeight,
+    castSamples = (((exactProfile.castSamples or 0) * exactWeight) + ((familyProfile.castSamples or 0) * familyWeight)) / totalWeight,
+    sndWasteSamples = (((exactProfile.sndWasteSamples or 0) * exactWeight) + ((familyProfile.sndWasteSamples or 0) * familyWeight)) / totalWeight,
+    primaryWasteSamples = (((exactProfile.primaryWasteSamples or 0) * exactWeight) + ((familyProfile.primaryWasteSamples or 0) * familyWeight)) / totalWeight,
+    primaryOpportunityCount = (((exactProfile.primaryOpportunityCount or 0) * exactWeight) + ((familyProfile.primaryOpportunityCount or 0) * familyWeight)) / totalWeight,
+    primaryOpportunityMisses = (((exactProfile.primaryOpportunityMisses or 0) * exactWeight) + ((familyProfile.primaryOpportunityMisses or 0) * familyWeight)) / totalWeight,
+    setupAttempts = (((exactProfile.setupAttempts or 0) * exactWeight) + ((familyProfile.setupAttempts or 0) * familyWeight)) / totalWeight,
+    abandonedSetups = (((exactProfile.abandonedSetups or 0) * exactWeight) + ((familyProfile.abandonedSetups or 0) * familyWeight)) / totalWeight,
+    stunImmuneSamples = (((exactProfile.stunImmuneSamples or 0) * exactWeight) + ((familyProfile.stunImmuneSamples or 0) * familyWeight)) / totalWeight,
+    stunSuccessSamples = (((exactProfile.stunSuccessSamples or 0) * exactWeight) + ((familyProfile.stunSuccessSamples or 0) * familyWeight)) / totalWeight,
+    lastSeen = math.max(exactProfile.lastSeen or 0, familyProfile.lastSeen or 0),
+    lastCastSeen = math.max(exactProfile.lastCastSeen or 0, familyProfile.lastCastSeen or 0),
+    castSpells = {},
+    blendedProfile = true,
+  }
+
+  self:MergeInterruptSpellLearning(profile.castSpells, familyProfile.castSpells, familyWeight)
+  self:MergeInterruptSpellLearning(profile.castSpells, exactProfile.castSpells, exactWeight)
+  profile.stunImmuneConfidence = self:GetStunImmunityConfidence(profile)
+  self:UpdateLearningDerivedFields(profile)
+  profile.confidence = self:ClampUnitValue(((exactConfidence * exactWeight) + (familyConfidence * familyWeight)) / totalWeight)
+  return profile
+end
+
 function addon:NormalizeInterruptSpellKey(name)
   if not name or name == "" then
     return nil
   end
 
   return string.lower(trim(name))
+end
+
+function addon:EnsureInterruptSpellLearningEntry(entry, spellName)
+  if not entry then
+    return nil
+  end
+
+  local spellKey = self:NormalizeInterruptSpellKey(spellName)
+  if not spellKey then
+    return nil
+  end
+
+  entry.castSpells = entry.castSpells or {}
+  local spellEntry = entry.castSpells[spellKey]
+  if not spellEntry then
+    spellEntry = {
+      name = spellName,
+      count = 0,
+      outcomeSamples = 0,
+      harmfulCount = 0,
+      benignCount = 0,
+      damageEvents = 0,
+      controlEvents = 0,
+      drainEvents = 0,
+      healEvents = 0,
+      buffEvents = 0,
+      totalDamage = 0,
+      dangerTotal = 0,
+      avgDanger = 0,
+      maxDanger = 0,
+      lastSeen = 0,
+    }
+    entry.castSpells[spellKey] = spellEntry
+  end
+
+  return spellEntry, spellKey
 end
 
 function addon:GetInterruptLearningConfidence(entry)
@@ -2090,23 +2396,125 @@ function addon:UpdateMobInterruptLearning(entry, spellName)
   entry.castSamples = (entry.castSamples or 0) + 1
   entry.lastCastSeen = time and time() or 0
 
-  local spellKey = self:NormalizeInterruptSpellKey(spellName)
-  if spellKey then
-    entry.castSpells = entry.castSpells or {}
-    local spellEntry = entry.castSpells[spellKey] or {
-      name = spellName,
-      count = 0,
-    }
+  local spellEntry = self:EnsureInterruptSpellLearningEntry(entry, spellName)
+  if spellEntry then
     spellEntry.name = spellName or spellEntry.name
     spellEntry.count = (spellEntry.count or 0) + 1
-    entry.castSpells[spellKey] = spellEntry
+    spellEntry.lastSeen = time and time() or 0
   end
 
   self:UpdateLearningDerivedFields(entry)
 end
 
+function addon:UpdateInterruptSpellOutcome(entry, spellName, outcomeType, amount, targetName)
+  local spellEntry = self:EnsureInterruptSpellLearningEntry(entry, spellName)
+  if not spellEntry then
+    return
+  end
+
+  local targetText = string.lower(trim(targetName or ""))
+  local playerName = string.lower(UnitName("player") or "")
+  local targetNameLower = string.lower(UnitName("target") or "")
+  local targetIsPlayer = targetText == "you" or targetText == playerName
+  local targetIsEnemy = targetText ~= "" and (targetText == targetNameLower)
+
+  local score = 0.35
+  if outcomeType == "damage" then
+    local playerMaxHealth = UnitHealthMax("player") or 0
+    local damageRatio = 0
+    if amount and amount > 0 and playerMaxHealth > 0 and targetIsPlayer then
+      damageRatio = math.min(amount / playerMaxHealth, 0.55)
+    elseif amount and amount > 0 then
+      damageRatio = math.min(amount / 800, 0.25)
+    end
+    score = (targetIsPlayer and 0.45 or 0.25) + damageRatio
+    spellEntry.damageEvents = (spellEntry.damageEvents or 0) + 1
+    spellEntry.totalDamage = (spellEntry.totalDamage or 0) + (amount or 0)
+  elseif outcomeType == "drain" then
+    score = targetIsPlayer and 0.72 or 0.52
+    spellEntry.drainEvents = (spellEntry.drainEvents or 0) + 1
+  elseif outcomeType == "heal" then
+    score = targetIsEnemy and 0.72 or 0.48
+    spellEntry.healEvents = (spellEntry.healEvents or 0) + 1
+  elseif outcomeType == "buff" then
+    score = targetIsEnemy and 0.66 or 0.44
+    spellEntry.buffEvents = (spellEntry.buffEvents or 0) + 1
+  elseif outcomeType == "control" then
+    score = targetIsPlayer and 0.82 or 0.62
+    spellEntry.controlEvents = (spellEntry.controlEvents or 0) + 1
+  end
+
+  spellEntry.outcomeSamples = (spellEntry.outcomeSamples or 0) + 1
+  spellEntry.harmfulCount = (spellEntry.harmfulCount or 0) + 1
+  spellEntry.dangerTotal = (spellEntry.dangerTotal or 0) + score
+  spellEntry.avgDanger = spellEntry.dangerTotal / spellEntry.outcomeSamples
+  spellEntry.maxDanger = math.max(spellEntry.maxDanger or 0, score)
+  spellEntry.lastSeen = time and time() or 0
+  entry.lastCastSeen = spellEntry.lastSeen
+  self:UpdateLearningDerivedFields(entry)
+end
+
+function addon:GetInterruptSpellLearningEntry(entry, spellName)
+  if not entry or not entry.castSpells then
+    return nil
+  end
+
+  local spellKey = self:NormalizeInterruptSpellKey(spellName)
+  if not spellKey then
+    return nil
+  end
+
+  return entry.castSpells[spellKey]
+end
+
+function addon:GetInterruptSpellDangerScore(spellEntry)
+  if not spellEntry then
+    return 0, 0
+  end
+
+  local castCount = spellEntry.count or 0
+  local outcomeSamples = spellEntry.outcomeSamples or 0
+  local avgDanger = spellEntry.avgDanger or 0
+  if outcomeSamples > 0 and spellEntry.dangerTotal then
+    avgDanger = spellEntry.dangerTotal / outcomeSamples
+  end
+
+  local harmfulRate = 0
+  if castCount > 0 then
+    harmfulRate = (spellEntry.harmfulCount or 0) / castCount
+  end
+
+  local sampleFactor = self:ClampUnitValue((castCount + outcomeSamples) / 6)
+  local maxDanger = spellEntry.maxDanger or avgDanger
+  local score = self:ClampUnitValue(
+    (avgDanger * 0.55) +
+    (maxDanger * 0.20) +
+    (harmfulRate * 0.15) +
+    (sampleFactor * 0.10)
+  )
+
+  return score, sampleFactor
+end
+
+function addon:GetInterruptPressureScore(entry)
+  if not entry or not entry.castSpells then
+    return 0
+  end
+
+  local bestScore = 0
+  for _, spellEntry in pairs(entry.castSpells) do
+    local dangerScore, confidence = self:GetInterruptSpellDangerScore(spellEntry)
+    local combined = dangerScore * math.max(confidence, 0.35)
+    if combined > bestScore then
+      bestScore = combined
+    end
+  end
+
+  return bestScore
+end
+
 function addon:GetInterruptLearningProfile()
-  local entry = self:GetMobLearningProfile()
+  local entry = self:GetEffectiveMobLearningProfile()
   if not entry then
     return nil, 0
   end
@@ -2239,6 +2647,34 @@ function addon:PruneActiveEnemyCast()
   if castInfo.targetKey and targetKey and castInfo.targetKey ~= targetKey then
     self.state.activeEnemyCast = nil
   end
+end
+
+function addon:GetInterruptibleEnemyCast()
+  local activeCast = self:GetActiveEnemyCast()
+  if not activeCast then
+    return nil
+  end
+
+  local now = GetTime()
+  local liveCast = self:GetLiveTargetCastInfo()
+  if liveCast then
+    self.state.activeEnemyCast = liveCast
+    activeCast = liveCast
+  elseif self:HasReliableNoActiveTargetCast() then
+    self.state.activeEnemyCast = nil
+    return nil
+  elseif activeCast.source ~= "live" and (now - (activeCast.startedAt or now)) > 1.2 then
+    self.state.activeEnemyCast = nil
+    return nil
+  end
+
+  activeCast.remaining = math.max((activeCast.expiresAt or now) - now, 0)
+  if activeCast.remaining <= 0.1 then
+    self.state.activeEnemyCast = nil
+    return nil
+  end
+
+  return activeCast
 end
 
 function addon:HasReliableNoActiveTargetCast()
@@ -2432,7 +2868,8 @@ function addon:TrackHostileCastFromMessage(casterName, spellName)
     casterName = targetName,
     spellName = spellName,
     startedAt = GetTime(),
-    expiresAt = GetTime() + 3.5,
+    expiresAt = GetTime() + 1.6,
+    source = "message",
   }
 
   local fight = self.state.learningFight
@@ -2459,6 +2896,136 @@ function addon:ExtractHostileCastFromMessage(message)
   return nil, nil
 end
 
+function addon:ExtractHostileOutcomeFromMessage(message)
+  if not message or message == "" then
+    return nil
+  end
+
+  local casterName, spellName, targetName, amount
+
+  _, _, casterName, spellName, targetName, amount = string.find(message, "^(.-)'s (.-) hits (.-) for (%d+)")
+  if casterName and spellName then
+    return {
+      casterName = trim(casterName),
+      spellName = trim(spellName),
+      targetName = trim(targetName or ""),
+      amount = tonumber(amount),
+      outcomeType = "damage",
+    }
+  end
+
+  _, _, casterName, spellName, targetName, amount = string.find(message, "^(.-)'s (.-) crits (.-) for (%d+)")
+  if casterName and spellName then
+    return {
+      casterName = trim(casterName),
+      spellName = trim(spellName),
+      targetName = trim(targetName or ""),
+      amount = tonumber(amount),
+      outcomeType = "damage",
+    }
+  end
+
+  _, _, casterName, spellName, targetName, amount = string.find(message, "^(.-)'s (.-) drains (.-) for (%d+)")
+  if casterName and spellName then
+    return {
+      casterName = trim(casterName),
+      spellName = trim(spellName),
+      targetName = trim(targetName or ""),
+      amount = tonumber(amount),
+      outcomeType = "drain",
+    }
+  end
+
+  _, _, casterName, spellName, targetName, amount = string.find(message, "^(.-)'s (.-) heals (.-) for (%d+)")
+  if casterName and spellName then
+    return {
+      casterName = trim(casterName),
+      spellName = trim(spellName),
+      targetName = trim(targetName or ""),
+      amount = tonumber(amount),
+      outcomeType = "heal",
+    }
+  end
+
+  _, _, casterName, spellName, targetName, amount = string.find(message, "^(.-)'s (.-) critically heals (.-) for (%d+)")
+  if casterName and spellName then
+    return {
+      casterName = trim(casterName),
+      spellName = trim(spellName),
+      targetName = trim(targetName or ""),
+      amount = tonumber(amount),
+      outcomeType = "heal",
+    }
+  end
+
+  _, _, targetName, spellName = string.find(message, "^(.-) gains (.-)%.?$")
+  if targetName and spellName then
+    return {
+      casterName = trim(targetName),
+      spellName = trim(spellName),
+      targetName = trim(targetName),
+      outcomeType = "buff",
+    }
+  end
+
+  _, _, targetName, spellName = string.find(message, "^(.-) is afflicted by (.-)%.?$")
+  if targetName and spellName then
+    return {
+      spellName = trim(spellName),
+      targetName = trim(targetName),
+      outcomeType = "control",
+    }
+  end
+
+  return nil
+end
+
+function addon:RecordHostileSpellOutcome(outcome)
+  if not outcome or not outcome.spellName then
+    return
+  end
+
+  local activeCast = self.state.activeEnemyCast
+  local targetName = UnitName("target")
+  local casterName = outcome.casterName
+
+  if (not casterName or casterName == "") and activeCast then
+    local activeSpellKey = self:NormalizeInterruptSpellKey(activeCast.spellName)
+    local outcomeSpellKey = self:NormalizeInterruptSpellKey(outcome.spellName)
+    if activeSpellKey and outcomeSpellKey and activeSpellKey == outcomeSpellKey then
+      casterName = activeCast.casterName
+    end
+  end
+
+  if not casterName or casterName == "" or not targetName then
+    return
+  end
+
+  if string.lower(casterName) ~= string.lower(targetName) then
+    return
+  end
+
+  local sample = self:BuildCurrentTargetLearningSample()
+  if not sample then
+    return
+  end
+
+  local entry = self:EnsureMobLearningEntry(
+    sample.classification,
+    sample.learningKey,
+    sample.name,
+    sample.creatureType,
+    sample.level
+  )
+  self:UpdateInterruptSpellOutcome(entry, outcome.spellName, outcome.outcomeType, outcome.amount, outcome.targetName)
+
+  local activeSpellKey = activeCast and self:NormalizeInterruptSpellKey(activeCast.spellName) or nil
+  local outcomeSpellKey = self:NormalizeInterruptSpellKey(outcome.spellName)
+  if activeCast and activeSpellKey and outcomeSpellKey and activeSpellKey == outcomeSpellKey then
+    self.state.activeEnemyCast = nil
+  end
+end
+
 function addon:OnHostileSpellCastMessage(message)
   local casterName, spellName = self:ExtractHostileCastFromMessage(message)
   if not casterName or not spellName then
@@ -2466,6 +3033,15 @@ function addon:OnHostileSpellCastMessage(message)
   end
 
   self:TrackHostileCastFromMessage(casterName, spellName)
+end
+
+function addon:OnHostileSpellOutcomeMessage(message)
+  local outcome = self:ExtractHostileOutcomeFromMessage(message)
+  if not outcome then
+    return
+  end
+
+  self:RecordHostileSpellOutcome(outcome)
 end
 
 function addon:IsHostileTarget()
@@ -2530,6 +3106,27 @@ function addon:GetMobLearningProfile()
   end
 
   return bucket[learningKey]
+end
+
+function addon:GetEffectiveMobLearningProfile()
+  if not self:IsHostileTarget() then
+    return nil
+  end
+
+  self:ObserveCurrentTargetLearning()
+
+  local name = UnitName("target")
+  local learningKey = self:NormalizeMobLearningKey(name)
+  if not learningKey then
+    return nil
+  end
+
+  local classification = self:GetTargetClassification()
+  local creatureType = UnitCreatureType("target") or "unknown"
+  local level = UnitLevel("target") or 0
+  local exactProfile = self:GetMobLearningProfile()
+  local familyProfile = self:BuildFamilyLearningProfile(classification, learningKey, creatureType, level)
+  return self:BuildEffectiveLearningProfile(exactProfile, familyProfile)
 end
 
 function addon:GetComboBuffDuration(name, comboPoints)
@@ -2705,7 +3302,7 @@ function addon:GetTargetDurabilityScore()
     return nil
   end
 
-  local profile = self:GetMobLearningProfile()
+  local profile = self:GetEffectiveMobLearningProfile()
   local classification = self:GetTargetClassification()
   local expectedMaxHealth = self:GetExpectedTargetMaxHealth(profile)
   if expectedMaxHealth <= 0 then
@@ -3040,17 +3637,74 @@ function addon:GetKickEnergyCost()
   return self:GetSpellEnergyCost("Kick") or 25
 end
 
+function addon:GetActiveCastInterruptScore(activeCast)
+  if not activeCast then
+    return 0, 0
+  end
+
+  local learningProfile = self:GetInterruptLearningProfile()
+  if not learningProfile then
+    return 0, 0
+  end
+
+  local spellEntry = self:GetInterruptSpellLearningEntry(learningProfile, activeCast.spellName)
+  return self:GetInterruptSpellDangerScore(spellEntry)
+end
+
+function addon:GetInterruptResponseForActiveCast(context)
+  local activeCast = self:GetInterruptibleEnemyCast()
+  if not activeCast then
+    return "ignore", nil, 0, 0
+  end
+
+  local dangerScore, confidence = self:GetActiveCastInterruptScore(activeCast)
+  local encounterType = context and context.encounterType or self:GetEncounterType(self:GetTargetClassification())
+  local ignoreThreshold = 0.62
+  if encounterType == "dungeon_elite" then
+    ignoreThreshold = 0.42
+  elseif encounterType == "dungeon_trash" or encounterType == "party_world" then
+    ignoreThreshold = 0.52
+  end
+
+  if confidence < 0.2 then
+    if encounterType == "dungeon_elite" then
+      dangerScore = math.max(dangerScore, 0.52)
+    elseif encounterType == "dungeon_trash" or encounterType == "party_world" then
+      dangerScore = math.max(dangerScore, 0.4)
+    end
+  end
+
+  if dangerScore < ignoreThreshold then
+    return "ignore", activeCast, dangerScore, confidence
+  end
+
+  if self:HasSpell("Kick") and self:IsInMeleeRange() and self:CanCast("Kick") then
+    return "kick", activeCast, dangerScore, confidence
+  end
+
+  if context
+    and context.comboPoints > 0
+    and self:HasSpell("Kidney Shot")
+    and self:IsInMeleeRange()
+    and not self:IsTargetStunImmune(context)
+    and self:CanCast("Kidney Shot") then
+    return "kidney", activeCast, dangerScore, confidence
+  end
+
+  if self:HasSpell("Blind") and self:CanCast("Blind") and dangerScore >= 0.82 then
+    return "blind", activeCast, dangerScore, confidence
+  end
+
+  return "ignore", activeCast, dangerScore, confidence
+end
+
 function addon:ShouldKickCurrentTarget()
-  local activeCast = self:GetActiveEnemyCast()
-  if not activeCast or not self:HasSpell("Kick") then
+  if not self:HasSpell("Kick") then
     return false
   end
 
-  if not self:IsInMeleeRange() then
-    return false
-  end
-
-  return self:CanCast("Kick")
+  local response = self:GetInterruptResponseForActiveCast()
+  return response == "kick"
 end
 
 function addon:ShouldReserveKickEnergy(context)
@@ -3083,20 +3737,17 @@ function addon:ShouldReserveKickEnergy(context)
     return false
   end
 
-  local learningProfile, castConfidence = self:GetInterruptLearningProfile()
-  if learningProfile and learningProfile ~= context.learningProfile then
-    castConfidence = self:GetInterruptLearningConfidence(learningProfile)
-  end
+  local interruptPressure = self:GetInterruptPressureScore(context.learningProfile)
 
   if context.encounterType == "dungeon_elite" then
-    return castConfidence >= 0.2
+    return interruptPressure >= 0.18
   end
 
   if context.encounterType == "dungeon_trash" or context.encounterType == "party_world" then
-    return castConfidence >= 0.35
+    return interruptPressure >= 0.26
   end
 
-  return castConfidence >= 0.45
+  return interruptPressure >= 0.34
 end
 
 function addon:ShouldConservativelyBlockKidneyShot(context)
@@ -3127,7 +3778,7 @@ end
 
 function addon:IsTargetStunImmune(context)
   context = context or self:GetComboPointContext(self.state.activeRotationMode or "finisher")
-  local entry = context and context.learningProfile or self:GetMobLearningProfile()
+  local entry = context and context.learningProfile or self:GetEffectiveMobLearningProfile()
   if entry then
     local immuneSamples = entry.stunImmuneSamples or 0
     local successSamples = entry.stunSuccessSamples or 0
@@ -3147,7 +3798,7 @@ function addon:CanUseKidneyShotInterrupt(context)
     return false
   end
 
-  if not self:GetActiveEnemyCast() then
+  if self:GetInterruptResponseForActiveCast(context) ~= "kidney" then
     return false
   end
 
@@ -3166,8 +3817,16 @@ function addon:CanUseKidneyShotInterrupt(context)
   return self:CanCast("Kidney Shot")
 end
 
+function addon:CanUseBlindInterrupt(context)
+  if self:GetInterruptResponseForActiveCast(context) ~= "blind" then
+    return false
+  end
+
+  return self:HasSpell("Blind") and self:CanCast("Blind")
+end
+
 function addon:CanCastWithoutBreakingKickReserve(name, context)
-  if not name or name == "Kick" or name == "Kidney Shot" then
+  if not name or name == "Kick" or name == "Kidney Shot" or name == "Blind" then
     return true
   end
 
@@ -4723,6 +5382,15 @@ function addon:TryEmergencyKidneyInterrupt(mode)
   return self:TryCast("Kidney Shot")
 end
 
+function addon:TryEmergencyBlindInterrupt(mode)
+  local context = self:GetComboPointContext(mode or self.state.activeRotationMode or "finisher")
+  if not self:CanUseBlindInterrupt(context) then
+    return false
+  end
+
+  return self:TryCast("Blind")
+end
+
 function addon:TryPreferredBuilder()
   local modeHint = self.state.activeRotationMode or "builder"
   local context = self:GetComboPointContext(modeHint)
@@ -4886,6 +5554,7 @@ end
 
 function addon:OnHostileSpellMessage(message)
   self:OnHostileSpellCastMessage(message)
+  self:OnHostileSpellOutcomeMessage(message)
 end
 
 function addon:OnTargetChanged()

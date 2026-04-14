@@ -9,6 +9,10 @@ local function runSharedCombatPreamble(self, mode)
     return true
   end
 
+  if self:TryEmergencyBlindInterrupt(mode) then
+    return true
+  end
+
   if self:TryRiposte() then
     return true
   end
