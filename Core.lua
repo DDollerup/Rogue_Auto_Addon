@@ -5139,6 +5139,12 @@ function addon:GetPreferredBuilder(context)
   local mode = RogueAutoDB.builder.mode
   context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
   local modeHint = context and context.mode or self.state.activeRotationMode or "builder"
+  local primaryCandidateSpells = {
+    "Backstab",
+    "Surprise Attack",
+    "Noxious Assault",
+    "Hemorrhage",
+  }
   local candidateSpells = {
     "Backstab",
     "Surprise Attack",
@@ -5186,11 +5192,18 @@ function addon:GetPreferredBuilder(context)
     local bestSpell = nil
     local bestScore = nil
 
-    for _, spellName in ipairs(candidateSpells) do
+    for _, spellName in ipairs(primaryCandidateSpells) do
       local score = self:GetBuilderSpellScore(spellName, context, modeHint)
       if score and (not bestScore or score > bestScore) then
         bestScore = score
         bestSpell = spellName
+      end
+    end
+
+    if not bestSpell then
+      local sinisterScore = self:GetBuilderSpellScore("Sinister Strike", context, modeHint)
+      if sinisterScore then
+        bestSpell = "Sinister Strike"
       end
     end
 
