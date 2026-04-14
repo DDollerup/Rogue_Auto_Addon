@@ -1254,9 +1254,9 @@ function addon:EnsureSelfBuffTimelineFrame()
   end
 
   local timelineFrame = CreateFrame("Frame", "RogueAutoSelfBuffTimelineFrame", UIParent)
-  timelineFrame:SetWidth(188)
-  timelineFrame:SetHeight(86)
-  timelineFrame:SetFrameStrata("TOOLTIP")
+  timelineFrame:SetWidth(166)
+  timelineFrame:SetHeight(64)
+  timelineFrame:SetFrameStrata("HIGH")
   timelineFrame:SetFrameLevel((PlayerFrame and PlayerFrame:GetFrameLevel() or 1) + 12)
   timelineFrame:SetClampedToScreen(true)
   timelineFrame.rows = {}
@@ -1265,44 +1265,44 @@ function addon:EnsureSelfBuffTimelineFrame()
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true,
     tileSize = 16,
-    edgeSize = 12,
-    insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    edgeSize = 10,
+    insets = { left = 2, right = 2, top = 2, bottom = 2 },
   })
-  timelineFrame:SetBackdropColor(0.03, 0.03, 0.03, 0.78)
-  timelineFrame:SetBackdropBorderColor(1, 0.82, 0, 0.72)
+  timelineFrame:SetBackdropColor(0.02, 0.02, 0.02, 0.34)
+  timelineFrame:SetBackdropBorderColor(0.32, 0.32, 0.32, 0.32)
 
   local title = timelineFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  title:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 10, -8)
+  title:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 8, -6)
   title:SetText("Buffs")
-  title:SetTextColor(1, 0.9, 0.35)
+  title:SetTextColor(0.72, 0.72, 0.72)
   timelineFrame.title = title
 
   for index = 1, 4 do
     local row = CreateFrame("Frame", nil, timelineFrame)
-    row:SetWidth(164)
-    row:SetHeight(14)
-    row:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 10, -24 - ((index - 1) * 14))
+    row:SetWidth(148)
+    row:SetHeight(12)
+    row:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 8, -18 - ((index - 1) * 11))
     row:Hide()
-    row.trackWidth = 130
+    row.trackWidth = 116
 
     local track = row:CreateTexture(nil, "BACKGROUND")
     track:SetWidth(row.trackWidth)
-    track:SetHeight(4)
+    track:SetHeight(2)
     track:SetPoint("LEFT", row, "LEFT", 0, 0)
     track:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    track:SetVertexColor(1, 0.88, 0.1, 0.35)
+    track:SetVertexColor(0.72, 0.72, 0.72, 0.14)
     row.track = track
 
     local progress = row:CreateTexture(nil, "ARTWORK")
-    progress:SetHeight(4)
+    progress:SetHeight(2)
     progress:SetPoint("LEFT", track, "LEFT", 0, 0)
     progress:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    progress:SetVertexColor(1, 0.9, 0.18, 0.95)
+    progress:SetVertexColor(0.78, 0.82, 0.36, 0.72)
     row.progress = progress
 
     local iconHolder = CreateFrame("Frame", nil, row)
-    iconHolder:SetWidth(12)
-    iconHolder:SetHeight(12)
+    iconHolder:SetWidth(10)
+    iconHolder:SetHeight(10)
     iconHolder:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.iconHolder = iconHolder
 
@@ -1316,18 +1316,18 @@ function addon:EnsureSelfBuffTimelineFrame()
     row.iconBorder = border
 
     local glow = iconHolder:CreateTexture(nil, "ARTWORK")
-    glow:SetWidth(22)
-    glow:SetHeight(22)
+    glow:SetWidth(14)
+    glow:SetHeight(14)
     glow:SetPoint("CENTER", iconHolder, "CENTER", 0, 0)
     glow:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    glow:SetVertexColor(1, 0.9, 0.2, 0.18)
+    glow:SetVertexColor(0.82, 0.86, 0.4, 0.08)
     row.glow = glow
 
     local timeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    timeText:SetPoint("LEFT", track, "RIGHT", 6, 0)
-    timeText:SetWidth(30)
+    timeText:SetPoint("LEFT", track, "RIGHT", 4, 0)
+    timeText:SetWidth(28)
     timeText:SetJustifyH("RIGHT")
-    timeText:SetTextColor(1, 0.95, 0.65)
+    timeText:SetTextColor(0.82, 0.82, 0.82)
     row.timeText = timeText
 
     timelineFrame.rows[index] = row
@@ -1346,11 +1346,11 @@ function addon:PositionSelfBuffTimelineFrame()
   timelineFrame:ClearAllPoints()
 
   if PlayerFrame and PlayerFrame.IsShown and PlayerFrame:IsShown() then
-    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 34, 6)
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 38, 4)
   elseif PlayerFrameManaBar and PlayerFrameManaBar.IsShown and PlayerFrameManaBar:IsShown() then
-    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 4, 12)
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 10, 8)
   else
-    timelineFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 140, 170)
+    timelineFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 146, 162)
   end
 
   return timelineFrame
@@ -1525,7 +1525,7 @@ function addon:UpdateSelfBuffTimelineFrame(force)
   end
 
   local visibleRows = math.min(table.getn(visible), table.getn(timelineFrame.rows))
-  timelineFrame:SetHeight(30 + (visibleRows * 14))
+  timelineFrame:SetHeight(20 + (visibleRows * 11))
 
   for index, row in ipairs(timelineFrame.rows) do
     local buff = visible[index]
