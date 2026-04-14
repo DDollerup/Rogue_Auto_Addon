@@ -1332,7 +1332,7 @@ end
 function addon:GetTrackedPlayerBuffStates()
   local trackedNames = {}
   for _, spellName in ipairs(self.selfBuffTimelineTrackedSpells) do
-    trackedNames[spellName] = true
+    trackedNames[normalizeSpellName(spellName)] = spellName
   end
 
   local activeBuffs = {}
@@ -1348,10 +1348,12 @@ function addon:GetTrackedPlayerBuffStates()
     self.tooltip:ClearLines()
     self.tooltip:SetPlayerBuff(buffIndex)
     local name = RogueAutoTooltipTextLeft1 and RogueAutoTooltipTextLeft1:GetText() or nil
+    local normalizedName = normalizeSpellName(name)
+    local trackedName = normalizedName and trackedNames[normalizedName] or nil
 
-    if name and trackedNames[name] and remaining > 0 then
-      activeBuffs[name] = {
-        name = name,
+    if trackedName and remaining > 0 then
+      activeBuffs[trackedName] = {
+        name = trackedName,
         remaining = remaining,
         texture = texture,
       }
@@ -3547,6 +3549,8 @@ function addon:CanAttemptBehindAction()
 end
 
 function addon:FindPlayerBuff(name)
+  local normalizedExpectedName = normalizeSpellName(name)
+
   for index = 0, 31 do
     local buffIndex = GetPlayerBuff(index, "HELPFUL")
     if buffIndex < 0 then
@@ -3567,7 +3571,7 @@ function addon:FindPlayerBuff(name)
     self.tooltip:ClearLines()
     self.tooltip:SetPlayerBuff(buffIndex)
     local text = RogueAutoTooltipTextLeft1 and RogueAutoTooltipTextLeft1:GetText()
-    if text == name then
+    if normalizeSpellName(text) == normalizedExpectedName then
       return true, GetPlayerBuffTimeLeft(buffIndex) or 0
     end
   end
