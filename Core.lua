@@ -1523,20 +1523,38 @@ function addon:EnsureWeaponPoisonWarningFrame()
   warningFrame:EnableMouse(false)
   warningFrame.edges = {}
 
-  local function createEdge(name, width, height, point, relativePoint, xOffset, yOffset)
+  local function createEdge(name, orientation, thickness, side)
     local edge = warningFrame:CreateTexture(nil, "BACKGROUND")
     edge:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
     edge:SetVertexColor(0.1, 1, 0.18, 0.18)
-    edge:SetWidth(width)
-    edge:SetHeight(height)
-    edge:SetPoint(point, warningFrame, relativePoint, xOffset, yOffset)
+
+    if orientation == "horizontal" then
+      if side == "top" then
+        edge:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, 0)
+        edge:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, 0)
+      else
+        edge:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", 0, 0)
+        edge:SetPoint("BOTTOMRIGHT", warningFrame, "BOTTOMRIGHT", 0, 0)
+      end
+      edge:SetHeight(thickness)
+    else
+      if side == "left" then
+        edge:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, 0)
+        edge:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", 0, 0)
+      else
+        edge:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, 0)
+        edge:SetPoint("BOTTOMRIGHT", warningFrame, "BOTTOMRIGHT", 0, 0)
+      end
+      edge:SetWidth(thickness)
+    end
+
     warningFrame.edges[name] = edge
   end
 
-  createEdge("top", UIParent:GetWidth(), 28, "TOPLEFT", "TOPLEFT", 0, 0)
-  createEdge("bottom", UIParent:GetWidth(), 28, "BOTTOMLEFT", "BOTTOMLEFT", 0, 0)
-  createEdge("left", 28, UIParent:GetHeight(), "TOPLEFT", "TOPLEFT", 0, 0)
-  createEdge("right", 28, UIParent:GetHeight(), "TOPRIGHT", "TOPRIGHT", 0, 0)
+  createEdge("top", "horizontal", 28, "top")
+  createEdge("bottom", "horizontal", 28, "bottom")
+  createEdge("left", "vertical", 28, "left")
+  createEdge("right", "vertical", 28, "right")
 
   warningFrame:Hide()
   self.weaponPoisonWarningFrame = warningFrame
