@@ -111,6 +111,7 @@ addon.damageCategoryOrder = {
 
 addon.damageCategoryTextures = {
   total = "Interface\\Icons\\Ability_CriticalStrike",
+  energy = "Interface\\Icons\\Spell_Holy_SealOfSacrifice",
   melee = "Interface\\Icons\\INV_Sword_04",
   poisonDirect = "Interface\\Icons\\Ability_Poisons",
   bleedDot = "Interface\\Icons\\Ability_Rogue_Rupture",
@@ -317,13 +318,38 @@ local function createNoticeFrame(name, point, relativePoint, xOffset, yOffset)
   totalRow.value = totalValue
   noticeFrame.totalRow = totalRow
 
+  local energyRow = CreateFrame("Frame", nil, noticeFrame)
+  energyRow:SetWidth(312)
+  energyRow:SetHeight(18)
+  energyRow:SetPoint("TOPLEFT", totalRow, "BOTTOMLEFT", 0, -6)
+  energyRow:Hide()
+
+  local energyIcon = energyRow:CreateTexture(nil, "ARTWORK")
+  energyIcon:SetWidth(14)
+  energyIcon:SetHeight(14)
+  energyIcon:SetPoint("LEFT", energyRow, "LEFT", 1, 0)
+  energyRow.icon = energyIcon
+
+  local energyLabel = energyRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  energyLabel:SetPoint("LEFT", energyIcon, "RIGHT", 6, 0)
+  energyLabel:SetJustifyH("LEFT")
+  energyLabel:SetTextColor(0.92, 0.92, 0.92)
+  energyRow.label = energyLabel
+
+  local energyValue = energyRow:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  energyValue:SetPoint("RIGHT", energyRow, "RIGHT", 0, 0)
+  energyValue:SetJustifyH("RIGHT")
+  energyValue:SetTextColor(1, 1, 1)
+  energyRow.value = energyValue
+  noticeFrame.energyRow = energyRow
+
   noticeFrame.categoryRows = {}
 
   for index, categoryKey in ipairs(addon.damageCategoryOrder) do
     local row = CreateFrame("Frame", nil, noticeFrame)
     row:SetWidth(312)
     row:SetHeight(18)
-    row:SetPoint("TOPLEFT", totalRow, "BOTTOMLEFT", 0, -6 - ((index - 1) * 20))
+    row:SetPoint("TOPLEFT", energyRow, "BOTTOMLEFT", 0, -6 - ((index - 1) * 20))
     row:Hide()
 
     local icon = row:CreateTexture(nil, "ARTWORK")
@@ -640,6 +666,10 @@ function addon:ConfigureTextNoticeFrame(noticeFrame, body)
     noticeFrame.totalRow:Hide()
   end
 
+  if noticeFrame.energyRow then
+    noticeFrame.energyRow:Hide()
+  end
+
   if noticeFrame.categoryRows then
     for _, row in pairs(noticeFrame.categoryRows) do
       row:Hide()
@@ -681,6 +711,13 @@ function addon:ConfigureCombatNoticeFrame(noticeFrame, totals)
     noticeFrame.totalRow:Show()
   end
 
+  if noticeFrame.energyRow then
+    noticeFrame.energyRow.icon:SetTexture(self.damageCategoryTextures.energy)
+    noticeFrame.energyRow.label:SetText("Energy Gained")
+    noticeFrame.energyRow.value:SetText(tostring(totals.energyGained or 0))
+    noticeFrame.energyRow:Show()
+  end
+
   if noticeFrame.categoryRows then
     for _, categoryKey in ipairs(self.damageCategoryOrder) do
       local row = noticeFrame.categoryRows[categoryKey]
@@ -693,7 +730,7 @@ function addon:ConfigureCombatNoticeFrame(noticeFrame, totals)
     end
   end
 
-  noticeFrame:SetHeight(176)
+  noticeFrame:SetHeight(202)
 end
 
 function addon:ConfigurePickPocketNoticeFrame(noticeFrame, entries)
@@ -709,6 +746,10 @@ function addon:ConfigurePickPocketNoticeFrame(noticeFrame, entries)
 
   if noticeFrame.totalRow then
     noticeFrame.totalRow:Hide()
+  end
+
+  if noticeFrame.energyRow then
+    noticeFrame.energyRow:Hide()
   end
 
   if noticeFrame.categoryRows then
@@ -812,6 +853,7 @@ end
 
 local function createCombatTotals()
   return {
+    energyGained = 0,
     melee = 0,
     poisonDirect = 0,
     bleedDot = 0,
@@ -902,6 +944,7 @@ function addon:BuildCombatSummaryText(totals)
   local totalDamage = self:GetCombatTotalDamage(totals)
 
   table.insert(lines, "Total: " .. tostring(totalDamage))
+  table.insert(lines, "Energy Gained: " .. tostring(totals.energyGained or 0))
   table.insert(lines, self.damageCategories.melee .. ": " .. tostring(totals.melee or 0))
   table.insert(lines, self.damageCategories.poisonDirect .. ": " .. tostring(totals.poisonDirect or 0))
   table.insert(lines, self.damageCategories.bleedDot .. ": " .. tostring(totals.bleedDot or 0))
@@ -909,6 +952,15 @@ function addon:BuildCombatSummaryText(totals)
   table.insert(lines, self.damageCategories.misc .. ": " .. tostring(totals.misc or 0))
 
   return table.concat(lines, "\n"), totalDamage
+end
+
+function addon:AddCombatEnergyGain(amount)
+  local session = self:EnsureCombatSession()
+  if not session or not amount or amount <= 0 then
+    return
+  end
+
+  session.totals.energyGained = (session.totals.energyGained or 0) + amount
 end
 
 function addon:FinishCombatSession()
@@ -5921,6 +5973,7 @@ function addon:OnCombatStarted()
     self:StartCombatSession()
   end
 
+  self.state.lastEnergy = self:GetEnergy()
   self:MaybeBeginLearningFight()
 end
 
@@ -5941,8 +5994,30 @@ function addon:OnEnergyChanged(unit)
   end
 
   local currentEnergy = self:GetEnergy()
-  if self.state.lastEnergy and currentEnergy == self.state.lastEnergy + 20 then
-    self.state.firstEnergyTick = GetTime()
+  local previousEnergy = self.state.lastEnergy
+  local now = GetTime()
+
+  if previousEnergy and currentEnergy > previousEnergy then
+    local delta = currentEnergy - previousEnergy
+    local gainedFromSkills = 0
+
+    if delta == 20 then
+      self.state.firstEnergyTick = now
+    elseif delta > 20 then
+      local expectedTickAt = self.state.firstEnergyTick and (self.state.firstEnergyTick + 2) or nil
+      if expectedTickAt and math.abs(now - expectedTickAt) <= 0.35 then
+        self.state.firstEnergyTick = now
+        gainedFromSkills = delta - 20
+      else
+        gainedFromSkills = delta
+      end
+    else
+      gainedFromSkills = delta
+    end
+
+    if self:IsCombatSessionActive() and gainedFromSkills > 0 then
+      self:AddCombatEnergyGain(gainedFromSkills)
+    end
   end
   self.state.lastEnergy = currentEnergy
 end
