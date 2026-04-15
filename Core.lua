@@ -1438,11 +1438,11 @@ function addon:PositionWeaponPoisonFrame()
   poisonFrame:ClearAllPoints()
 
   if PlayerFrame and PlayerFrame.IsShown and PlayerFrame:IsShown() then
-    poisonFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 12, 12)
+    poisonFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 22, 4)
   elseif PlayerFrameManaBar and PlayerFrameManaBar.IsShown and PlayerFrameManaBar:IsShown() then
-    poisonFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", -2, 16)
+    poisonFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 8, 10)
   else
-    poisonFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 120, 170)
+    poisonFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 130, 160)
   end
 
   return poisonFrame
@@ -1526,7 +1526,7 @@ function addon:GetWeaponPoisonStates()
     return {}
   end
 
-  local hasMainHand, _, mainHandCharges, _, hasOffHand, _, offHandCharges = GetWeaponEnchantInfo()
+  local hasMainHand, _, mainHandCharges, hasOffHand, _, offHandCharges = GetWeaponEnchantInfo()
   local states = {}
 
   if hasMainHand then
