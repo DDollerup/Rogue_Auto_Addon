@@ -248,6 +248,9 @@ addon.pickPocketTargetWhitelist = {
 addon.comboPointCount = 5
 addon.comboPointInactiveColor = { 0.58, 0.52, 0.22, 0.5 }
 addon.comboPointActiveColor = { 1, 0.82, 0.1, 1 }
+addon.comboPointFadeDuration = 0.35
+addon.comboPointIdleAlpha = 0
+addon.comboPointUnlockedAlpha = 0.35
 addon.comboPointBulletOffsets = {
   { -44, 0 },
   { -22, 15 },
@@ -281,8 +284,11 @@ function addon:EnsureComboPointFrame()
   comboFrame:SetMovable(true)
   comboFrame:EnableMouse(false)
   comboFrame:RegisterForDrag("LeftButton")
+  comboFrame:SetAlpha(0)
   comboFrame.points = {}
   comboFrame.isPositionInitialized = false
+  comboFrame.currentAlpha = 0
+  comboFrame.targetAlpha = 0
 
   for index = 1, self.comboPointCount do
     local point = comboFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -333,11 +339,9 @@ function addon:PositionComboPointFrame(force)
 
   local settings = RogueAutoDB and RogueAutoDB.ui and RogueAutoDB.ui.comboPoints
   if not settings or settings.enabled == false then
-    comboFrame:Hide()
     return comboFrame
   end
 
-  comboFrame:Show()
   comboFrame:EnableMouse(settings.unlocked == true)
 
   if not settings.unlocked or force or not comboFrame.isPositionInitialized then
@@ -349,22 +353,104 @@ function addon:PositionComboPointFrame(force)
   return comboFrame
 end
 
-function addon:UpdateComboPointFrame(force)
-  local now = GetTime()
-  if not force and self.state.nextComboPointUpdate and now < self.state.nextComboPointUpdate then
-    return
+function addon:GetComboPointFrameTargetAlpha()
+  local settings = RogueAutoDB and RogueAutoDB.ui and RogueAutoDB.ui.comboPoints
+  if not settings or settings.enabled == false then
+    return 0
   end
 
-  self.state.nextComboPointUpdate = now + 0.08
+  if self:IsCombatSessionActive() then
+    return 1
+  end
 
-  local comboFrame = self:PositionComboPointFrame(force)
+  if settings.unlocked then
+    return self.comboPointUnlockedAlpha
+  end
+
+  return self.comboPointIdleAlpha
+end
+
+function addon:UpdateComboPointFrameVisibility(force)
+  local comboFrame = self:EnsureComboPointFrame()
   if not comboFrame then
     return
   end
 
   local settings = RogueAutoDB and RogueAutoDB.ui and RogueAutoDB.ui.comboPoints
   if not settings or settings.enabled == false then
+    comboFrame.targetAlpha = 0
+    comboFrame.currentAlpha = 0
+    comboFrame.fadeStartAt = nil
+    comboFrame.fadeFrom = nil
+    comboFrame.fadeTo = nil
+    comboFrame:SetAlpha(0)
     comboFrame:Hide()
+    return
+  end
+
+  local now = GetTime()
+  local targetAlpha = self:GetComboPointFrameTargetAlpha()
+  local currentAlpha = comboFrame.currentAlpha
+  if currentAlpha == nil then
+    currentAlpha = comboFrame:GetAlpha() or 0
+  end
+
+  if force or comboFrame.targetAlpha ~= targetAlpha or comboFrame.fadeStartAt == nil then
+    comboFrame.fadeStartAt = now
+    comboFrame.fadeFrom = currentAlpha
+    comboFrame.fadeTo = targetAlpha
+    comboFrame.targetAlpha = targetAlpha
+  end
+
+  local alpha = targetAlpha
+  local fadeFrom = comboFrame.fadeFrom or currentAlpha
+  local fadeTo = comboFrame.fadeTo or targetAlpha
+  local fadeDuration = self.comboPointFadeDuration or 0.35
+
+  if fadeDuration > 0 and fadeFrom ~= nil and fadeTo ~= nil and fadeFrom ~= fadeTo then
+    local progress = (now - (comboFrame.fadeStartAt or now)) / fadeDuration
+    if progress < 0 then
+      progress = 0
+    elseif progress > 1 then
+      progress = 1
+    end
+    alpha = fadeFrom + ((fadeTo - fadeFrom) * progress)
+  end
+
+  if alpha < 0 then
+    alpha = 0
+  elseif alpha > 1 then
+    alpha = 1
+  end
+
+  comboFrame.currentAlpha = alpha
+  comboFrame:SetAlpha(alpha)
+
+  if alpha > 0 or targetAlpha > 0 then
+    comboFrame:Show()
+  else
+    comboFrame:Hide()
+  end
+end
+
+function addon:UpdateComboPointFrame(force)
+  local now = GetTime()
+  self:PositionComboPointFrame(force)
+  self:UpdateComboPointFrameVisibility(force)
+
+  local settings = RogueAutoDB and RogueAutoDB.ui and RogueAutoDB.ui.comboPoints
+  if not settings or settings.enabled == false then
+    return
+  end
+
+  if not force and self.state.nextComboPointUpdate and now < self.state.nextComboPointUpdate then
+    return
+  end
+
+  self.state.nextComboPointUpdate = now + 0.08
+
+  local comboFrame = self.comboPointFrame or self:EnsureComboPointFrame()
+  if not comboFrame then
     return
   end
 
@@ -6270,6 +6356,7 @@ function addon:OnCombatStarted()
   end
 
   self.state.lastEnergy = self:GetEnergy()
+  self:UpdateComboPointFrame(true)
   self:MaybeBeginLearningFight()
 end
 
@@ -6278,6 +6365,7 @@ function addon:OnCombatEnded()
   self:ClearPendingKidneyShotCheck()
   self:FinalizeLearningFight("combat_end")
   self:FinishCombatSession()
+  self:UpdateComboPointFrame(true)
 end
 
 function addon:OnSpellbookChanged()
