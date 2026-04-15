@@ -92,6 +92,7 @@ addon.state = {
   trackedPlayerBuffs = {},
   pendingPlayerBuffs = {},
   lastExplicitEnergyGainAt = 0,
+  lastExplicitEnergyGainMessage = nil,
 }
 
 addon.damageCategories = {
@@ -985,7 +986,21 @@ function addon:OnCombatEnergyMessage(message)
     return false
   end
 
-  self.state.lastExplicitEnergyGainAt = GetTime()
+  local now = GetTime()
+  local lastMessage = self.state.lastExplicitEnergyGainMessage
+  if lastMessage
+    and lastMessage.text == message
+    and lastMessage.at
+    and (now - lastMessage.at) <= 0.2 then
+    self.state.lastExplicitEnergyGainAt = now
+    return true
+  end
+
+  self.state.lastExplicitEnergyGainAt = now
+  self.state.lastExplicitEnergyGainMessage = {
+    text = message,
+    at = now,
+  }
   if self:IsCombatSessionActive() then
     self:AddCombatEnergyGain(amount)
   end
@@ -6287,6 +6302,7 @@ frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
 frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
 frame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_SELF_BUFF")
 frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS")
 frame:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
 frame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
@@ -6325,6 +6341,8 @@ frame:SetScript("OnEvent", function()
     addon:OnCombatMiss(arg1)
   elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
     addon:OnSpellSelfDamage(arg1)
+  elseif event == "CHAT_MSG_SPELL_SELF_BUFF" then
+    addon:OnSelfBuffMessage(arg1)
   elseif event == "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS" then
     addon:OnSelfBuffMessage(arg1)
   elseif event == "CHAT_MSG_SPELL_AURA_GONE_SELF" then
