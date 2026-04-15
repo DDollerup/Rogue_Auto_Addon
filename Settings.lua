@@ -85,7 +85,7 @@ addon.macroDefinitions = {
   {
     id = "builder",
     macro = "/script RogueAuto:Builder()",
-    description = "Builder: builds combo points with the best legal builder, auto-Kicks active casts, can use emergency Kidney Shot when Kick is unavailable and the target is not learned as stun-immune, and can optionally spend combo points on finishers.",
+    description = "Builder: builds combo points with the best legal builder, auto-Kicks active casts, can use emergency Kidney Shot when Kick is unavailable and the target is not learned as stun-immune, and can optionally maintain upkeep buffs without spending on damaging finishers.",
   },
   {
     id = "opener",
@@ -123,8 +123,13 @@ addon.settingDefinitions = {
   },
   builderFinishers = {
     path = { "builder", "useFinishers" },
-    label = "Allow Builder() to use finishers",
-    help = "Refreshes Slice and Dice, refreshes Envenom when Noxious Assault is learned, then uses Eviscerate.",
+    label = "Allow Builder() to maintain upkeep buffs",
+    help = "Refreshes Slice and Dice and, when learned and relevant, Envenom. Builder() will not use damaging finishers.",
+  },
+  builderFlourish = {
+    path = { "builder", "useFlourish" },
+    label = "Include Flourish in upkeep",
+    help = "Allows Builder() to refresh Flourish alongside Slice and Dice and Envenom upkeep.",
   },
   highlightDuration = {
     path = { "notifications", "highlightDuration" },
@@ -145,8 +150,8 @@ addon.uiSections = {
   {
     title = "Builder",
     kind = "builder",
-    help = "Auto scores Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Ghostly Strike is optional. Builder() can also be allowed to spend combo points by refreshing Slice and Dice, refreshing Envenom for Noxious builds, and then using Eviscerate.",
-    items = { "builderFinishers", "builderGhostlyStrike" },
+    help = "Auto scores Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Ghostly Strike is optional. Builder() can also maintain upkeep buffs like Slice and Dice, Envenom for Noxious builds, and optionally Flourish, but it will not spend combo points on damaging finishers.",
+    items = { "builderFinishers", "builderFlourish", "builderGhostlyStrike" },
   },
   {
     title = "Openers",
@@ -201,7 +206,16 @@ addon.slashCommandDefinitions = {
     setting = "builderFinishers",
     usage = "on|off",
     success = function(value)
-      return "Builder finishers " .. (value and "enabled" or "disabled") .. "."
+      return "Builder upkeep buffs " .. (value and "enabled" or "disabled") .. "."
+    end,
+  },
+  {
+    command = "builderflourish",
+    type = "toggle",
+    setting = "builderFlourish",
+    usage = "on|off",
+    success = function(value)
+      return "Builder Flourish upkeep " .. (value and "enabled" or "disabled") .. "."
     end,
   },
 }

@@ -39,6 +39,7 @@ addon.defaults = {
     mode = "auto",
     useGhostlyStrike = false,
     useFinishers = false,
+    useFlourish = false,
   },
   minimap = {
     angle = 220,
@@ -89,6 +90,7 @@ addon.state = {
   cachedPlayerCritChance = nil,
   selfBuffTimeline = {},
   trackedPlayerBuffs = {},
+  pendingPlayerBuffs = {},
 }
 
 addon.damageCategories = {
@@ -537,6 +539,10 @@ function addon:MigrateSettings()
   if RogueAutoDB.builder.useFinishers == nil then
     RogueAutoDB.builder.useFinishers = false
   end
+
+  if RogueAutoDB.builder.useFlourish == nil then
+    RogueAutoDB.builder.useFlourish = false
+  end
 end
 
 function addon:GetHighlightDuration()
@@ -962,6 +968,18 @@ function addon:OnSpellSelfDamage(message)
     return
   end
 
+  local selfBuffGain = self:ExtractSelfBuffGainName(message)
+  if selfBuffGain then
+    self:OnSelfBuffMessage(message)
+    return
+  end
+
+  local selfBuffFade = self:ExtractSelfBuffFadeName(message)
+  if selfBuffFade then
+    self:OnSelfBuffFade(message)
+    return
+  end
+
   local amount = self:ExtractDamageAmount(message)
   if not amount then
     return
@@ -1250,12 +1268,15 @@ end
 
 function addon:EnsureSelfBuffTimelineFrame()
   if self.selfBuffTimelineFrame then
+    if self.selfBuffTimelineFrame.title then
+      self.selfBuffTimelineFrame.title:Hide()
+    end
     return self.selfBuffTimelineFrame
   end
 
   local timelineFrame = CreateFrame("Frame", "RogueAutoSelfBuffTimelineFrame", UIParent)
-  timelineFrame:SetWidth(166)
-  timelineFrame:SetHeight(64)
+  timelineFrame:SetWidth(176)
+  timelineFrame:SetHeight(62)
   timelineFrame:SetFrameStrata("HIGH")
   timelineFrame:SetFrameLevel((PlayerFrame and PlayerFrame:GetFrameLevel() or 1) + 12)
   timelineFrame:SetClampedToScreen(true)
@@ -1271,19 +1292,13 @@ function addon:EnsureSelfBuffTimelineFrame()
   timelineFrame:SetBackdropColor(0.02, 0.02, 0.02, 0.34)
   timelineFrame:SetBackdropBorderColor(0.32, 0.32, 0.32, 0.32)
 
-  local title = timelineFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  title:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 8, -6)
-  title:SetText("Buffs")
-  title:SetTextColor(0.72, 0.72, 0.72)
-  timelineFrame.title = title
-
   for index = 1, 4 do
     local row = CreateFrame("Frame", nil, timelineFrame)
-    row:SetWidth(148)
+    row:SetWidth(152)
     row:SetHeight(12)
-    row:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 8, -18 - ((index - 1) * 11))
+    row:SetPoint("TOPLEFT", timelineFrame, "TOPLEFT", 12, -9 - ((index - 1) * 11))
     row:Hide()
-    row.trackWidth = 116
+    row.trackWidth = 112
 
     local track = row:CreateTexture(nil, "BACKGROUND")
     track:SetWidth(row.trackWidth)
@@ -1303,7 +1318,7 @@ function addon:EnsureSelfBuffTimelineFrame()
     local iconHolder = CreateFrame("Frame", nil, row)
     iconHolder:SetWidth(10)
     iconHolder:SetHeight(10)
-    iconHolder:SetPoint("LEFT", row, "LEFT", 0, 0)
+    iconHolder:SetPoint("LEFT", row, "LEFT", 2, 0)
     row.iconHolder = iconHolder
 
     local icon = iconHolder:CreateTexture(nil, "OVERLAY")
@@ -1324,8 +1339,8 @@ function addon:EnsureSelfBuffTimelineFrame()
     row.glow = glow
 
     local timeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    timeText:SetPoint("LEFT", track, "RIGHT", 4, 0)
-    timeText:SetWidth(28)
+    timeText:SetPoint("LEFT", track, "RIGHT", 8, 0)
+    timeText:SetWidth(30)
     timeText:SetJustifyH("RIGHT")
     timeText:SetTextColor(0.82, 0.82, 0.82)
     row.timeText = timeText
@@ -1346,11 +1361,11 @@ function addon:PositionSelfBuffTimelineFrame()
   timelineFrame:ClearAllPoints()
 
   if PlayerFrame and PlayerFrame.IsShown and PlayerFrame:IsShown() then
-    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 38, 4)
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 38, 10)
   elseif PlayerFrameManaBar and PlayerFrameManaBar.IsShown and PlayerFrameManaBar:IsShown() then
-    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 10, 8)
+    timelineFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 10, 14)
   else
-    timelineFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 146, 162)
+    timelineFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 146, 168)
   end
 
   return timelineFrame
@@ -1384,12 +1399,47 @@ function addon:PruneTrackedPlayerBuffs()
   end
 end
 
+function addon:PrunePendingPlayerBuffs()
+  local now = GetTime()
+
+  for buffName, info in pairs(self.state.pendingPlayerBuffs) do
+    if not info or not info.expiresAt or info.expiresAt <= now then
+      self.state.pendingPlayerBuffs[buffName] = nil
+    end
+  end
+end
+
+function addon:QueuePendingPlayerBuff(name, duration)
+  if not name then
+    return
+  end
+
+  self.state.pendingPlayerBuffs[name] = {
+    duration = duration,
+    expiresAt = GetTime() + 1.5,
+  }
+end
+
+function addon:GetPendingPlayerBuffInfo(name)
+  self:PrunePendingPlayerBuffs()
+  return self.state.pendingPlayerBuffs[name]
+end
+
+function addon:ClearPendingPlayerBuff(name)
+  if not name then
+    return
+  end
+
+  self.state.pendingPlayerBuffs[name] = nil
+end
+
 function addon:TrackPlayerBuff(name, duration)
   if not name or not duration or duration <= 0 then
     return
   end
 
   self.state.trackedPlayerBuffs[name] = GetTime() + duration
+  self.state.pendingPlayerBuffs[name] = nil
 end
 
 function addon:GetTrackedPlayerBuffRemaining(name)
@@ -1407,6 +1457,77 @@ function addon:GetTrackedPlayerBuffRemaining(name)
   end
 
   return remaining
+end
+
+function addon:ConfirmTrackedPlayerBuff(name, duration)
+  if not name then
+    return
+  end
+
+  local pending = self:GetPendingPlayerBuffInfo(name)
+  local trackedDuration = duration
+  if (not trackedDuration or trackedDuration <= 0) and pending and pending.duration and pending.duration > 0 then
+    trackedDuration = pending.duration
+  end
+
+  self:ClearPendingPlayerBuff(name)
+  if trackedDuration and trackedDuration > 0 then
+    self:TrackPlayerBuff(name, trackedDuration)
+  end
+end
+
+function addon:IsLocallyTrackedPlayerBuff(name)
+  return name == "Slice and Dice" or name == "Envenom" or name == "Flourish"
+end
+
+function addon:ExtractSelfBuffGainName(message)
+  if not message then
+    return nil
+  end
+
+  local _, _, buffName = string.find(message, "^You gain (.-)%.?$")
+  if buffName then
+    return normalizeSpellName(buffName)
+  end
+
+  return nil
+end
+
+function addon:ExtractSelfBuffFadeName(message)
+  if not message then
+    return nil
+  end
+
+  local _, _, buffName = string.find(message, "^(.-) fades from you%.?$")
+  if buffName then
+    return normalizeSpellName(buffName)
+  end
+
+  _, _, buffName = string.find(message, "^Your (.-) fades%.?$")
+  if buffName then
+    return normalizeSpellName(buffName)
+  end
+
+  return nil
+end
+
+function addon:OnSelfBuffMessage(message)
+  local buffName = self:ExtractSelfBuffGainName(message)
+  if not buffName or not self:IsLocallyTrackedPlayerBuff(buffName) then
+    return
+  end
+
+  self:ConfirmTrackedPlayerBuff(buffName)
+end
+
+function addon:OnSelfBuffFade(message)
+  local buffName = self:ExtractSelfBuffFadeName(message)
+  if not buffName or not self:IsLocallyTrackedPlayerBuff(buffName) then
+    return
+  end
+
+  self.state.trackedPlayerBuffs[buffName] = nil
+  self.state.pendingPlayerBuffs[buffName] = nil
 end
 
 function addon:GetTrackedPlayerBuffStates()
@@ -1525,7 +1646,7 @@ function addon:UpdateSelfBuffTimelineFrame(force)
   end
 
   local visibleRows = math.min(table.getn(visible), table.getn(timelineFrame.rows))
-  timelineFrame:SetHeight(20 + (visibleRows * 11))
+  timelineFrame:SetHeight(10 + (visibleRows * 11))
 
   for index, row in ipairs(timelineFrame.rows) do
     local buff = visible[index]
@@ -3995,6 +4116,10 @@ function addon:ShouldBuilderUseFinishers()
   return RogueAutoDB and RogueAutoDB.builder and RogueAutoDB.builder.useFinishers == true
 end
 
+function addon:ShouldBuilderUseFlourish()
+  return RogueAutoDB and RogueAutoDB.builder and RogueAutoDB.builder.useFlourish == true
+end
+
 function addon:GetPlayerBuffRemaining(name)
   local active, remaining = self:FindPlayerBuff(name)
   if not active then
@@ -4013,12 +4138,11 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
     return false
   end
 
-  local shortFight = self:IsShortFightContext(context)
   local longFight = self:IsLongFightContext(context)
   local remainingFightDuration = context and context.remainingFightDuration or 0
   local refreshWindow = self.refreshWindow.playerBuff or 2
-  local remaining = self:GetPlayerBuffRemaining(spellName)
-  local active = remaining > 0
+  local active, remaining = self:FindPlayerBuff(spellName)
+  remaining = remaining or 0
 
   if spellName == "Slice and Dice" then
     if remainingFightDuration > 0 and remainingFightDuration < 5 then
@@ -4056,6 +4180,26 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
     return false
   end
 
+  if spellName == "Flourish" then
+    if not self:ShouldBuilderUseFlourish() then
+      return false
+    end
+
+    if remainingFightDuration > 0 and remainingFightDuration < 5 then
+      return false
+    end
+
+    if not active then
+      return comboPoints >= 1
+    end
+
+    if remaining <= refreshWindow then
+      return comboPoints >= 4 or (longFight and comboPoints >= 3)
+    end
+
+    return false
+  end
+
   return false
 end
 
@@ -4071,45 +4215,38 @@ function addon:GetPreferredBuilderFinisher(context)
     return nil
   end
 
-  local shortFight = self:IsShortFightContext(context)
   local noxiousBuild = self:HasSpell("Noxious Assault") and self:HasSpell("Envenom")
-  local refreshSnD = self:ShouldRefreshBuilderBuff("Slice and Dice", comboPoints, context)
-  local refreshEnvenom = noxiousBuild and self:ShouldRefreshBuilderBuff("Envenom", comboPoints, context)
+  local upkeepSpells = {
+    "Slice and Dice",
+  }
 
-  if refreshSnD and refreshEnvenom then
-    local sndRemaining = self:GetPlayerBuffRemaining("Slice and Dice")
-    local envenomRemaining = self:GetPlayerBuffRemaining("Envenom")
-    if envenomRemaining > 0 and (sndRemaining == 0 or envenomRemaining < sndRemaining) then
-      return "Envenom"
+  if noxiousBuild then
+    table.insert(upkeepSpells, "Envenom")
+  end
+
+  if self:ShouldBuilderUseFlourish() and self:HasSpell("Flourish") then
+    table.insert(upkeepSpells, "Flourish")
+  end
+
+  local bestSpell = nil
+  local bestRemaining = nil
+
+  for _, spellName in ipairs(upkeepSpells) do
+    if self:ShouldRefreshBuilderBuff(spellName, comboPoints, context) then
+      local active, remaining = self:FindPlayerBuff(spellName)
+      local sortRemaining = remaining or 0
+      if not active then
+        sortRemaining = -1
+      end
+
+      if not bestSpell or sortRemaining < bestRemaining then
+        bestSpell = spellName
+        bestRemaining = sortRemaining
+      end
     end
-    return "Slice and Dice"
   end
 
-  if refreshSnD then
-    return "Slice and Dice"
-  end
-
-  if refreshEnvenom then
-    return "Envenom"
-  end
-
-  if not self:HasSpell("Eviscerate") then
-    return nil
-  end
-
-  if not self:CanCast("Eviscerate") or not self:CanCastWithoutBreakingKickReserve("Eviscerate", context) then
-    return nil
-  end
-
-  if comboPoints >= 5 then
-    return "Eviscerate"
-  end
-
-  if shortFight and comboPoints >= 4 then
-    return "Eviscerate"
-  end
-
-  return nil
+  return bestSpell
 end
 
 function addon:IsStealthed()
@@ -4295,6 +4432,7 @@ function addon:FindPlayerBuff(name)
   local normalizedExpectedName = normalizeSpellName(name)
   local normalizedExpectedTexture = normalizeTextureName(self:GetSelfBuffTimelineIcon(name))
   local trackedRemaining = self:GetTrackedPlayerBuffRemaining(name)
+  local pending = self:GetPendingPlayerBuffInfo(name)
 
   for index = 0, 31 do
     local buffIndex = GetPlayerBuff(index, "HELPFUL")
@@ -4306,6 +4444,12 @@ function addon:FindPlayerBuff(name)
     local normalizedTexture = normalizeTextureName(texture)
     if normalizedExpectedTexture and normalizedTexture and normalizedTexture == normalizedExpectedTexture then
       local remaining = GetPlayerBuffTimeLeft(buffIndex) or 0
+      if remaining > 0 then
+        self:ConfirmTrackedPlayerBuff(name, remaining)
+      elseif pending and pending.duration and pending.duration > 0 then
+        self:ConfirmTrackedPlayerBuff(name, pending.duration)
+        remaining = pending.duration
+      end
       if remaining <= 0 and trackedRemaining > 0 then
         remaining = trackedRemaining
       end
@@ -4317,6 +4461,12 @@ function addon:FindPlayerBuff(name)
     local text = RogueAutoTooltipTextLeft1 and RogueAutoTooltipTextLeft1:GetText()
     if normalizeSpellName(text) == normalizedExpectedName then
       local remaining = GetPlayerBuffTimeLeft(buffIndex) or 0
+      if remaining > 0 then
+        self:ConfirmTrackedPlayerBuff(name, remaining)
+      elseif pending and pending.duration and pending.duration > 0 then
+        self:ConfirmTrackedPlayerBuff(name, pending.duration)
+        remaining = pending.duration
+      end
       if remaining <= 0 and trackedRemaining > 0 then
         remaining = trackedRemaining
       end
@@ -4326,6 +4476,13 @@ function addon:FindPlayerBuff(name)
 
   if trackedRemaining > 0 then
     return true, trackedRemaining
+  end
+
+  if pending and pending.expiresAt and pending.expiresAt > GetTime() then
+    local pendingRemaining = pending.expiresAt - GetTime()
+    if pendingRemaining > 0 then
+      return true, math.min(pendingRemaining, 1.5)
+    end
   end
 
   return false, 0
@@ -5095,11 +5252,9 @@ function addon:Cast(name)
     self.state.activeEnemyCast = nil
   elseif name == "Kidney Shot" then
     self:BeginPendingKidneyShotCheck()
-  elseif name == "Slice and Dice" or name == "Envenom" then
+  elseif name == "Slice and Dice" or name == "Envenom" or name == "Flourish" then
     local duration = self:GetComboBuffDuration(name, comboPoints)
-    if duration and duration > 0 then
-      self:TrackPlayerBuff(name, duration)
-    end
+    self:QueuePendingPlayerBuff(name, duration)
   end
 
   self:MarkLearningSetupCast(name)
@@ -5617,6 +5772,10 @@ function addon:OnUiError(message)
     self:ClearPendingKidneyShotCheck()
   end
 
+  if recentAttempt and self:IsLocallyTrackedPlayerBuff(lastAttempt.name) then
+    self:ClearPendingPlayerBuff(lastAttempt.name)
+  end
+
   if recentAttempt and lastAttempt.name == "Pick Pocket" and self.state.pendingPickPocketTarget then
     if string.find(lower, "too far away") or string.find(lower, "out of range") or string.find(lower, "line of sight") or string.find(lower, "closer") then
       self:RevertPendingPickPocketAttempt()
@@ -5693,6 +5852,8 @@ frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
 frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
 frame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS")
+frame:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
 frame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
 frame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF")
 frame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE")
@@ -5729,6 +5890,10 @@ frame:SetScript("OnEvent", function()
     addon:OnCombatMiss(arg1)
   elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
     addon:OnSpellSelfDamage(arg1)
+  elseif event == "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS" then
+    addon:OnSelfBuffMessage(arg1)
+  elseif event == "CHAT_MSG_SPELL_AURA_GONE_SELF" then
+    addon:OnSelfBuffFade(arg1)
   elseif event == "CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE"
     or event == "CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF"
     or event == "CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE"
