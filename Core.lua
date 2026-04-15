@@ -91,6 +91,7 @@ addon.state = {
   selfBuffTimeline = {},
   trackedPlayerBuffs = {},
   pendingPlayerBuffs = {},
+  lastExplicitEnergyGainAt = 0,
 }
 
 addon.damageCategories = {
@@ -963,6 +964,33 @@ function addon:AddCombatEnergyGain(amount)
   session.totals.energyGained = (session.totals.energyGained or 0) + amount
 end
 
+function addon:ExtractCombatEnergyGain(message)
+  if not message then
+    return nil
+  end
+
+  local _, _, amount = string.find(message, "[Yy]ou gain (%d+) [Ee]nergy")
+  if amount then
+    return tonumber(amount)
+  end
+
+  return nil
+end
+
+function addon:OnCombatEnergyMessage(message)
+  local amount = self:ExtractCombatEnergyGain(message)
+  if not amount or amount <= 0 then
+    return false
+  end
+
+  self.state.lastExplicitEnergyGainAt = GetTime()
+  if self:IsCombatSessionActive() then
+    self:AddCombatEnergyGain(amount)
+  end
+
+  return true
+end
+
 function addon:FinishCombatSession()
   local session = self.state.combatSession
   self.state.combatSession = nil
@@ -1034,6 +1062,10 @@ end
 
 function addon:OnSpellSelfDamage(message)
   if not message then
+    return
+  end
+
+  if self:OnCombatEnergyMessage(message) then
     return
   end
 
@@ -1785,6 +1817,8 @@ function addon:ExtractSelfBuffFadeName(message)
 end
 
 function addon:OnSelfBuffMessage(message)
+  self:OnCombatEnergyMessage(message)
+
   local buffName = self:ExtractSelfBuffGainName(message)
   if not buffName or not self:IsLocallyTrackedPlayerBuff(buffName) then
     return
@@ -6000,8 +6034,14 @@ function addon:OnEnergyChanged(unit)
   if previousEnergy and currentEnergy > previousEnergy then
     local delta = currentEnergy - previousEnergy
     local gainedFromSkills = 0
+    local recentExplicitGain = self.state.lastExplicitEnergyGainAt and (now - self.state.lastExplicitEnergyGainAt) <= 0.35
 
-    if delta == 20 then
+    if recentExplicitGain then
+      local expectedTickAt = self.state.firstEnergyTick and (self.state.firstEnergyTick + 2) or nil
+      if delta >= 20 and expectedTickAt and math.abs(now - expectedTickAt) <= 0.35 then
+        self.state.firstEnergyTick = now
+      end
+    elseif delta == 20 then
       self.state.firstEnergyTick = now
     elseif delta > 20 then
       local expectedTickAt = self.state.firstEnergyTick and (self.state.firstEnergyTick + 2) or nil
