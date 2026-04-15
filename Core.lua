@@ -133,6 +133,19 @@ addon.cooldownTrackedSpells = {
   "Premeditation",
 }
 
+addon.weaponPoisonFallbackTexture = "Interface\\Icons\\Ability_Poisons"
+addon.weaponPoisonNames = {
+  "Deadly Poison",
+  "Instant Poison",
+  "Crippling Poison",
+  "Mind-numbing Poison",
+  "Wound Poison",
+  "Anesthetic Poison",
+  "Numbing Poison",
+  "Atrophic Poison",
+  "Occult Poison",
+}
+
 addon.noticeAnchorInsetPct = 0.15
 addon.noticeDefaultY = -120
 addon.pickPocketFallbackTexture = "Interface\\Icons\\INV_Misc_Bag_10"
@@ -225,6 +238,10 @@ addon.frame = frame
 local tooltip = CreateFrame("GameTooltip", "RogueAutoTooltip", UIParent, "GameTooltipTemplate")
 tooltip:SetOwner(UIParent, "ANCHOR_NONE")
 addon.tooltip = tooltip
+
+local inventoryTooltip = CreateFrame("GameTooltip", "RogueAutoInventoryTooltip", UIParent, "GameTooltipTemplate")
+inventoryTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+addon.inventoryTooltip = inventoryTooltip
 
 local function createNoticeFrame(name, point, relativePoint, xOffset, yOffset)
   local noticeFrame = CreateFrame("Frame", name, UIParent)
@@ -1271,6 +1288,11 @@ function addon:EnsureSelfBuffTimelineFrame()
     if self.selfBuffTimelineFrame.title then
       self.selfBuffTimelineFrame.title:Hide()
     end
+    if self.selfBuffTimelineFrame.SetBackdrop then
+      self.selfBuffTimelineFrame:SetBackdrop(nil)
+      self.selfBuffTimelineFrame:SetBackdropColor(0, 0, 0, 0)
+      self.selfBuffTimelineFrame:SetBackdropBorderColor(0, 0, 0, 0)
+    end
     return self.selfBuffTimelineFrame
   end
 
@@ -1281,16 +1303,6 @@ function addon:EnsureSelfBuffTimelineFrame()
   timelineFrame:SetFrameLevel((PlayerFrame and PlayerFrame:GetFrameLevel() or 1) + 12)
   timelineFrame:SetClampedToScreen(true)
   timelineFrame.rows = {}
-  timelineFrame:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true,
-    tileSize = 16,
-    edgeSize = 10,
-    insets = { left = 2, right = 2, top = 2, bottom = 2 },
-  })
-  timelineFrame:SetBackdropColor(0.02, 0.02, 0.02, 0.34)
-  timelineFrame:SetBackdropBorderColor(0.32, 0.32, 0.32, 0.32)
 
   for index = 1, 4 do
     local row = CreateFrame("Frame", nil, timelineFrame)
@@ -1352,6 +1364,52 @@ function addon:EnsureSelfBuffTimelineFrame()
   return timelineFrame
 end
 
+function addon:EnsureWeaponPoisonFrame()
+  if self.weaponPoisonFrame then
+    return self.weaponPoisonFrame
+  end
+
+  local poisonFrame = CreateFrame("Frame", "RogueAutoWeaponPoisonFrame", UIParent)
+  poisonFrame:SetWidth(46)
+  poisonFrame:SetHeight(22)
+  poisonFrame:SetFrameStrata("HIGH")
+  poisonFrame:SetFrameLevel((PlayerFrame and PlayerFrame:GetFrameLevel() or 1) + 14)
+  poisonFrame:SetClampedToScreen(true)
+  poisonFrame.slots = {}
+
+  for index = 1, 2 do
+    local slotFrame = CreateFrame("Frame", nil, poisonFrame)
+    slotFrame:SetWidth(20)
+    slotFrame:SetHeight(20)
+    slotFrame:SetPoint("TOPLEFT", poisonFrame, "TOPLEFT", (index - 1) * 22, 0)
+    slotFrame:Hide()
+
+    local icon = slotFrame:CreateTexture(nil, "ARTWORK")
+    icon:SetWidth(16)
+    icon:SetHeight(16)
+    icon:SetPoint("TOPLEFT", slotFrame, "TOPLEFT", 2, -2)
+    slotFrame.icon = icon
+
+    local border = slotFrame:CreateTexture(nil, "BORDER")
+    border:SetAllPoints(slotFrame)
+    border:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+    border:SetVertexColor(0.65, 0.65, 0.65, 0.85)
+    slotFrame.border = border
+
+    local countText = slotFrame:CreateFontString(nil, "OVERLAY")
+    countText:SetPoint("BOTTOMRIGHT", slotFrame, "BOTTOMRIGHT", -1, 1)
+    countText:SetFont(STANDARD_TEXT_FONT, 8, "OUTLINE")
+    countText:SetTextColor(1, 1, 1)
+    countText:SetJustifyH("RIGHT")
+    slotFrame.countText = countText
+
+    poisonFrame.slots[index] = slotFrame
+  end
+
+  self.weaponPoisonFrame = poisonFrame
+  return poisonFrame
+end
+
 function addon:PositionSelfBuffTimelineFrame()
   local timelineFrame = self:EnsureSelfBuffTimelineFrame()
   if not timelineFrame then
@@ -1369,6 +1427,169 @@ function addon:PositionSelfBuffTimelineFrame()
   end
 
   return timelineFrame
+end
+
+function addon:PositionWeaponPoisonFrame()
+  local poisonFrame = self:EnsureWeaponPoisonFrame()
+  if not poisonFrame then
+    return nil
+  end
+
+  poisonFrame:ClearAllPoints()
+
+  if PlayerFrame and PlayerFrame.IsShown and PlayerFrame:IsShown() then
+    poisonFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 12, 12)
+  elseif PlayerFrameManaBar and PlayerFrameManaBar.IsShown and PlayerFrameManaBar:IsShown() then
+    poisonFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", -2, 16)
+  else
+    poisonFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 120, 170)
+  end
+
+  return poisonFrame
+end
+
+function addon:GetKnownWeaponPoisonNames()
+  local names = {}
+
+  for _, name in ipairs(self.weaponPoisonNames) do
+    names[name] = true
+  end
+
+  for spellName in pairs(self.state.knownSpells) do
+    local normalized = normalizeSpellName(spellName)
+    if normalized ~= "" and string.find(string.lower(normalized), "poison", 1, true) then
+      names[normalized] = true
+    end
+  end
+
+  return names
+end
+
+function addon:ExtractWeaponPoisonNameFromText(text)
+  if not text or text == "" then
+    return nil
+  end
+
+  local lowerText = string.lower(text)
+  local poisonNames = self:GetKnownWeaponPoisonNames()
+
+  for poisonName in pairs(poisonNames) do
+    if string.find(lowerText, string.lower(poisonName), 1, true) then
+      return poisonName
+    end
+  end
+
+  return nil
+end
+
+function addon:GetWeaponPoisonTexture(name)
+  local normalizedName = normalizeSpellName(name)
+  if normalizedName ~= "" then
+    local spellIndex = self:GetSpellIndex(normalizedName)
+    if spellIndex and GetSpellTexture then
+      return GetSpellTexture(spellIndex, BOOKTYPE_SPELL)
+    end
+  end
+
+  return self.weaponPoisonFallbackTexture
+end
+
+function addon:GetWeaponPoisonName(slot)
+  if not self.inventoryTooltip or not self.inventoryTooltip.SetInventoryItem then
+    return nil
+  end
+
+  self.inventoryTooltip:ClearLines()
+  self.inventoryTooltip:SetInventoryItem("player", slot)
+
+  for index = 2, 12 do
+    local leftLine = _G["RogueAutoInventoryTooltipTextLeft" .. tostring(index)]
+    local rightLine = _G["RogueAutoInventoryTooltipTextRight" .. tostring(index)]
+    local leftText = leftLine and leftLine:GetText() or nil
+    local rightText = rightLine and rightLine:GetText() or nil
+    local poisonName = self:ExtractWeaponPoisonNameFromText(leftText)
+    if poisonName then
+      return poisonName
+    end
+
+    poisonName = self:ExtractWeaponPoisonNameFromText(rightText)
+    if poisonName then
+      return poisonName
+    end
+  end
+
+  return nil
+end
+
+function addon:GetWeaponPoisonStates()
+  if not GetWeaponEnchantInfo then
+    return {}
+  end
+
+  local hasMainHand, _, mainHandCharges, _, hasOffHand, _, offHandCharges = GetWeaponEnchantInfo()
+  local states = {}
+
+  if hasMainHand then
+    local poisonName = self:GetWeaponPoisonName(16)
+    table.insert(states, {
+      hand = "main",
+      charges = mainHandCharges or 0,
+      name = poisonName,
+      texture = self:GetWeaponPoisonTexture(poisonName),
+    })
+  end
+
+  if hasOffHand then
+    local poisonName = self:GetWeaponPoisonName(17)
+    table.insert(states, {
+      hand = "off",
+      charges = offHandCharges or 0,
+      name = poisonName,
+      texture = self:GetWeaponPoisonTexture(poisonName),
+    })
+  end
+
+  return states
+end
+
+function addon:UpdateWeaponPoisonFrame(force)
+  local now = GetTime()
+  if not force and self.state.nextWeaponPoisonUpdate and now < self.state.nextWeaponPoisonUpdate then
+    return
+  end
+
+  self.state.nextWeaponPoisonUpdate = now + 0.2
+
+  local poisonFrame = self:PositionWeaponPoisonFrame()
+  if not poisonFrame then
+    return
+  end
+
+  local states = self:GetWeaponPoisonStates()
+  if table.getn(states) == 0 then
+    poisonFrame:Hide()
+    return
+  end
+
+  local visibleSlots = 0
+  for index, slotFrame in ipairs(poisonFrame.slots) do
+    local state = states[index]
+    if state then
+      slotFrame.icon:SetTexture(state.texture or self.weaponPoisonFallbackTexture)
+      if state.charges and state.charges > 0 then
+        slotFrame.countText:SetText(tostring(state.charges))
+      else
+        slotFrame.countText:SetText("")
+      end
+      slotFrame:Show()
+      visibleSlots = index
+    else
+      slotFrame:Hide()
+    end
+  end
+
+  poisonFrame:SetWidth(math.max(20, (visibleSlots * 22) - 2))
+  poisonFrame:Show()
 end
 
 function addon:GetSelfBuffTimelineIcon(name, fallbackTexture)
@@ -5691,6 +5912,7 @@ function addon:OnPlayerLogin()
   self:RefreshKnownSpells()
   self:UpdateCooldownListFrame(true)
   self:UpdateSelfBuffTimelineFrame(true)
+  self:UpdateWeaponPoisonFrame(true)
   self:Debug("Loaded version " .. self.version)
 end
 
@@ -5925,4 +6147,5 @@ frame:SetScript("OnUpdate", function()
   addon:UpdatePendingKidneyShotCheck()
   addon:UpdateCooldownListFrame(false)
   addon:UpdateSelfBuffTimelineFrame(false)
+  addon:UpdateWeaponPoisonFrame(false)
 end)
