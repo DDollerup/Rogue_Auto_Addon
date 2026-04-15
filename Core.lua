@@ -44,6 +44,14 @@ addon.defaults = {
   minimap = {
     angle = 220,
   },
+  ui = {
+    comboPoints = {
+      enabled = true,
+      unlocked = false,
+      x = 0,
+      y = 58,
+    },
+  },
   notifications = {
     highlightDuration = 8,
   },
@@ -237,6 +245,17 @@ addon.pickPocketTargetWhitelist = {
   ["Black Ooze"] = true,
 }
 
+addon.comboPointCount = 5
+addon.comboPointInactiveColor = { 0.58, 0.52, 0.22, 0.5 }
+addon.comboPointActiveColor = { 1, 0.82, 0.1, 1 }
+addon.comboPointBulletOffsets = {
+  { -44, 0 },
+  { -22, 15 },
+  { 0, 22 },
+  { 22, 15 },
+  { 44, 0 },
+}
+
 local frame = CreateFrame("Frame", "RogueAutoFrame", UIParent)
 addon.frame = frame
 
@@ -247,6 +266,117 @@ addon.tooltip = tooltip
 local inventoryTooltip = CreateFrame("GameTooltip", "RogueAutoInventoryTooltip", UIParent, "GameTooltipTemplate")
 inventoryTooltip:SetOwner(UIParent, "ANCHOR_NONE")
 addon.inventoryTooltip = inventoryTooltip
+
+function addon:EnsureComboPointFrame()
+  if self.comboPointFrame then
+    return self.comboPointFrame
+  end
+
+  local comboFrame = CreateFrame("Frame", "RogueAutoComboPointFrame", UIParent)
+  comboFrame:SetWidth(120)
+  comboFrame:SetHeight(46)
+  comboFrame:SetFrameStrata("HIGH")
+  comboFrame:SetFrameLevel(65)
+  comboFrame:SetClampedToScreen(true)
+  comboFrame:SetMovable(true)
+  comboFrame:EnableMouse(false)
+  comboFrame:RegisterForDrag("LeftButton")
+  comboFrame.points = {}
+  comboFrame.isPositionInitialized = false
+
+  for index = 1, self.comboPointCount do
+    local point = comboFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    point:SetFont(STANDARD_TEXT_FONT, 26, "OUTLINE")
+    point:SetText("o")
+    point:SetJustifyH("CENTER")
+    point:SetJustifyV("MIDDLE")
+
+    local offset = self.comboPointBulletOffsets[index]
+    point:SetPoint("CENTER", comboFrame, "CENTER", offset[1], offset[2])
+    comboFrame.points[index] = point
+  end
+
+  comboFrame:SetScript("OnDragStart", function()
+    if not RogueAutoDB or not RogueAutoDB.ui or not RogueAutoDB.ui.comboPoints or not RogueAutoDB.ui.comboPoints.unlocked then
+      return
+    end
+
+    comboFrame:StartMoving()
+  end)
+
+  comboFrame:SetScript("OnDragStop", function()
+    if not RogueAutoDB or not RogueAutoDB.ui or not RogueAutoDB.ui.comboPoints or not RogueAutoDB.ui.comboPoints.unlocked then
+      comboFrame:StopMovingOrSizing()
+      return
+    end
+
+    comboFrame:StopMovingOrSizing()
+    local centerX, centerY = UIParent:GetCenter()
+    local frameCenterX, frameCenterY = comboFrame:GetCenter()
+    if centerX and centerY and frameCenterX and frameCenterY then
+      RogueAutoDB.ui.comboPoints.x = frameCenterX - centerX
+      RogueAutoDB.ui.comboPoints.y = frameCenterY - centerY
+    end
+    comboFrame.isPositionInitialized = true
+    self:PositionComboPointFrame(true)
+  end)
+
+  self.comboPointFrame = comboFrame
+  return comboFrame
+end
+
+function addon:PositionComboPointFrame(force)
+  local comboFrame = self:EnsureComboPointFrame()
+  if not comboFrame then
+    return nil
+  end
+
+  local settings = RogueAutoDB and RogueAutoDB.ui and RogueAutoDB.ui.comboPoints
+  if not settings or settings.enabled == false then
+    comboFrame:Hide()
+    return comboFrame
+  end
+
+  comboFrame:Show()
+  comboFrame:EnableMouse(settings.unlocked == true)
+
+  if not settings.unlocked or force or not comboFrame.isPositionInitialized then
+    comboFrame:ClearAllPoints()
+    comboFrame:SetPoint("CENTER", UIParent, "CENTER", settings.x or 0, settings.y or 58)
+    comboFrame.isPositionInitialized = true
+  end
+
+  return comboFrame
+end
+
+function addon:UpdateComboPointFrame(force)
+  local now = GetTime()
+  if not force and self.state.nextComboPointUpdate and now < self.state.nextComboPointUpdate then
+    return
+  end
+
+  self.state.nextComboPointUpdate = now + 0.08
+
+  local comboFrame = self:PositionComboPointFrame(force)
+  if not comboFrame then
+    return
+  end
+
+  local settings = RogueAutoDB and RogueAutoDB.ui and RogueAutoDB.ui.comboPoints
+  if not settings or settings.enabled == false then
+    comboFrame:Hide()
+    return
+  end
+
+  local comboPoints = self:GetComboPoints()
+  for index, point in ipairs(comboFrame.points) do
+    if index <= comboPoints then
+      point:SetTextColor(self.comboPointActiveColor[1], self.comboPointActiveColor[2], self.comboPointActiveColor[3], self.comboPointActiveColor[4])
+    else
+      point:SetTextColor(self.comboPointInactiveColor[1], self.comboPointInactiveColor[2], self.comboPointInactiveColor[3], self.comboPointInactiveColor[4])
+    end
+  end
+end
 
 local function createNoticeFrame(name, point, relativePoint, xOffset, yOffset)
   local noticeFrame = CreateFrame("Frame", name, UIParent)
@@ -6126,6 +6256,7 @@ end
 
 function addon:OnPlayerLogin()
   self:RefreshKnownSpells()
+  self:UpdateComboPointFrame(true)
   self:UpdateCooldownListFrame(true)
   self:UpdateSelfBuffTimelineFrame(true)
   self:UpdateWeaponPoisonFrame(true)
@@ -6301,6 +6432,7 @@ function addon:OnTargetChanged()
   self:PrunePendingTargetDebuffs()
   self:PruneSuppressedTargetSpells()
   self:FinalizeLearningFight("target_change")
+  self:UpdateComboPointFrame(true)
   self.state.activeEnemyCast = nil
   self:ClearPendingKidneyShotCheck()
   self.state.currentTargetKey = nil
@@ -6310,11 +6442,20 @@ function addon:OnTargetChanged()
   self:ClearPendingPickPocketAttempt()
 end
 
+function addon:OnComboPointsChanged(unit)
+  if unit and unit ~= "player" then
+    return
+  end
+
+  self:UpdateComboPointFrame(true)
+end
+
 frame:RegisterEvent("VARIABLES_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 frame:RegisterEvent("UNIT_ENERGY")
+frame:RegisterEvent("UNIT_COMBO_POINTS")
 frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
 frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
@@ -6351,6 +6492,8 @@ frame:SetScript("OnEvent", function()
     addon:OnCombatEnded()
   elseif event == "UNIT_ENERGY" then
     addon:OnEnergyChanged(arg1)
+  elseif event == "UNIT_COMBO_POINTS" then
+    addon:OnComboPointsChanged(arg1)
   elseif event == "LEARNED_SPELL_IN_TAB" or event == "CHARACTER_POINTS_CHANGED" then
     addon:OnSpellbookChanged()
   elseif event == "CHAT_MSG_COMBAT_SELF_HITS" then
@@ -6396,6 +6539,7 @@ frame:SetScript("OnUpdate", function()
   addon:UpdatePendingKidneyShotCheck()
   addon:UpdateCooldownListFrame(false)
   addon:UpdateSelfBuffTimelineFrame(false)
+  addon:UpdateComboPointFrame(false)
   addon:UpdateWeaponPoisonFrame(false)
   addon:UpdateWeaponPoisonWarningFrame(false)
 end)

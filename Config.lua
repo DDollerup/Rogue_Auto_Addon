@@ -559,6 +559,10 @@ function addon:RefreshConfig()
     control:Refresh()
   end
 
+  if addon.UpdateComboPointFrame then
+    addon:UpdateComboPointFrame(true)
+  end
+
   updateScrollBounds()
 end
 

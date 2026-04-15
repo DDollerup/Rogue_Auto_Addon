@@ -116,6 +116,16 @@ addon.settingDefinitions = {
     label = "Pick Pocket before opener when eligible",
     help = "Only affects Opener(hint).",
   },
+  comboPointsEnabled = {
+    path = { "ui", "comboPoints", "enabled" },
+    label = "Show combo point bullets above the player",
+    help = "Displays five combo point bullets near the center of the screen.",
+  },
+  comboPointsUnlocked = {
+    path = { "ui", "comboPoints", "unlocked" },
+    label = "Unlock combo point bullets for dragging",
+    help = "When enabled, drag the bullets to move them. Disable it to lock them back in place.",
+  },
   builderGhostlyStrike = {
     path = { "builder", "useGhostlyStrike" },
     label = "Prioritize Ghostly Strike in Auto",
@@ -157,6 +167,11 @@ addon.uiSections = {
     title = "Openers",
     help = "Opener(hint) only attempts the explicit opener you ask for, but can try Pick Pocket first when eligible.",
     items = { "pickPocketHumanoids" },
+  },
+  {
+    title = "Combo Points",
+    help = "By default the bullets sit centered above the player. Unlock them to drag the display to a better spot, then lock it again when you're done.",
+    items = { "comboPointsEnabled", "comboPointsUnlocked" },
   },
   {
     title = "Highlights",
