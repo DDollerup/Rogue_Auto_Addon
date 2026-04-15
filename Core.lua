@@ -1438,11 +1438,11 @@ function addon:PositionWeaponPoisonFrame()
   poisonFrame:ClearAllPoints()
 
   if PlayerFrame and PlayerFrame.IsShown and PlayerFrame:IsShown() then
-    poisonFrame:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", 22, 4)
+    poisonFrame:SetPoint("TOPLEFT", PlayerFrame, "TOPLEFT", -12, -4)
   elseif PlayerFrameManaBar and PlayerFrameManaBar.IsShown and PlayerFrameManaBar:IsShown() then
-    poisonFrame:SetPoint("BOTTOMLEFT", PlayerFrameManaBar, "TOPLEFT", 8, 10)
+    poisonFrame:SetPoint("TOPLEFT", PlayerFrameManaBar, "TOPLEFT", -8, -10)
   else
-    poisonFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 130, 160)
+    poisonFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 100, 154)
   end
 
   return poisonFrame
