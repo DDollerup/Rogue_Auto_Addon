@@ -136,6 +136,8 @@ addon.cooldownTrackedSpells = {
 }
 
 addon.weaponPoisonFallbackTexture = "Interface\\Icons\\Ability_Poisons"
+addon.weaponPoisonLowCharges = 12
+addon.weaponPoisonLowTimeMs = 5 * 60 * 1000
 addon.weaponPoisonNames = {
   "Deadly Poison",
   "Instant Poison",
@@ -1494,6 +1496,38 @@ function addon:EnsureWeaponPoisonFrame()
   return poisonFrame
 end
 
+function addon:EnsureWeaponPoisonWarningFrame()
+  if self.weaponPoisonWarningFrame then
+    return self.weaponPoisonWarningFrame
+  end
+
+  local warningFrame = CreateFrame("Frame", "RogueAutoWeaponPoisonWarningFrame", UIParent)
+  warningFrame:SetAllPoints(UIParent)
+  warningFrame:SetFrameStrata("FULLSCREEN")
+  warningFrame:SetFrameLevel(1)
+  warningFrame:EnableMouse(false)
+  warningFrame.edges = {}
+
+  local function createEdge(name, width, height, point, relativePoint, xOffset, yOffset)
+    local edge = warningFrame:CreateTexture(nil, "BACKGROUND")
+    edge:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    edge:SetVertexColor(0.1, 1, 0.18, 0.18)
+    edge:SetWidth(width)
+    edge:SetHeight(height)
+    edge:SetPoint(point, warningFrame, relativePoint, xOffset, yOffset)
+    warningFrame.edges[name] = edge
+  end
+
+  createEdge("top", UIParent:GetWidth(), 28, "TOPLEFT", "TOPLEFT", 0, 0)
+  createEdge("bottom", UIParent:GetWidth(), 28, "BOTTOMLEFT", "BOTTOMLEFT", 0, 0)
+  createEdge("left", 28, UIParent:GetHeight(), "TOPLEFT", "TOPLEFT", 0, 0)
+  createEdge("right", 28, UIParent:GetHeight(), "TOPRIGHT", "TOPRIGHT", 0, 0)
+
+  warningFrame:Hide()
+  self.weaponPoisonWarningFrame = warningFrame
+  return warningFrame
+end
+
 function addon:PositionSelfBuffTimelineFrame()
   local timelineFrame = self:EnsureSelfBuffTimelineFrame()
   if not timelineFrame then
@@ -1610,7 +1644,7 @@ function addon:GetWeaponPoisonStates()
     return {}
   end
 
-  local hasMainHand, _, mainHandCharges, hasOffHand, _, offHandCharges = GetWeaponEnchantInfo()
+  local hasMainHand, mainHandExpiration, mainHandCharges, hasOffHand, offHandExpiration, offHandCharges = GetWeaponEnchantInfo()
   local states = {}
 
   if hasMainHand then
@@ -1618,6 +1652,7 @@ function addon:GetWeaponPoisonStates()
     table.insert(states, {
       hand = "main",
       charges = mainHandCharges or 0,
+      expiration = mainHandExpiration or 0,
       name = poisonName,
       texture = self:GetWeaponPoisonTexture(poisonName),
     })
@@ -1628,12 +1663,44 @@ function addon:GetWeaponPoisonStates()
     table.insert(states, {
       hand = "off",
       charges = offHandCharges or 0,
+      expiration = offHandExpiration or 0,
       name = poisonName,
       texture = self:GetWeaponPoisonTexture(poisonName),
     })
   end
 
   return states
+end
+
+function addon:GetWeaponPoisonWarningStrength(states)
+  local bestStrength = 0
+
+  for _, state in ipairs(states) do
+    local chargeStrength = 0
+    local timeStrength = 0
+
+    if state.charges and state.charges > 0 and state.charges <= self.weaponPoisonLowCharges then
+      chargeStrength = (self.weaponPoisonLowCharges - state.charges + 1) / self.weaponPoisonLowCharges
+    end
+
+    if state.expiration and state.expiration > 0 and state.expiration <= self.weaponPoisonLowTimeMs then
+      timeStrength = (self.weaponPoisonLowTimeMs - state.expiration + 1) / self.weaponPoisonLowTimeMs
+    end
+
+    local strength = math.max(chargeStrength, timeStrength)
+    if strength > bestStrength then
+      bestStrength = strength
+    end
+  end
+
+  if bestStrength < 0 then
+    return 0
+  end
+  if bestStrength > 1 then
+    return 1
+  end
+
+  return bestStrength
 end
 
 function addon:UpdateWeaponPoisonFrame(force)
@@ -1674,6 +1741,36 @@ function addon:UpdateWeaponPoisonFrame(force)
 
   poisonFrame:SetWidth(math.max(20, (visibleSlots * 22) - 2))
   poisonFrame:Show()
+end
+
+function addon:UpdateWeaponPoisonWarningFrame(force)
+  local now = GetTime()
+  if not force and self.state.nextWeaponPoisonWarningUpdate and now < self.state.nextWeaponPoisonWarningUpdate then
+    return
+  end
+
+  self.state.nextWeaponPoisonWarningUpdate = now + 0.05
+
+  local warningFrame = self:EnsureWeaponPoisonWarningFrame()
+  if not warningFrame then
+    return
+  end
+
+  local states = self:GetWeaponPoisonStates()
+  local strength = self:GetWeaponPoisonWarningStrength(states)
+  if strength <= 0 then
+    warningFrame:Hide()
+    return
+  end
+
+  local pulse = (math.sin(now * 4) + 1) * 0.5
+  local alpha = (0.05 + (strength * 0.1)) + (pulse * (0.08 + (strength * 0.12)))
+
+  for _, edge in pairs(warningFrame.edges) do
+    edge:SetAlpha(alpha)
+  end
+
+  warningFrame:Show()
 end
 
 function addon:GetSelfBuffTimelineIcon(name, fallbackTexture)
@@ -5999,6 +6096,7 @@ function addon:OnPlayerLogin()
   self:UpdateCooldownListFrame(true)
   self:UpdateSelfBuffTimelineFrame(true)
   self:UpdateWeaponPoisonFrame(true)
+  self:UpdateWeaponPoisonWarningFrame(true)
   self:Debug("Loaded version " .. self.version)
 end
 
@@ -6263,4 +6361,5 @@ frame:SetScript("OnUpdate", function()
   addon:UpdateCooldownListFrame(false)
   addon:UpdateSelfBuffTimelineFrame(false)
   addon:UpdateWeaponPoisonFrame(false)
+  addon:UpdateWeaponPoisonWarningFrame(false)
 end)
