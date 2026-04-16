@@ -4869,37 +4869,25 @@ function addon:GetPreferredBuilderFinisher(context)
   end
 
   local noxiousBuild = self:HasSpell("Noxious Assault") and self:HasSpell("Envenom")
-  local upkeepSpells = {
-    "Slice and Dice",
-  }
-
   if noxiousBuild then
-    table.insert(upkeepSpells, "Envenom")
+    if self:ShouldRefreshBuilderBuff("Envenom", comboPoints, context) then
+      return "Envenom"
+    end
+
+    if self:ShouldRefreshBuilderBuff("Slice and Dice", comboPoints, context) then
+      return "Slice and Dice"
+    end
+  elseif self:ShouldRefreshBuilderBuff("Slice and Dice", comboPoints, context) then
+    return "Slice and Dice"
   end
 
   if self:ShouldBuilderUseFlourish() and self:HasSpell("Flourish") then
-    table.insert(upkeepSpells, "Flourish")
-  end
-
-  local bestSpell = nil
-  local bestRemaining = nil
-
-  for _, spellName in ipairs(upkeepSpells) do
-    if self:ShouldRefreshBuilderBuff(spellName, comboPoints, context) then
-      local active, remaining = self:FindPlayerBuff(spellName)
-      local sortRemaining = remaining or 0
-      if not active then
-        sortRemaining = -1
-      end
-
-      if not bestSpell or sortRemaining < bestRemaining then
-        bestSpell = spellName
-        bestRemaining = sortRemaining
-      end
+    if self:ShouldRefreshBuilderBuff("Flourish", comboPoints, context) then
+      return "Flourish"
     end
   end
 
-  return bestSpell
+  return nil
 end
 
 function addon:IsStealthed()

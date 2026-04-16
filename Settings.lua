@@ -134,7 +134,7 @@ addon.settingDefinitions = {
   builderFinishers = {
     path = { "builder", "useFinishers" },
     label = "Allow Builder() to maintain upkeep buffs",
-    help = "Refreshes Slice and Dice and, when learned and relevant, Envenom. Builder() will not use damaging finishers.",
+    help = "Refreshes Envenom first on Noxious builds, then Slice and Dice. Builder() will not use damaging finishers.",
   },
   builderFlourish = {
     path = { "builder", "useFlourish" },
@@ -160,7 +160,7 @@ addon.uiSections = {
   {
     title = "Builder",
     kind = "builder",
-    help = "Auto scores Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Ghostly Strike is optional. Builder() can also maintain upkeep buffs like Slice and Dice, Envenom for Noxious builds, and optionally Flourish, but it will not spend combo points on damaging finishers.",
+    help = "Auto scores Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Ghostly Strike is optional. Builder() can also maintain upkeep buffs like Envenom for Noxious builds, Slice and Dice, and optionally Flourish, but it will not spend combo points on damaging finishers.",
     items = { "builderFinishers", "builderFlourish", "builderGhostlyStrike" },
   },
   {
