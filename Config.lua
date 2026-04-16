@@ -95,6 +95,7 @@ scrollBar:SetValueStep(20)
 
 local refreshables = {}
 local builderButtons = {}
+local poisonButtons = {}
 local optionButtonGroups = {}
 local cardWidth = 424
 local controlWidth = 392
@@ -106,6 +107,7 @@ local sectionIcons = {
   builder = "Interface\\Icons\\INV_Sword_04",
   ["Builder"] = "Interface\\Icons\\INV_Sword_04",
   ["Openers"] = "Interface\\Icons\\Ability_Stealth",
+  ["Poisons"] = "Interface\\Icons\\Ability_Poisons",
   ["Finisher"] = "Interface\\Icons\\Ability_Rogue_Eviscerate",
   ["Defensives"] = "Interface\\Icons\\Spell_Shadow_ShadowWard",
   ["Thresholds"] = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
@@ -403,6 +405,22 @@ local function refreshBuilderButtons()
   end
 end
 
+local function refreshPoisonButtons()
+  local currentPoison = nil
+  if addon:IsWeaponPoisonApplyPending() then
+    currentPoison = addon.state and addon.state.pendingWeaponPoisonName or nil
+  end
+  for _, button in ipairs(poisonButtons) do
+    if not currentPoison then
+      button:SetAlpha(1)
+    elseif button.key == currentPoison then
+      button:SetAlpha(1)
+    else
+      button:SetAlpha(0.55)
+    end
+  end
+end
+
 local function createBuilderControl(parent, y)
   local control = CreateFrame("Frame", nil, parent)
   control:SetWidth(controlWidth)
@@ -431,6 +449,53 @@ local function createBuilderControl(parent, y)
   control.Refresh = refreshBuilderButtons
   registerRefreshable(control)
   return control, 60
+end
+
+local function createPoisonControl(parent, y)
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(controlWidth)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
+
+  local label = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  label:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
+  label:SetWidth(textWidth)
+  label:SetJustifyH("LEFT")
+  label:SetText("Click a poison to cast it, then click the weapon to apply it.")
+
+  local poisonOptions = addon.weaponPoisonOptions or {}
+  poisonButtons = {}
+
+  for index, option in ipairs(poisonOptions) do
+    local row = math.floor((index - 1) / 3)
+    local column = math.mod(index - 1, 3)
+    local optionKey = option.key
+    local optionLabel = option.label or option.key
+
+    local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+    button:SetWidth(buttonWidth)
+    button:SetHeight(22)
+    button:SetPoint("TOPLEFT", control, "TOPLEFT", column * buttonSpacing, -(20 + (row * 28)))
+    button:SetText(optionLabel)
+    button.key = optionKey
+    button:SetScript("OnClick", function()
+      addon:Poison(optionKey)
+    end)
+    table.insert(poisonButtons, button)
+  end
+
+  local rowCount = math.ceil(table.getn(poisonOptions) / 3)
+  if rowCount < 1 then
+    rowCount = 1
+  end
+
+  local height = 20 + (rowCount * 28)
+  local _, helpHeight = createWrappedText(control, "The low-poison warning stays muted while an apply is in progress.", "GameFontHighlightSmall", -(20 + (rowCount * 28)), { 0.75, 0.75, 0.75 }, textWidth)
+  height = height + helpHeight + 4
+
+  control:SetHeight(height)
+  control.Refresh = refreshPoisonButtons
+  registerRefreshable(control)
+  return control, control:GetHeight()
 end
 
 local function createMacroControl(parent, y)
@@ -517,6 +582,9 @@ local function createSectionCard(parent, section, y)
     cursorY = cursorY - 10
   elseif section.kind == "macros" then
     local _, height = createMacroControl(card, cursorY)
+    cursorY = cursorY - height - 12
+  elseif section.kind == "poisons" then
+    local _, height = createPoisonControl(card, cursorY)
     cursorY = cursorY - height - 12
   else
     for _, settingId in ipairs(section.items) do

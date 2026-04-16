@@ -8,6 +8,14 @@ local function copyPath(path)
   return clone
 end
 
+local function makeMacroId(prefix, name)
+  local normalized = string.lower(name or "")
+  normalized = string.gsub(normalized, "[^%w]+", "_")
+  normalized = string.gsub(normalized, "^_+", "")
+  normalized = string.gsub(normalized, "_+$", "")
+  return prefix .. normalized
+end
+
 function addon:ClampValue(value, minValue, maxValue)
   if value < minValue then
     return minValue
@@ -94,6 +102,14 @@ addon.macroDefinitions = {
   },
 }
 
+for _, option in ipairs(addon.weaponPoisonOptions or {}) do
+  table.insert(addon.macroDefinitions, {
+    id = makeMacroId("poison_", option.key),
+    macro = "/script RogueAuto:Poison(\"" .. option.key .. "\")",
+    description = "Poison(" .. (option.label or option.key) .. "): apply " .. option.key .. " to your weapon. Example macro: /script RogueAuto:Poison(\"" .. option.key .. "\").",
+  })
+end
+
 addon.settingDefinitions = {
   builderMode = {
     path = { "builder", "mode" },
@@ -167,6 +183,11 @@ addon.uiSections = {
     title = "Openers",
     help = "Opener(hint) only attempts the explicit opener you ask for, but can try Pick Pocket first when eligible.",
     items = { "pickPocketHumanoids" },
+  },
+  {
+    title = "Poisons",
+    kind = "poisons",
+    help = "Click a poison to cast it, then click your weapon to apply it. The low-poison warning stays muted while an apply is in progress.",
   },
   {
     title = "Combo Points",

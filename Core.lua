@@ -101,6 +101,8 @@ addon.state = {
   pendingPlayerBuffs = {},
   lastExplicitEnergyGainAt = 0,
   lastExplicitEnergyGainMessage = nil,
+  pendingWeaponPoisonApplyUntil = 0,
+  pendingWeaponPoisonName = nil,
 }
 
 addon.damageCategories = {
@@ -158,6 +160,20 @@ addon.weaponPoisonNames = {
   "Atrophic Poison",
   "Occult Poison",
 }
+
+addon.weaponPoisonOptions = {
+  { key = "Deadly Poison", label = "Deadly" },
+  { key = "Instant Poison", label = "Instant" },
+  { key = "Crippling Poison", label = "Crippling" },
+  { key = "Mind-numbing Poison", label = "Mind-numbing" },
+  { key = "Wound Poison", label = "Wound" },
+  { key = "Anesthetic Poison", label = "Anesthetic" },
+  { key = "Numbing Poison", label = "Numbing" },
+  { key = "Atrophic Poison", label = "Atrophic" },
+  { key = "Occult Poison", label = "Occult" },
+}
+
+addon.weaponPoisonApplySuppressDuration = 8
 
 addon.noticeAnchorInsetPct = 0.15
 addon.noticeDefaultY = -120
@@ -1497,6 +1513,31 @@ function addon:RefreshKnownSpells()
   end
 end
 
+function addon:FindKnownSpellName(name)
+  if not name or name == "" then
+    return nil
+  end
+
+  local normalized = normalizeSpellName(name)
+  if self.state.knownSpells[name] then
+    return name
+  end
+
+  if normalized ~= "" and self.state.knownSpells[normalized] then
+    return normalized
+  end
+
+  local lowerNormalized = string.lower(normalized)
+  for spellName in pairs(self.state.knownSpells) do
+    local spellNormalized = normalizeSpellName(spellName)
+    if spellNormalized ~= "" and string.lower(spellNormalized) == lowerNormalized then
+      return spellName
+    end
+  end
+
+  return nil
+end
+
 function addon:HasSpell(name)
   return self.state.knownSpells[name] ~= nil
 end
@@ -1850,9 +1891,9 @@ function addon:ExtractWeaponPoisonNameFromText(text)
 end
 
 function addon:GetWeaponPoisonTexture(name)
-  local normalizedName = normalizeSpellName(name)
-  if normalizedName ~= "" then
-    local spellIndex = self:GetSpellIndex(normalizedName)
+  local resolvedName = self:FindKnownSpellName(name)
+  if resolvedName then
+    local spellIndex = self:GetSpellIndex(resolvedName)
     if spellIndex and GetSpellTexture then
       return GetSpellTexture(spellIndex, BOOKTYPE_SPELL)
     end
@@ -1952,6 +1993,64 @@ function addon:GetWeaponPoisonWarningStrength(states)
   return bestStrength
 end
 
+function addon:ResolveWeaponPoisonHint(hint)
+  local normalizedHint = string.lower(normalizeSpellName(hint or ""))
+  normalizedHint = string.gsub(normalizedHint, "%s+", "")
+  normalizedHint = string.gsub(normalizedHint, "%-", "")
+  if normalizedHint == "" then
+    return nil
+  end
+
+  for _, option in ipairs(self.weaponPoisonOptions or {}) do
+    local key = string.lower(option.key or "")
+    key = string.gsub(key, "%s+", "")
+    key = string.gsub(key, "%-", "")
+
+    local label = string.lower(option.label or "")
+    label = string.gsub(label, "%s+", "")
+    label = string.gsub(label, "%-", "")
+
+    if normalizedHint == key or normalizedHint == label then
+      return option.key
+    end
+
+    if string.find(key, normalizedHint, 1, true) or string.find(label, normalizedHint, 1, true) then
+      return option.key
+    end
+  end
+
+  return nil
+end
+
+function addon:IsWeaponPoisonSpell(name)
+  local normalized = normalizeSpellName(name)
+  if normalized == "" then
+    return false
+  end
+
+  for _, option in ipairs(self.weaponPoisonOptions or {}) do
+    if normalized == option.key then
+      return true
+    end
+  end
+
+  return false
+end
+
+function addon:BeginWeaponPoisonApply(name)
+  self.state.pendingWeaponPoisonName = self:ResolveWeaponPoisonHint(name) or normalizeSpellName(name)
+  self.state.pendingWeaponPoisonApplyUntil = GetTime() + (self.weaponPoisonApplySuppressDuration or 8)
+end
+
+function addon:ClearWeaponPoisonApply()
+  self.state.pendingWeaponPoisonName = nil
+  self.state.pendingWeaponPoisonApplyUntil = 0
+end
+
+function addon:IsWeaponPoisonApplyPending()
+  return GetTime() < (self.state.pendingWeaponPoisonApplyUntil or 0)
+end
+
 function addon:UpdateWeaponPoisonFrame(force)
   local now = GetTime()
   if not force and self.state.nextWeaponPoisonUpdate and now < self.state.nextWeaponPoisonUpdate then
@@ -2002,6 +2101,11 @@ function addon:UpdateWeaponPoisonWarningFrame(force)
 
   local warningFrame = self:EnsureWeaponPoisonWarningFrame()
   if not warningFrame then
+    return
+  end
+
+  if self:IsWeaponPoisonApplyPending() then
+    warningFrame:Hide()
     return
   end
 
@@ -5908,6 +6012,8 @@ function addon:Cast(name)
   elseif name == "Slice and Dice" or name == "Envenom" or name == "Flourish" then
     local duration = self:GetComboBuffDuration(name, comboPoints)
     self:QueuePendingPlayerBuff(name, duration)
+  elseif self:IsWeaponPoisonSpell(name) then
+    self:BeginWeaponPoisonApply(name)
   end
 
   self:MarkLearningSetupCast(name)
@@ -6263,6 +6369,32 @@ function addon:TryOpenerHint(hint)
   return self:TryCast(opener)
 end
 
+function addon:CanAttemptSpecificWeaponPoison(name)
+  local resolvedName = self:FindKnownSpellName(name)
+  if not resolvedName then
+    return false
+  end
+
+  return self:CanCast(resolvedName)
+end
+
+function addon:TryWeaponPoisonHint(hint)
+  local poison = self:ResolveWeaponPoisonHint(hint)
+  if not poison then
+    return false
+  end
+
+  local resolvedName = self:FindKnownSpellName(poison)
+  if not resolvedName then
+    return false
+  end
+
+  if not self:CanAttemptSpecificWeaponPoison(resolvedName) then
+    return false
+  end
+  return self:TryCast(resolvedName)
+end
+
 function addon:TryRiposte()
   if not self:HasSpell("Riposte") then
     return false
@@ -6461,6 +6593,10 @@ function addon:OnUiError(message)
 
   if recentAttempt and self:IsLocallyTrackedPlayerBuff(lastAttempt.name) then
     self:ClearPendingPlayerBuff(lastAttempt.name)
+  end
+
+  if recentAttempt and self:IsWeaponPoisonSpell(lastAttempt.name) then
+    self:ClearWeaponPoisonApply()
   end
 
   if recentAttempt and lastAttempt.name == "Pick Pocket" and self.state.pendingPickPocketTarget then

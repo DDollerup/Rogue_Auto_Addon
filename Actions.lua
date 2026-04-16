@@ -32,7 +32,7 @@ function addon:PrepareAction(needsTarget)
     return false
   end
 
-  if UnitExists("target") and not UnitIsDead("target") then
+  if needsTarget and UnitExists("target") and not UnitIsDead("target") then
     self:StartAttack()
   end
 
@@ -71,4 +71,15 @@ function addon:Opener(hint)
   end
 
   self:TryOpenerHint(hint)
+end
+
+function addon:Poison(hint)
+  self.state.activeRotationMode = "poison"
+  self.state.activeOpenerHint = nil
+  if not self:PrepareAction(false) then
+    return
+  end
+
+  self:TryWeaponPoisonHint(hint)
+  self:RefreshConfig()
 end
