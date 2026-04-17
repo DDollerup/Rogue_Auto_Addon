@@ -4516,6 +4516,10 @@ function addon:GetInterruptResponseForActiveCast(context)
   end
 
   local dangerScore, confidence = self:GetActiveCastInterruptScore(activeCast)
+  if confidence < 0.2 and self:HasSpell("Kick") and self:IsInMeleeRange() and self:CanCast("Kick") then
+    return "kick", activeCast, dangerScore, confidence
+  end
+
   local encounterType = context and context.encounterType or self:GetEncounterType(self:GetTargetClassification())
   local ignoreThreshold = 0.62
   if encounterType == "dungeon_elite" then
