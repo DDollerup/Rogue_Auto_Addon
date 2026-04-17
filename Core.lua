@@ -3680,6 +3680,7 @@ function addon:RefreshActiveEnemyCast()
     or current.targetKey ~= liveCast.targetKey
     or current.spellName ~= liveCast.spellName
     or current.source == "live" then
+    self:SeedInterruptLearningFromLiveCast(liveCast)
     self.state.activeEnemyCast = liveCast
     return
   end
@@ -4495,6 +4496,50 @@ function addon:GetKickEnergyCost()
   return self:GetSpellEnergyCost("Kick") or 25
 end
 
+function addon:CanUseKickInterrupt()
+  if not self:HasSpell("Kick") then
+    return false
+  end
+
+  if not self:IsInMeleeRange() then
+    return false
+  end
+
+  if not self:IsSpellReady("Kick") then
+    return false
+  end
+
+  return self:GetEnergy() >= self:GetKickEnergyCost()
+end
+
+function addon:SeedInterruptLearningFromLiveCast(liveCast)
+  if not liveCast or not liveCast.spellName or liveCast.spellName == "" then
+    return
+  end
+
+  local now = GetTime()
+  local castKey = tostring(liveCast.targetKey or "") .. "|" .. tostring(liveCast.spellName or "")
+  if self.state.lastSeededInterruptCastKey == castKey and now - (self.state.lastSeededInterruptCastAt or 0) < 0.5 then
+    return
+  end
+  self.state.lastSeededInterruptCastKey = castKey
+  self.state.lastSeededInterruptCastAt = now
+
+  local sample = self:BuildCurrentTargetLearningSample()
+  if not sample then
+    return
+  end
+
+  local entry = self:EnsureMobLearningEntry(
+    sample.classification,
+    sample.learningKey,
+    sample.name,
+    sample.creatureType,
+    sample.level
+  )
+  self:UpdateMobInterruptLearning(entry, liveCast.spellName)
+end
+
 function addon:GetActiveCastInterruptScore(activeCast)
   if not activeCast then
     return 0, 0
@@ -4516,7 +4561,7 @@ function addon:GetInterruptResponseForActiveCast(context)
   end
 
   local dangerScore, confidence = self:GetActiveCastInterruptScore(activeCast)
-  if confidence < 0.2 and self:HasSpell("Kick") and self:IsInMeleeRange() and self:CanCast("Kick") then
+  if self:CanUseKickInterrupt() and confidence < 0.2 then
     return "kick", activeCast, dangerScore, confidence
   end
 
@@ -4540,7 +4585,7 @@ function addon:GetInterruptResponseForActiveCast(context)
     return "ignore", activeCast, dangerScore, confidence
   end
 
-  if self:HasSpell("Kick") and self:IsInMeleeRange() and self:CanCast("Kick") then
+  if self:CanUseKickInterrupt() then
     return "kick", activeCast, dangerScore, confidence
   end
 
