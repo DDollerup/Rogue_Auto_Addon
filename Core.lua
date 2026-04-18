@@ -3368,7 +3368,10 @@ function addon:GetInterruptPressureScore(entry)
     end
   end
 
-  return bestScore
+  -- Cast-count alone is useful for interrupt reservation even when we have
+  -- not yet observed a landing outcome for the spell.
+  local casterPresence = self:ClampUnitValue((entry.castSamples or 0) / 6) * 0.36
+  return math.max(bestScore, casterPresence)
 end
 
 function addon:GetInterruptLearningProfile()
@@ -4560,8 +4563,11 @@ function addon:GetInterruptResponseForActiveCast(context)
     return "ignore", nil, 0, 0
   end
 
+  local learningProfile = self:GetInterruptLearningProfile()
+  local spellEntry = learningProfile and self:GetInterruptSpellLearningEntry(learningProfile, activeCast.spellName) or nil
+  local outcomeSamples = spellEntry and (spellEntry.outcomeSamples or 0) or 0
   local dangerScore, confidence = self:GetActiveCastInterruptScore(activeCast)
-  if self:CanUseKickInterrupt() and confidence < 0.2 then
+  if self:CanUseKickInterrupt() and (confidence < 0.2 or outcomeSamples == 0) then
     return "kick", activeCast, dangerScore, confidence
   end
 
