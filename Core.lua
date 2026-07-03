@@ -778,6 +778,40 @@ function addon:Debug(message)
   end
 end
 
+function addon:IsSuppressedUiErrorMessage(message)
+  if not message or message == "" then
+    return false
+  end
+
+  if ERR_OUT_OF_ENERGY and message == ERR_OUT_OF_ENERGY then
+    return true
+  end
+
+  if ERR_OUT_OF_RANGE and message == ERR_OUT_OF_RANGE then
+    return true
+  end
+
+  local lower = string.lower(message)
+  return lower == "not enough energy" or lower == "out of range." or lower == "out of range"
+end
+
+function addon:InstallUiErrorFilter()
+  if self.uiErrorFilterInstalled or not UIErrorsFrame or not UIErrorsFrame.AddMessage then
+    return
+  end
+
+  self.uiErrorFilterInstalled = true
+  local originalAddMessage = UIErrorsFrame.AddMessage
+
+  UIErrorsFrame.AddMessage = function(frame, message, r, g, b, id, holdTime)
+    if addon:IsSuppressedUiErrorMessage(message) then
+      return
+    end
+
+    return originalAddMessage(frame, message, r, g, b, id, holdTime)
+  end
+end
+
 function addon:InitDB()
   RogueAutoDB = mergeDefaults(RogueAutoDB, deepCopy(self.defaults))
   self:MigrateSettings()
@@ -6384,6 +6418,7 @@ function addon:OnVariablesLoaded()
 end
 
 function addon:OnPlayerLogin()
+  self:InstallUiErrorFilter()
   self:RefreshKnownSpells()
   self:UpdateComboPointFrame(true)
   self:UpdateCooldownListFrame(true)
