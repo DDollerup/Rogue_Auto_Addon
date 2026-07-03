@@ -791,8 +791,20 @@ function addon:IsSuppressedUiErrorMessage(message)
     return true
   end
 
+  if ERR_SPELL_COOLDOWN and message == ERR_SPELL_COOLDOWN then
+    return true
+  end
+
+  if SPELL_FAILED_NOT_READY and message == SPELL_FAILED_NOT_READY then
+    return true
+  end
+
   local lower = string.lower(message)
-  return lower == "not enough energy" or lower == "out of range." or lower == "out of range"
+  return lower == "not enough energy"
+    or lower == "out of range."
+    or lower == "out of range"
+    or lower == "ability is not ready yet."
+    or lower == "ability is not ready yet"
 end
 
 function addon:InstallUiErrorFilter()
