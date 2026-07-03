@@ -6481,7 +6481,7 @@ function addon:OnEnergyChanged(unit)
       if delta >= 20 and expectedTickAt and math.abs(now - expectedTickAt) <= 0.35 then
         self.state.firstEnergyTick = now
       end
-    elseif delta == 20 then
+    elseif delta <= 20 then
       self.state.firstEnergyTick = now
     elseif delta > 20 then
       local expectedTickAt = self.state.firstEnergyTick and (self.state.firstEnergyTick + 2) or nil
