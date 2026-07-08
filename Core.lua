@@ -25,6 +25,45 @@ addon.closeRangeSpells = {
   "Rupture",
 }
 
+addon.kickInterruptSpells = {
+  ["shadow bolt"] = true,
+  ["fireball"] = true,
+  ["frostbolt"] = true,
+  ["lightning bolt"] = true,
+  ["chain lightning"] = true,
+  ["wrath"] = true,
+  ["starfire"] = true,
+  ["smite"] = true,
+  ["holy fire"] = true,
+  ["mind blast"] = true,
+  ["mind flay"] = true,
+  ["mana burn"] = true,
+  ["immolate"] = true,
+  ["searing pain"] = true,
+  ["soul fire"] = true,
+  ["pyroblast"] = true,
+  ["flamestrike"] = true,
+  ["blizzard"] = true,
+  ["rain of fire"] = true,
+  ["fear"] = true,
+  ["polymorph"] = true,
+  ["sleep"] = true,
+  ["banish"] = true,
+  ["lesser heal"] = true,
+  ["heal"] = true,
+  ["greater heal"] = true,
+  ["flash heal"] = true,
+  ["prayer of healing"] = true,
+  ["healing touch"] = true,
+  ["regrowth"] = true,
+  ["holy light"] = true,
+  ["flash of light"] = true,
+  ["healing wave"] = true,
+  ["lesser healing wave"] = true,
+  ["chain heal"] = true,
+  ["dark mending"] = true,
+}
+
 addon.defaults = {
   targeting = {
     nearestFallback = true,
@@ -3236,6 +3275,11 @@ function addon:NormalizeInterruptSpellKey(name)
   return string.lower(trim(name))
 end
 
+function addon:IsStaticKickInterruptSpell(name)
+  local spellKey = self:NormalizeInterruptSpellKey(name)
+  return spellKey and self.kickInterruptSpells and self.kickInterruptSpells[spellKey] == true
+end
+
 function addon:EnsureInterruptSpellLearningEntry(entry, spellName)
   if not entry then
     return nil
@@ -3729,7 +3773,6 @@ function addon:RefreshActiveEnemyCast()
     or current.targetKey ~= liveCast.targetKey
     or current.spellName ~= liveCast.spellName
     or current.source == "live" then
-    self:SeedInterruptLearningFromLiveCast(liveCast)
     self.state.activeEnemyCast = liveCast
     return
   end
@@ -3760,16 +3803,9 @@ function addon:TrackHostileCastFromMessage(casterName, spellName)
   end
 
   local targetKey = self:GetTargetKey()
-  local learningKey = self:NormalizeMobLearningKey(targetName)
-  if not targetKey or not learningKey then
+  if not targetKey then
     return
   end
-
-  local classification = self:GetTargetClassification()
-  local creatureType = UnitCreatureType("target") or "unknown"
-  local level = UnitLevel("target") or 0
-  local entry = self:EnsureMobLearningEntry(classification, learningKey, targetName, creatureType, level)
-  self:UpdateMobInterruptLearning(entry, spellName)
 
   self.state.activeEnemyCast = {
     targetKey = targetKey,
@@ -3944,12 +3980,7 @@ function addon:OnHostileSpellCastMessage(message)
 end
 
 function addon:OnHostileSpellOutcomeMessage(message)
-  local outcome = self:ExtractHostileOutcomeFromMessage(message)
-  if not outcome then
-    return
-  end
-
-  self:RecordHostileSpellOutcome(outcome)
+  -- Static interrupt matching replaced per-mob spell outcome learning.
 end
 
 function addon:IsHostileTarget()
@@ -4562,31 +4593,7 @@ function addon:CanUseKickInterrupt()
 end
 
 function addon:SeedInterruptLearningFromLiveCast(liveCast)
-  if not liveCast or not liveCast.spellName or liveCast.spellName == "" then
-    return
-  end
-
-  local now = GetTime()
-  local castKey = tostring(liveCast.targetKey or "") .. "|" .. tostring(liveCast.spellName or "")
-  if self.state.lastSeededInterruptCastKey == castKey and now - (self.state.lastSeededInterruptCastAt or 0) < 0.5 then
-    return
-  end
-  self.state.lastSeededInterruptCastKey = castKey
-  self.state.lastSeededInterruptCastAt = now
-
-  local sample = self:BuildCurrentTargetLearningSample()
-  if not sample then
-    return
-  end
-
-  local entry = self:EnsureMobLearningEntry(
-    sample.classification,
-    sample.learningKey,
-    sample.name,
-    sample.creatureType,
-    sample.level
-  )
-  self:UpdateMobInterruptLearning(entry, liveCast.spellName)
+  -- Interrupt decisions are driven by addon.kickInterruptSpells, not per-mob cast learning.
 end
 
 function addon:GetActiveCastInterruptScore(activeCast)
@@ -4594,13 +4601,11 @@ function addon:GetActiveCastInterruptScore(activeCast)
     return 0, 0
   end
 
-  local learningProfile = self:GetInterruptLearningProfile()
-  if not learningProfile then
-    return 0, 0
+  if self:IsStaticKickInterruptSpell(activeCast.spellName) then
+    return 1, 1
   end
 
-  local spellEntry = self:GetInterruptSpellLearningEntry(learningProfile, activeCast.spellName)
-  return self:GetInterruptSpellDangerScore(spellEntry)
+  return 0, 0
 end
 
 function addon:GetInterruptResponseForActiveCast(context)
@@ -4609,31 +4614,8 @@ function addon:GetInterruptResponseForActiveCast(context)
     return "ignore", nil, 0, 0
   end
 
-  local learningProfile = self:GetInterruptLearningProfile()
-  local spellEntry = learningProfile and self:GetInterruptSpellLearningEntry(learningProfile, activeCast.spellName) or nil
-  local outcomeSamples = spellEntry and (spellEntry.outcomeSamples or 0) or 0
   local dangerScore, confidence = self:GetActiveCastInterruptScore(activeCast)
-  if self:CanUseKickInterrupt() and (confidence < 0.2 or outcomeSamples == 0) then
-    return "kick", activeCast, dangerScore, confidence
-  end
-
-  local encounterType = context and context.encounterType or self:GetEncounterType(self:GetTargetClassification())
-  local ignoreThreshold = 0.62
-  if encounterType == "dungeon_elite" then
-    ignoreThreshold = 0.42
-  elseif encounterType == "dungeon_trash" or encounterType == "party_world" then
-    ignoreThreshold = 0.52
-  end
-
-  if confidence < 0.2 then
-    if encounterType == "dungeon_elite" then
-      dangerScore = math.max(dangerScore, 0.52)
-    elseif encounterType == "dungeon_trash" or encounterType == "party_world" then
-      dangerScore = math.max(dangerScore, 0.4)
-    end
-  end
-
-  if dangerScore < ignoreThreshold then
+  if dangerScore <= 0 then
     return "ignore", activeCast, dangerScore, confidence
   end
 
@@ -4679,34 +4661,16 @@ function addon:ShouldReserveKickEnergy(context)
     return false
   end
 
+  local activeCast = self:GetInterruptibleEnemyCast()
+  if activeCast and self:IsStaticKickInterruptSpell(activeCast.spellName) then
+    return self:HasSpell("Kick") and self:IsSpellReady("Kick")
+  end
+
   if context.targetHealthPct <= 22 or context.remainingFightDuration <= 3 then
     return false
   end
 
-  local reserveViaKick = self:HasSpell("Kick") and self:IsSpellReady("Kick")
-  local reserveViaKidney = false
-  if not reserveViaKick
-    and context.comboPoints > 0
-    and self:HasSpell("Kidney Shot")
-    and not self:IsTargetStunImmune(context) then
-    reserveViaKidney = true
-  end
-
-  if not reserveViaKick and not reserveViaKidney then
-    return false
-  end
-
-  local interruptPressure = self:GetInterruptPressureScore(context.learningProfile)
-
-  if context.encounterType == "dungeon_elite" then
-    return interruptPressure >= 0.18
-  end
-
-  if context.encounterType == "dungeon_trash" or context.encounterType == "party_world" then
-    return interruptPressure >= 0.26
-  end
-
-  return interruptPressure >= 0.34
+  return false
 end
 
 function addon:ShouldConservativelyBlockKidneyShot(context)
