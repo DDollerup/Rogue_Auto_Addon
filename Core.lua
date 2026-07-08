@@ -77,7 +77,6 @@ addon.defaults = {
   builder = {
     mode = "auto",
     useGhostlyStrike = false,
-    useFinishers = false,
     useFlourish = false,
   },
   minimap = {
@@ -882,10 +881,6 @@ function addon:MigrateSettings()
   local mode = RogueAutoDB.builder.mode
   if mode == nil or mode == "" then
     RogueAutoDB.builder.mode = "auto"
-  end
-
-  if RogueAutoDB.builder.useFinishers == nil then
-    RogueAutoDB.builder.useFinishers = false
   end
 
   if RogueAutoDB.builder.useFlourish == nil then
@@ -4830,10 +4825,6 @@ function addon:ShouldUseBuilderGhostlyStrike(context)
   return self:CanCast("Ghostly Strike")
 end
 
-function addon:ShouldBuilderUseFinishers()
-  return RogueAutoDB and RogueAutoDB.builder and RogueAutoDB.builder.useFinishers == true
-end
-
 function addon:ShouldBuilderUseFlourish()
   return RogueAutoDB and RogueAutoDB.builder and RogueAutoDB.builder.useFlourish == true
 end
@@ -4875,10 +4866,6 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
   end
 
   if spellName == "Envenom" then
-    if not self:HasSpell("Noxious Assault") then
-      return false
-    end
-
     if remainingFightDuration > 0 and remainingFightDuration < 5 then
       return false
     end
@@ -4927,32 +4914,29 @@ function addon:TryBuilderSliceAndDiceUpkeep(context)
   return self:TryCast("Slice and Dice")
 end
 
-function addon:GetPreferredBuilderFinisher(context)
-  if not self:ShouldBuilderUseFinishers() then
-    return nil
+function addon:TryBuilderEnvenomUpkeep(context)
+  context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
+  local comboPoints = context and context.comboPoints or self:GetComboPoints()
+  if not self:ShouldRefreshBuilderBuff("Envenom", comboPoints, context) then
+    return false
   end
 
+  return self:TryCast("Envenom")
+end
+
+function addon:TryBuilderFlourishUpkeep(context)
   context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
 
   local comboPoints = context and context.comboPoints or self:GetComboPoints()
   if comboPoints <= 0 then
-    return nil
+    return false
   end
 
-  local noxiousBuild = self:HasSpell("Noxious Assault") and self:HasSpell("Envenom")
-  if noxiousBuild then
-    if self:ShouldRefreshBuilderBuff("Envenom", comboPoints, context) then
-      return "Envenom"
-    end
+  if not self:ShouldRefreshBuilderBuff("Flourish", comboPoints, context) then
+    return false
   end
 
-  if self:ShouldBuilderUseFlourish() and self:HasSpell("Flourish") then
-    if self:ShouldRefreshBuilderBuff("Flourish", comboPoints, context) then
-      return "Flourish"
-    end
-  end
-
-  return nil
+  return self:TryCast("Flourish")
 end
 
 function addon:IsStealthed()

@@ -85,7 +85,7 @@ addon.macroDefinitions = {
   {
     id = "builder",
     macro = "/script RogueAuto:Builder()",
-    description = "Builder: builds combo points with the best legal builder, auto-Kicks active casts, keeps Slice and Dice up, can use emergency Kidney Shot when Kick is unavailable and the target is not learned as stun-immune, and can optionally maintain extra upkeep buffs without spending on damaging finishers.",
+    description = "Builder: builds combo points with the best legal builder, auto-Kicks active casts, keeps Slice and Dice up, can use emergency Kidney Shot when Kick is unavailable and the target is not learned as stun-immune, and can optionally maintain Flourish.",
   },
   {
     id = "opener",
@@ -131,15 +131,10 @@ addon.settingDefinitions = {
     label = "Prioritize Ghostly Strike in Auto",
     help = "Only affects Builder() while builder mode is Auto.",
   },
-  builderFinishers = {
-    path = { "builder", "useFinishers" },
-    label = "Allow Builder() to maintain extra upkeep buffs",
-    help = "Refreshes Envenom on Noxious builds. Slice and Dice is always maintained by Builder(). Builder() will not use damaging finishers.",
-  },
   builderFlourish = {
     path = { "builder", "useFlourish" },
-    label = "Include Flourish in upkeep",
-    help = "Allows Builder() to refresh Flourish alongside extra Envenom upkeep.",
+    label = "Maintain Flourish",
+    help = "Allows Builder() to refresh Flourish after Slice and Dice upkeep.",
   },
   highlightDuration = {
     path = { "notifications", "highlightDuration" },
@@ -160,8 +155,8 @@ addon.uiSections = {
   {
     title = "Builder",
     kind = "builder",
-    help = "Auto scores Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Ghostly Strike is optional. Builder() always maintains Slice and Dice and can also maintain extra upkeep buffs like Envenom for Noxious builds and optionally Flourish, but it will not spend combo points on damaging finishers.",
-    items = { "builderFinishers", "builderFlourish", "builderGhostlyStrike" },
+    help = "Auto scores Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Builder() maintains Slice and Dice, can optionally maintain Flourish, and leaves direct damage finishers to the player.",
+    items = { "builderFlourish", "builderGhostlyStrike" },
   },
   {
     title = "Openers",
@@ -213,15 +208,6 @@ addon.slashCommandDefinitions = {
     usage = "on|off",
     success = function(value)
       return "Builder Ghostly Strike " .. (value and "enabled" or "disabled") .. "."
-    end,
-  },
-  {
-    command = "builderfinishers",
-    type = "toggle",
-    setting = "builderFinishers",
-    usage = "on|off",
-    success = function(value)
-      return "Builder upkeep buffs " .. (value and "enabled" or "disabled") .. "."
     end,
   },
   {

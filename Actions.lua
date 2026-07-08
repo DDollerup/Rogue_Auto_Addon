@@ -55,12 +55,15 @@ function addon:Builder()
   end
 
   local context = self:GetComboPointContext("builder")
+  if self:TryBuilderEnvenomUpkeep(context) then
+    return
+  end
+
   if self:TryBuilderSliceAndDiceUpkeep(context) then
     return
   end
 
-  local finisher = self:GetPreferredBuilderFinisher(context)
-  if finisher and self:TryCast(finisher) then
+  if self:TryBuilderFlourishUpkeep(context) then
     return
   end
 
