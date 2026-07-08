@@ -4863,16 +4863,12 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
   remaining = remaining or 0
 
   if spellName == "Slice and Dice" then
-    if remainingFightDuration > 0 and remainingFightDuration < 5 then
-      return false
-    end
-
     if not active then
       return comboPoints >= 1
     end
 
-    if remaining <= refreshWindow then
-      return comboPoints >= 4 or (longFight and comboPoints >= 3)
+    if remaining <= 3 then
+      return comboPoints >= 2
     end
 
     return false
@@ -4921,6 +4917,16 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
   return false
 end
 
+function addon:TryBuilderSliceAndDiceUpkeep(context)
+  context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
+  local comboPoints = context and context.comboPoints or self:GetComboPoints()
+  if not self:ShouldRefreshBuilderBuff("Slice and Dice", comboPoints, context) then
+    return false
+  end
+
+  return self:TryCast("Slice and Dice")
+end
+
 function addon:GetPreferredBuilderFinisher(context)
   if not self:ShouldBuilderUseFinishers() then
     return nil
@@ -4938,12 +4944,6 @@ function addon:GetPreferredBuilderFinisher(context)
     if self:ShouldRefreshBuilderBuff("Envenom", comboPoints, context) then
       return "Envenom"
     end
-
-    if self:ShouldRefreshBuilderBuff("Slice and Dice", comboPoints, context) then
-      return "Slice and Dice"
-    end
-  elseif self:ShouldRefreshBuilderBuff("Slice and Dice", comboPoints, context) then
-    return "Slice and Dice"
   end
 
   if self:ShouldBuilderUseFlourish() and self:HasSpell("Flourish") then
