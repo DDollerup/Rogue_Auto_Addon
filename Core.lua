@@ -4874,8 +4874,8 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
       return comboPoints >= 1
     end
 
-    if remaining <= refreshWindow then
-      return comboPoints >= 4 or (longFight and comboPoints >= 3)
+    if remaining <= 3 then
+      return comboPoints >= 2
     end
 
     return false
