@@ -81,6 +81,16 @@ addon.roleplayPhrases = {
       "leaves only an uncertain movement in the dark.",
       "steps out of sight as though the world forgot to watch.",
     },
+    sprint = {
+      "accelerates with sudden and silent purpose.",
+      "turns the ground beneath each step into a passing blur.",
+      "puts distance behind with ruthless efficiency.",
+    },
+    evasion = {
+      "moves half a step and lets every attack find empty air.",
+      "becomes a remarkably inconvenient target.",
+      "slips between incoming blows without wasting a motion.",
+    },
     sap = {
       "eases {target} into an inconvenient sleep.",
       "puts {target}'s awareness gently out of service.",
@@ -230,6 +240,28 @@ addon.roleplayPhrases = {
       "leaves the scene despite being the most central part of it.",
       "crosses an exit conveniently located three steps away.",
     },
+    sprint = {
+      "remembers an urgent appointment in exactly the other direction.",
+      "demonstrates the tactical advance away from consequences.",
+      "breaks into a run with the dignity of someone definitely not fleeing.",
+      "becomes a blur of confidence and poorly reviewed decisions.",
+      "discovers that the ground moves faster when authorities are involved.",
+      "outruns the explanation before it can catch up.",
+      "leaves a trail of footprints attempting to file complaints.",
+      "accelerates beyond the practical reach of accountability.",
+      "puts alarming enthusiasm into being somewhere else.",
+    },
+    evasion = {
+      "avoids the blow by standing somewhere considerably more sensible.",
+      "demonstrates the defensive value of not being where the weapon lands.",
+      "ducks with the confidence of someone who absolutely planned that.",
+      "lets the attack pass and looks personally offended by the attempt.",
+      "negotiates around the incoming weapon without accepting its terms.",
+      "treats immediate danger as a strongly worded suggestion.",
+      "sidesteps responsibility and the blade at precisely the same moment.",
+      "proves that survival is mostly timing and a complete lack of shame.",
+      "makes everyone reconsider both their accuracy and their life choices.",
+    },
     sap = {
       "invites {target} to take an unscheduled nap.",
       "puts {target}'s thoughts on a brief holiday.",
@@ -324,6 +356,16 @@ addon.roleplayPhrases = {
       "dissolves into shadow like poison into blood.",
       "leaves the darkness holding an empty shape.",
       "fades from sight while danger lingers behind.",
+    },
+    sprint = {
+      "surges forward like a shadow fleeing the dawn.",
+      "moves with the sudden urgency of venom through blood.",
+      "leaves only dust and the memory of approaching danger.",
+    },
+    evasion = {
+      "folds between the attacks like darkness between candle flames.",
+      "lets every blade pass close enough to feel and too far away to matter.",
+      "flows around each strike with cold, serpentine grace.",
     },
     sap = {
       "presses {target}'s awareness down into dreamless dark.",
@@ -563,6 +605,14 @@ end
 
 function addon:OnRoleplaySelfBuffMessage(message)
   local lower = string.lower(message or "")
+  if string.find(lower, "sprint", 1, true) then
+    self:TryRoleplayEmote("sprint", nil, false)
+    return
+  end
+  if string.find(lower, "evasion", 1, true) then
+    self:TryRoleplayEmote("evasion", nil, false)
+    return
+  end
   if string.find(lower, "vanish", 1, true) then
     self:TryRoleplayEmote("vanish", nil, false)
     return
