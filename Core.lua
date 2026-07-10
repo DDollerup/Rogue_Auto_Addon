@@ -9,6 +9,9 @@ addon.refreshWindow = {
 }
 addon.builderBuffEarlyRefreshWindow = 4
 addon.builderBuffEmergencyRefreshWindow = 1.5
+addon.builderBuffHighPointRefreshWindow = 6
+addon.builderEviscerateSafeWindow = 10
+addon.builderEviscerateArmTimeout = 5
 addon.envenomMinimumRemainingFightDuration = 3
 addon.observedDebuffDurations = {
   ["Rupture"] = 10,
@@ -131,6 +134,7 @@ addon.state = {
   learningFight = nil,
   activeEnemyCast = nil,
   pendingKidneyShotCheck = nil,
+  builderEviscerateArm = nil,
   activeRotationMode = nil,
   activeOpenerHint = nil,
   combatSession = nil,
@@ -255,12 +259,12 @@ addon.dotPerPointDurations = {
 
 addon.comboBuffBaseDurations = {
   ["Slice and Dice"] = 6,
-  ["Envenom"] = 6,
+  ["Envenom"] = 8,
 }
 
 addon.comboBuffPerPointDurations = {
   ["Slice and Dice"] = 3,
-  ["Envenom"] = 0,
+  ["Envenom"] = 4,
 }
 
 addon.targetDebuffTextures = {
@@ -4832,6 +4836,28 @@ function addon:ShouldBuilderUseFlourish()
   return RogueAutoDB and RogueAutoDB.builder and RogueAutoDB.builder.useFlourish == true
 end
 
+function addon:ShouldMaintainBuilderFlourish(comboPoints, context)
+  if not self:ShouldBuilderUseFlourish() or not self:HasSpell("Flourish") or comboPoints <= 0 then
+    return false
+  end
+
+  local remainingFightDuration = context and context.remainingFightDuration or 0
+  if remainingFightDuration > 0 and remainingFightDuration < 5 then
+    return false
+  end
+
+  local active, remaining = self:FindPlayerBuff("Flourish")
+  if not active then
+    return true
+  end
+
+  if (remaining or 0) <= (self.refreshWindow.playerBuff or 2) then
+    return comboPoints >= 4 or (self:IsLongFightContext(context) and comboPoints >= 3)
+  end
+
+  return false
+end
+
 function addon:GetPlayerBuffRemaining(name)
   local active, remaining = self:FindPlayerBuff(name)
   if not active then
@@ -4850,13 +4876,12 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
     return false
   end
 
-  local longFight = self:IsLongFightContext(context)
   local remainingFightDuration = context and context.remainingFightDuration or 0
-  local refreshWindow = self.refreshWindow.playerBuff or 2
   local active, remaining = self:FindPlayerBuff(spellName)
   remaining = remaining or 0
   local earlyRefreshWindow = self.builderBuffEarlyRefreshWindow or 4
   local emergencyRefreshWindow = self.builderBuffEmergencyRefreshWindow or 1.5
+  local highPointRefreshWindow = self.builderBuffHighPointRefreshWindow or 6
 
   if spellName == "Slice and Dice" then
     if not active then
@@ -4869,6 +4894,10 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
 
     if remaining <= earlyRefreshWindow then
       return comboPoints >= 2
+    end
+
+    if remaining <= highPointRefreshWindow then
+      return comboPoints >= 4
     end
 
     return false
@@ -4892,50 +4921,18 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
       return comboPoints >= 2
     end
 
+    if remaining <= highPointRefreshWindow then
+      return comboPoints >= 4
+    end
+
     return false
   end
 
   if spellName == "Flourish" then
-    if not self:ShouldBuilderUseFlourish() then
-      return false
-    end
-
-    if remainingFightDuration > 0 and remainingFightDuration < 5 then
-      return false
-    end
-
-    if not active then
-      return comboPoints >= 1
-    end
-
-    if remaining <= refreshWindow then
-      return comboPoints >= 4 or (longFight and comboPoints >= 3)
-    end
-
-    return false
+    return self:ShouldMaintainBuilderFlourish(comboPoints, context)
   end
 
   return false
-end
-
-function addon:TryBuilderSliceAndDiceUpkeep(context)
-  context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
-  local comboPoints = context and context.comboPoints or self:GetComboPoints()
-  if not self:ShouldRefreshBuilderBuff("Slice and Dice", comboPoints, context) then
-    return false
-  end
-
-  return self:TryCast("Slice and Dice")
-end
-
-function addon:TryBuilderEnvenomUpkeep(context)
-  context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
-  local comboPoints = context and context.comboPoints or self:GetComboPoints()
-  if not self:ShouldRefreshBuilderBuff("Envenom", comboPoints, context) then
-    return false
-  end
-
-  return self:TryCast("Envenom")
 end
 
 function addon:GetBuilderCombatBuffUpkeepSpell(context)
@@ -4982,6 +4979,106 @@ function addon:TryBuilderCombatBuffUpkeep(context)
   end
 
   return self:TryCast(spellName)
+end
+
+function addon:GetBuilderMainBuffState()
+  local sndActive, sndRemaining = self:FindPlayerBuff("Slice and Dice")
+  local envenomActive, envenomRemaining = self:FindPlayerBuff("Envenom")
+  return {
+    sndActive = sndActive == true,
+    sndRemaining = sndRemaining or 0,
+    envenomActive = envenomActive == true,
+    envenomRemaining = envenomRemaining or 0,
+  }
+end
+
+function addon:AreBuilderMainBuffsSafe(minimumRemaining)
+  local state = self:GetBuilderMainBuffState()
+  local safeWindow = minimumRemaining or self.builderEviscerateSafeWindow or 10
+  return state.sndActive
+    and state.envenomActive
+    and state.sndRemaining >= safeWindow
+    and state.envenomRemaining >= safeWindow
+end
+
+function addon:ClearBuilderEviscerateArm()
+  self.state.builderEviscerateArm = nil
+end
+
+function addon:IsBuilderEviscerateArmed(context)
+  local arm = self.state.builderEviscerateArm
+  if not arm or not context then
+    return false
+  end
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey or arm.targetKey ~= targetKey or context.comboPoints < 4 then
+    self:ClearBuilderEviscerateArm()
+    return false
+  end
+
+  if context.comboPoints == 4
+    and GetTime() - (arm.armedAt or 0) > (self.builderEviscerateArmTimeout or 5) then
+    self:ClearBuilderEviscerateArm()
+    return false
+  end
+
+  return true
+end
+
+function addon:ArmBuilderEviscerate(context)
+  if not context or context.comboPoints ~= 4 or not self:HasSpell("Eviscerate") then
+    return false
+  end
+
+  if not self:AreBuilderMainBuffsSafe() then
+    return false
+  end
+
+  if self:ShouldMaintainBuilderFlourish(context.comboPoints, context) then
+    return false
+  end
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey then
+    return false
+  end
+
+  self.state.builderEviscerateArm = {
+    targetKey = targetKey,
+    armedAt = GetTime(),
+  }
+  return true
+end
+
+function addon:CanUseBuilderEviscerate(context, allowArmed)
+  if not context or context.comboPoints < 5 or not self:HasSpell("Eviscerate") then
+    return false
+  end
+
+  local armed = allowArmed and self:IsBuilderEviscerateArmed(context)
+  if not armed and not self:AreBuilderMainBuffsSafe() then
+    return false
+  end
+
+  local inRange = self:IsSpellInRangeSafe("Eviscerate", "target")
+  if inRange == 0 then
+    return false
+  end
+
+  if not self:CanCast("Eviscerate") or not self:CanCastWithoutBreakingKickReserve("Eviscerate", context) then
+    return false
+  end
+
+  return true
+end
+
+function addon:TryBuilderEviscerate(context, allowArmed)
+  if not self:CanUseBuilderEviscerate(context, allowArmed) then
+    return false
+  end
+
+  return self:TryCast("Eviscerate")
 end
 
 function addon:TryBuilderFlourishUpkeep(context)
@@ -5874,7 +5971,7 @@ function addon:TargetFallback()
     hasTarget = false
   end
 
-  if hasTarget then
+  if hasTarget and self:IsHostileTarget() then
     return true
   end
 
@@ -5882,8 +5979,12 @@ function addon:TargetFallback()
     return false
   end
 
+  if hasTarget then
+    ClearTarget()
+  end
+
   TargetNearestEnemy()
-  return UnitExists("target") and not UnitIsDead("target")
+  return self:IsHostileTarget()
 end
 
 function addon:StartAttack()
@@ -6044,12 +6145,6 @@ function addon:GetPreferredBuilder(context)
   local mode = RogueAutoDB.builder.mode
   context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
   local modeHint = context and context.mode or self.state.activeRotationMode or "builder"
-  local primaryCandidateSpells = {
-    "Backstab",
-    "Surprise Attack",
-    "Noxious Assault",
-    "Hemorrhage",
-  }
   local candidateSpells = {
     "Backstab",
     "Surprise Attack",
@@ -6097,18 +6192,11 @@ function addon:GetPreferredBuilder(context)
     local bestSpell = nil
     local bestScore = nil
 
-    for _, spellName in ipairs(primaryCandidateSpells) do
+    for _, spellName in ipairs(candidateSpells) do
       local score = self:GetBuilderSpellScore(spellName, context, modeHint)
       if score and (not bestScore or score > bestScore) then
         bestScore = score
         bestSpell = spellName
-      end
-    end
-
-    if not bestSpell then
-      local sinisterScore = self:GetBuilderSpellScore("Sinister Strike", context, modeHint)
-      if sinisterScore then
-        bestSpell = "Sinister Strike"
       end
     end
 
@@ -6167,6 +6255,11 @@ function addon:GetBuilderSpellScore(spellName, context, modeHint)
     return nil
   end
 
+  local inRange = self:IsSpellInRangeSafe(spellName, "target")
+  if inRange == 0 then
+    return nil
+  end
+
   local shortFight = self:IsShortFightContext(context)
   local longFight = self:IsLongFightContext(context)
   local reliableProfile = context and (context.profileConfidence or 0) >= 0.55
@@ -6193,7 +6286,7 @@ function addon:GetBuilderSpellScore(spellName, context, modeHint)
   end
 
   if spellName == "Backstab" then
-    if not self:IsDaggerEquipped() or self:IsBehindBlocked() then
+    if not self:IsDaggerEquipped() or not self:CanAttemptBehindAction() then
       return nil
     end
 
@@ -6390,8 +6483,7 @@ function addon:TryRotationKick()
   return false
 end
 
-function addon:TryEmergencyKidneyInterrupt(mode)
-  local context = self:GetComboPointContext(mode or self.state.activeRotationMode or "finisher")
+function addon:TryEmergencyKidneyInterrupt(context)
   if not self:CanUseKidneyShotInterrupt(context) then
     return false
   end
@@ -6399,8 +6491,7 @@ function addon:TryEmergencyKidneyInterrupt(mode)
   return self:TryCast("Kidney Shot")
 end
 
-function addon:TryEmergencyBlindInterrupt(mode)
-  local context = self:GetComboPointContext(mode or self.state.activeRotationMode or "finisher")
+function addon:TryEmergencyBlindInterrupt(context)
   if not self:CanUseBlindInterrupt(context) then
     return false
   end
@@ -6408,9 +6499,8 @@ function addon:TryEmergencyBlindInterrupt(mode)
   return self:TryCast("Blind")
 end
 
-function addon:TryPreferredBuilder()
-  local modeHint = self.state.activeRotationMode or "builder"
-  local context = self:GetComboPointContext(modeHint)
+function addon:TryPreferredBuilder(context)
+  context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
   local mode = RogueAutoDB.builder.mode
 
   if mode == "auto" and self:ShouldUseBuilderGhostlyStrike(context) then
@@ -6422,12 +6512,6 @@ function addon:TryPreferredBuilder()
   local builder = self:GetPreferredBuilder(context)
   if builder then
     return self:TryCast(builder)
-  end
-
-  if mode ~= "auto" and self:ShouldUseBuilderGhostlyStrike(context) then
-    if self:TryCast("Ghostly Strike") then
-      return true
-    end
   end
 
   return false
@@ -6449,6 +6533,7 @@ function addon:OnPlayerLogin()
 end
 
 function addon:OnCombatStarted()
+  self:ClearBuilderEviscerateArm()
   if not self:IsCombatSessionActive() then
     self:StartCombatSession()
   end
@@ -6461,6 +6546,7 @@ end
 function addon:OnCombatEnded()
   self.state.activeEnemyCast = nil
   self:ClearPendingKidneyShotCheck()
+  self:ClearBuilderEviscerateArm()
   self:FinalizeLearningFight("combat_end")
   self:FinishCombatSession()
   self:UpdateComboPointFrame(true)
@@ -6621,6 +6707,7 @@ function addon:OnTargetChanged()
   self:UpdateComboPointFrame(true)
   self.state.activeEnemyCast = nil
   self:ClearPendingKidneyShotCheck()
+  self:ClearBuilderEviscerateArm()
   self.state.currentTargetKey = nil
   self.state.learnedTargetKey = nil
   self.state.lastSpellAttempt = nil
@@ -6631,6 +6718,10 @@ end
 function addon:OnComboPointsChanged(unit)
   if unit and unit ~= "player" then
     return
+  end
+
+  if self:GetComboPoints() < 4 then
+    self:ClearBuilderEviscerateArm()
   end
 
   self:UpdateComboPointFrame(true)

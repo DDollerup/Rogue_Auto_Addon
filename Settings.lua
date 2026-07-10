@@ -85,7 +85,7 @@ addon.macroDefinitions = {
   {
     id = "builder",
     macro = "/script RogueAuto:Builder()",
-    description = "Builder: builds combo points with the best legal builder, auto-Kicks active casts, keeps Slice and Dice up, can use emergency Kidney Shot when Kick is unavailable and the target is not learned as stun-immune, and can optionally maintain Flourish.",
+    description = "Builder: prioritizes Feint when grouped and targeted, handles interrupts, maintains Slice and Dice and Envenom, can optionally maintain Flourish, scores the best legal builder, and uses Eviscerate at 5 combo points when both main buffs are safe.",
   },
   {
     id = "opener",
@@ -134,7 +134,7 @@ addon.settingDefinitions = {
   builderFlourish = {
     path = { "builder", "useFlourish" },
     label = "Maintain Flourish",
-    help = "Allows Builder() to refresh Flourish after Slice and Dice upkeep.",
+    help = "Allows Builder() to refresh Flourish after Slice and Dice and Envenom upkeep and before starting a new Eviscerate cycle.",
   },
   highlightDuration = {
     path = { "notifications", "highlightDuration" },
@@ -155,7 +155,7 @@ addon.uiSections = {
   {
     title = "Builder",
     kind = "builder",
-    help = "Auto scores Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Builder() maintains Slice and Dice, can optionally maintain Flourish, and leaves direct damage finishers to the player.",
+    help = "Auto compares Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Builder() prioritizes Feint when grouped and targeted, maintains Slice and Dice and Envenom, can optionally maintain Flourish, and sets up safe 5-point Eviscerates.",
     items = { "builderFlourish", "builderGhostlyStrike" },
   },
   {

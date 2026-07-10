@@ -1,23 +1,19 @@
 local addon = RogueAuto
 
-local function runSharedCombatPreamble(self, mode)
+local function runSharedCombatPreamble(self, context)
   if self:TryRotationKick() then
     return true
   end
 
-  if self:TryEmergencyKidneyInterrupt(mode) then
+  if self:TryEmergencyKidneyInterrupt(context) then
     return true
   end
 
-  if self:TryEmergencyBlindInterrupt(mode) then
+  if self:TryEmergencyBlindInterrupt(context) then
     return true
   end
 
   if self:TryRiposte() then
-    return true
-  end
-
-  if mode == "builder" and self:TryBuilderFeint() then
     return true
   end
 
@@ -26,13 +22,12 @@ end
 
 function addon:PrepareAction(needsTarget)
   self:InitDB()
-  self:RefreshKnownSpells()
 
   if needsTarget and not self:TargetFallback() then
     return false
   end
 
-  if UnitExists("target") and not UnitIsDead("target") then
+  if self:IsHostileTarget() then
     self:StartAttack()
   end
 
@@ -40,7 +35,7 @@ function addon:PrepareAction(needsTarget)
     return true
   end
 
-  return UnitExists("target") and not UnitIsDead("target")
+  return self:IsHostileTarget()
 end
 
 function addon:Builder()
@@ -50,20 +45,47 @@ function addon:Builder()
     return
   end
 
-  if runSharedCombatPreamble(self, "builder") then
+  if self:TryBuilderFeint() then
     return
   end
 
   local context = self:GetComboPointContext("builder")
+  if runSharedCombatPreamble(self, context) then
+    return
+  end
+
+  if self:IsBuilderEviscerateArmed(context) then
+    if context.comboPoints >= 5 then
+      self:TryBuilderEviscerate(context, true)
+      return
+    end
+
+    if context.comboPoints == 4 then
+      self:TryPreferredBuilder(context)
+      return
+    end
+  end
+
   if self:TryBuilderCombatBuffUpkeep(context) then
     return
   end
 
-  if self:TryBuilderFlourishUpkeep(context) then
+  if self:ShouldMaintainBuilderFlourish(context.comboPoints, context) then
+    self:TryBuilderFlourishUpkeep(context)
     return
   end
 
-  self:TryPreferredBuilder()
+  if context.comboPoints >= 5 then
+    self:TryBuilderEviscerate(context, false)
+    return
+  end
+
+  if context.comboPoints == 4 and self:ArmBuilderEviscerate(context) then
+    self:TryPreferredBuilder(context)
+    return
+  end
+
+  self:TryPreferredBuilder(context)
 end
 
 function addon:Opener(hint)
