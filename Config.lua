@@ -481,6 +481,23 @@ local function createMacroControl(parent, y)
   return control, control:GetHeight()
 end
 
+local function runRoleplayTest()
+  addon:Print("Roleplay test control activated.")
+  if type(addon.PreviewRoleplayEmote) ~= "function" then
+    addon:Print("Roleplay test failed: Roleplay.lua is not loaded.")
+    return false
+  end
+
+  local success, result = pcall(function()
+    return addon:PreviewRoleplayEmote()
+  end)
+  if not success then
+    addon:Print("Roleplay test failed with a Lua error: " .. tostring(result))
+    return false
+  end
+  return result == true
+end
+
 local function createRoleplayTestControl(parent, y)
   local control = CreateFrame("Frame", nil, parent)
   control:SetWidth(controlWidth)
@@ -492,8 +509,10 @@ local function createRoleplayTestControl(parent, y)
   button:SetHeight(24)
   button:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
   button:SetText("Send Test Emote")
+  button:EnableMouse(true)
+  button:RegisterForClicks("LeftButtonUp")
   button:SetScript("OnClick", function()
-    addon:PreviewRoleplayEmote()
+    runRoleplayTest()
   end)
 
   return control, 30
@@ -607,6 +626,7 @@ local function printHelp()
   addon:Print(primarySlashCommand .. " opens config.")
   addon:Print(primarySlashCommand .. " help")
   addon:Print(primarySlashCommand .. " reset")
+  addon:Print(primarySlashCommand .. " rptest")
   for _, definition in ipairs(addon:GetSlashDefinitions()) do
     addon:Print(primarySlashCommand .. " " .. definition.command .. " " .. definition.usage)
   end
@@ -678,6 +698,11 @@ SlashCmdList.ROGUEAUTO = function(message)
     if addon.UpdateMinimapButtonPosition then
       addon:UpdateMinimapButtonPosition()
     end
+    return
+  end
+
+  if command == "rptest" then
+    runRoleplayTest()
     return
   end
 

@@ -301,6 +301,26 @@ function addon:ChooseRoleplayPhrase(personality, eventKey)
   return phrases[index]
 end
 
+function addon:SendRoleplayMessage(message, reportResult)
+  if not SendChatMessage then
+    if reportResult then
+      self:Print("Roleplay send failed: SendChatMessage is unavailable.")
+    end
+    return false
+  end
+
+  local success, errorMessage = pcall(SendChatMessage, message, "EMOTE")
+  if not success then
+    self:Print("Roleplay send failed: " .. tostring(errorMessage or "unknown client error"))
+    return false
+  end
+
+  if reportResult then
+    self:Print("Roleplay test emote was passed to the EMOTE channel.")
+  end
+  return true
+end
+
 function addon:TryRoleplayEmote(eventKey, context, guaranteed)
   local settings = RogueAutoDB and RogueAutoDB.roleplay
   if not settings or not settings.enabled or not SendChatMessage then
@@ -335,23 +355,21 @@ function addon:TryRoleplayEmote(eventKey, context, guaranteed)
     return false
   end
 
-  SendChatMessage(message, "EMOTE")
+  if not self:SendRoleplayMessage(message, false) then
+    return false
+  end
   state.lastEmoteAt = now
   state.lastEventAt[eventKey] = now
   return true
 end
 
 function addon:PreviewRoleplayEmote()
+  self:Print("Running Roleplay emote test...")
   local settings = RogueAutoDB and RogueAutoDB.roleplay
   if not settings or not settings.enabled then
     self:Print("Roleplay emotes are Off. Select On before testing.")
     return false
   end
-  if not SendChatMessage then
-    self:Print("The client SendChatMessage API is unavailable.")
-    return false
-  end
-
   local phrase = self:ChooseRoleplayPhrase(settings.personality or "silent", "victory")
   local message = self:FormatRoleplayPhrase(phrase, { targetName = UnitName("target") or "the mark" })
   if not message or message == "" then
@@ -359,9 +377,7 @@ function addon:PreviewRoleplayEmote()
     return false
   end
 
-  SendChatMessage(message, "EMOTE")
-  self:Print("Test emote sent using the " .. tostring(settings.personality or "silent") .. " personality.")
-  return true
+  return self:SendRoleplayMessage(message, true)
 end
 
 function addon:ExtractRoleplaySpellResult(message)
