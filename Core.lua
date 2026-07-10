@@ -7,6 +7,9 @@ addon.refreshWindow = {
   playerBuff = 2,
   targetDebuff = 3,
 }
+addon.builderBuffEarlyRefreshWindow = 4
+addon.builderBuffEmergencyRefreshWindow = 1.5
+addon.envenomMinimumRemainingFightDuration = 3
 addon.observedDebuffDurations = {
   ["Rupture"] = 10,
   ["Shadow of Death"] = 12,
@@ -4852,13 +4855,19 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
   local refreshWindow = self.refreshWindow.playerBuff or 2
   local active, remaining = self:FindPlayerBuff(spellName)
   remaining = remaining or 0
+  local earlyRefreshWindow = self.builderBuffEarlyRefreshWindow or 4
+  local emergencyRefreshWindow = self.builderBuffEmergencyRefreshWindow or 1.5
 
   if spellName == "Slice and Dice" then
     if not active then
       return comboPoints >= 1
     end
 
-    if remaining <= 3 then
+    if remaining <= emergencyRefreshWindow then
+      return comboPoints >= 1
+    end
+
+    if remaining <= earlyRefreshWindow then
       return comboPoints >= 2
     end
 
@@ -4866,7 +4875,8 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
   end
 
   if spellName == "Envenom" then
-    if remainingFightDuration > 0 and remainingFightDuration < 5 then
+    local minimumRemainingFightDuration = self.envenomMinimumRemainingFightDuration or 3
+    if remainingFightDuration > 0 and remainingFightDuration < minimumRemainingFightDuration then
       return false
     end
 
@@ -4874,7 +4884,11 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
       return comboPoints >= 1
     end
 
-    if remaining <= 3 then
+    if remaining <= emergencyRefreshWindow then
+      return comboPoints >= 1
+    end
+
+    if remaining <= earlyRefreshWindow then
       return comboPoints >= 2
     end
 
@@ -4922,6 +4936,52 @@ function addon:TryBuilderEnvenomUpkeep(context)
   end
 
   return self:TryCast("Envenom")
+end
+
+function addon:GetBuilderCombatBuffUpkeepSpell(context)
+  context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
+  local comboPoints = context and context.comboPoints or self:GetComboPoints()
+  local shouldRefreshSnD = self:ShouldRefreshBuilderBuff("Slice and Dice", comboPoints, context)
+  local shouldRefreshEnvenom = self:ShouldRefreshBuilderBuff("Envenom", comboPoints, context)
+
+  if shouldRefreshSnD and not shouldRefreshEnvenom then
+    return "Slice and Dice"
+  end
+
+  if shouldRefreshEnvenom and not shouldRefreshSnD then
+    return "Envenom"
+  end
+
+  if not shouldRefreshSnD then
+    return nil
+  end
+
+  local sndActive, sndRemaining = self:FindPlayerBuff("Slice and Dice")
+  local envenomActive, envenomRemaining = self:FindPlayerBuff("Envenom")
+
+  if sndActive ~= envenomActive then
+    if not sndActive then
+      return "Slice and Dice"
+    end
+    return "Envenom"
+  end
+
+  sndRemaining = sndRemaining or 0
+  envenomRemaining = envenomRemaining or 0
+  if sndRemaining <= envenomRemaining then
+    return "Slice and Dice"
+  end
+
+  return "Envenom"
+end
+
+function addon:TryBuilderCombatBuffUpkeep(context)
+  local spellName = self:GetBuilderCombatBuffUpkeepSpell(context)
+  if not spellName then
+    return false
+  end
+
+  return self:TryCast(spellName)
 end
 
 function addon:TryBuilderFlourishUpkeep(context)

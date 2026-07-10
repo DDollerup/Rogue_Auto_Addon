@@ -55,11 +55,7 @@ function addon:Builder()
   end
 
   local context = self:GetComboPointContext("builder")
-  if self:TryBuilderEnvenomUpkeep(context) then
-    return
-  end
-
-  if self:TryBuilderSliceAndDiceUpkeep(context) then
+  if self:TryBuilderCombatBuffUpkeep(context) then
     return
   end
 
