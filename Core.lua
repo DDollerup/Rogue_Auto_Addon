@@ -130,6 +130,11 @@ addon.defaults = {
   notifications = {
     highlightDuration = 8,
   },
+  roleplay = {
+    enabled = false,
+    personality = "silent",
+    frequency = 35,
+  },
   learning = {
     normalMobs = {},
     eliteMobs = {},
@@ -178,6 +183,13 @@ addon.state = {
   pendingPlayerBuffs = {},
   lastExplicitEnergyGainAt = 0,
   lastExplicitEnergyGainMessage = nil,
+  roleplay = {
+    lastEmoteAt = 0,
+    lastEventAt = {},
+    lastPhraseIndex = {},
+    lastDamageTarget = nil,
+    lastDamageAt = 0,
+  },
 }
 
 addon.damageCategories = {
@@ -925,6 +937,16 @@ function addon:MigrateSettings()
   if RogueAutoDB.builder.useFlourish == nil then
     RogueAutoDB.builder.useFlourish = false
   end
+
+  local roleplay = RogueAutoDB.roleplay
+  if roleplay then
+    if roleplay.personality ~= "silent"
+      and roleplay.personality ~= "scoundrel"
+      and roleplay.personality ~= "venom" then
+      roleplay.personality = "silent"
+    end
+    roleplay.frequency = math.max(10, math.min(tonumber(roleplay.frequency) or 35, 100))
+  end
 end
 
 function addon:GetHighlightDuration()
@@ -1406,6 +1428,10 @@ function addon:ExtractSpellSchool(message)
 end
 
 function addon:OnCombatSelfHit(message)
+  if self.OnRoleplayCombatMessage then
+    self:OnRoleplayCombatMessage(message)
+  end
+
   local amount = self:ExtractDamageAmount(message)
   if amount then
     self:RecordDamageEvent("melee", nil, "Physical", amount)
@@ -1417,6 +1443,9 @@ function addon:OnSpellSelfDamage(message)
     return
   end
 
+  if self.OnRoleplayCombatMessage then
+    self:OnRoleplayCombatMessage(message)
+  end
   self:OnFriendlySpellMessage(message)
 
   if self:OnCombatEnergyMessage(message) then
@@ -1475,6 +1504,10 @@ function addon:OnSpellPeriodicDamage(message)
     return
   end
 
+  if self.OnRoleplayCombatMessage then
+    self:OnRoleplayCombatMessage(message)
+  end
+
   local amount = self:ExtractDamageAmount(message)
   if not amount then
     return
@@ -1489,10 +1522,12 @@ function addon:OnSpellPeriodicDamage(message)
 end
 
 function addon:BeginPickPocketLootSession()
+  local lastAttempt = self.state.lastSpellAttempt
   self.state.pickPocketLootSession = {
     entries = {},
     seen = {},
     finishAt = GetTime() + 3,
+    targetName = lastAttempt and lastAttempt.name == "Pick Pocket" and lastAttempt.targetName or UnitName("target"),
   }
 end
 
@@ -1553,11 +1588,16 @@ function addon:FinishPickPocketLootSession()
   end
 
   local entries = session.entries
+  local wasEmpty = table.getn(entries) == 0
   if table.getn(entries) == 0 then
     table.insert(entries, {
       text = "Nothing",
       icon = self.pickPocketFallbackTexture,
     })
+  end
+
+  if self.OnRoleplayPickPocketSuccess then
+    self:OnRoleplayPickPocketSuccess(wasEmpty, session.targetName)
   end
 
   self:ShowNotice("pickPocket", "Pick Pocket", entries)
@@ -6303,6 +6343,7 @@ function addon:Cast(name)
   self.state.lastSpellAttempt = {
     name = name,
     targetKey = self:GetTargetKey(),
+    targetName = UnitName("target"),
     at = GetTime(),
   }
   CastSpellByName(name)
@@ -6754,6 +6795,9 @@ function addon:OnCombatStarted()
 end
 
 function addon:OnCombatEnded()
+  if self.OnRoleplayCombatEnded then
+    self:OnRoleplayCombatEnded()
+  end
   self.state.activeEnemyCast = nil
   self.state.suppressedEnemyCastBar = nil
   self:ClearPendingKidneyShotCheck()
@@ -6843,6 +6887,10 @@ function addon:OnUiError(message)
   local lastAttempt = self.state.lastSpellAttempt
   local recentAttempt = lastAttempt and lastAttempt.at and (GetTime() - lastAttempt.at) <= 1
 
+  if self.OnRoleplayPickPocketFailure then
+    self:OnRoleplayPickPocketFailure(message)
+  end
+
   if recentAttempt and (string.find(lower, "behind your target") or string.find(lower, "must be behind")) then
     if lastAttempt.name == "Backstab" or lastAttempt.name == "Garrote" or lastAttempt.name == "Ambush" then
       self:MarkBehindBlocked(lastAttempt.targetKey)
@@ -6910,6 +6958,18 @@ function addon:OnHostileSpellMessage(message)
   self:OnHostileSpellOutcomeMessage(message)
 end
 
+function addon:OnSpellFailedLocalPlayer(message)
+  if self.OnRoleplayPickPocketFailure then
+    self:OnRoleplayPickPocketFailure(message)
+  end
+end
+
+function addon:OnHostileDeath(message)
+  if self.OnRoleplayHostileDeath then
+    self:OnRoleplayHostileDeath(message)
+  end
+end
+
 function addon:OnTargetChanged()
   self:PruneTrackedDebuffs()
   self:PrunePendingTargetDebuffs()
@@ -6951,6 +7011,7 @@ frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
 frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
 frame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 frame:RegisterEvent("CHAT_MSG_SPELL_SELF_BUFF")
+frame:RegisterEvent("CHAT_MSG_SPELL_FAILED_LOCALPLAYER")
 frame:RegisterEvent("CHAT_MSG_SPELL_PARTY_DAMAGE")
 frame:RegisterEvent("CHAT_MSG_SPELL_PARTY_BUFF")
 frame:RegisterEvent("CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE")
@@ -6977,6 +7038,7 @@ frame:RegisterEvent("LOOT_OPENED")
 frame:RegisterEvent("LOOT_CLOSED")
 frame:RegisterEvent("CHAT_MSG_LOOT")
 frame:RegisterEvent("CHAT_MSG_MONEY")
+frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 
 frame:SetScript("OnEvent", function()
@@ -7003,6 +7065,11 @@ frame:SetScript("OnEvent", function()
   elseif event == "CHAT_MSG_SPELL_SELF_BUFF" then
     addon:OnSelfBuffMessage(arg1)
     addon:OnFriendlySpellMessage(arg1)
+    if addon.OnRoleplaySelfBuffMessage then
+      addon:OnRoleplaySelfBuffMessage(arg1)
+    end
+  elseif event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" then
+    addon:OnSpellFailedLocalPlayer(arg1)
   elseif event == "CHAT_MSG_SPELL_PARTY_DAMAGE"
     or event == "CHAT_MSG_SPELL_PARTY_BUFF"
     or event == "CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE"
@@ -7015,6 +7082,9 @@ frame:SetScript("OnEvent", function()
     addon:OnFriendlySpellMessage(arg1)
   elseif event == "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS" then
     addon:OnSelfBuffMessage(arg1)
+    if addon.OnRoleplaySelfBuffMessage then
+      addon:OnRoleplaySelfBuffMessage(arg1)
+    end
   elseif event == "CHAT_MSG_SPELL_AURA_GONE_SELF" then
     addon:OnSelfBuffFade(arg1)
   elseif event == "CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE"
@@ -7038,6 +7108,8 @@ frame:SetScript("OnEvent", function()
     addon:OnChatLoot(arg1)
   elseif event == "CHAT_MSG_MONEY" then
     addon:OnChatMoney(arg1)
+  elseif event == "CHAT_MSG_COMBAT_HOSTILE_DEATH" then
+    addon:OnHostileDeath(arg1)
   elseif event == "PLAYER_TARGET_CHANGED" then
     addon:OnTargetChanged()
   end

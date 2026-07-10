@@ -81,6 +81,12 @@ addon.builderOptions = {
   { key = "noxious", label = "Noxious" },
 }
 
+addon.roleplayPersonalityOptions = {
+  { key = "silent", label = "Silent Blade" },
+  { key = "scoundrel", label = "Scoundrel" },
+  { key = "venom", label = "Venomous" },
+}
+
 addon.macroDefinitions = {
   {
     id = "builder",
@@ -149,6 +155,39 @@ addon.settingDefinitions = {
       return "Highlight duration: " .. tostring(value) .. " sec"
     end,
   },
+  roleplayEnabled = {
+    path = { "roleplay", "enabled" },
+    label = "Enable nearby RP emotes",
+    help = "Sends occasional custom /emote messages only after confirmed actions and outcomes.",
+  },
+  roleplayPersonality = {
+    path = { "roleplay", "personality" },
+    label = "Personality",
+    help = "Silent Blade is restrained, Scoundrel is playful, and Venomous is dark and poison-focused.",
+    options = addon.roleplayPersonalityOptions,
+    normalize = function(self, value)
+      for _, option in ipairs(self.roleplayPersonalityOptions) do
+        if option.key == value then
+          return value
+        end
+      end
+      return "silent"
+    end,
+  },
+  roleplayFrequency = {
+    path = { "roleplay", "frequency" },
+    label = "Combat emote chance",
+    help = "Pick Pocket outcomes and victories always qualify; combat abilities use this chance and are still throttled.",
+    min = 10,
+    max = 100,
+    step = 5,
+    normalize = function(self, value)
+      return self:ClampValue(math.floor(value + 0.5), 10, 100)
+    end,
+    display = function(value)
+      return "Combat emote chance: " .. tostring(value) .. "%"
+    end,
+  },
 }
 
 addon.uiSections = {
@@ -171,6 +210,11 @@ addon.uiSections = {
   {
     title = "Highlights",
     items = { "highlightDuration" },
+  },
+  {
+    title = "Roleplay",
+    help = "Adds throttled nearby /emote flavor for confirmed rogue actions, ranged attacks, Pick Pocket outcomes, and victories.",
+    items = { "roleplayEnabled", "roleplayPersonality", "roleplayFrequency" },
   },
   { title = "Macros", kind = "macros" },
 }
@@ -217,6 +261,29 @@ addon.slashCommandDefinitions = {
     usage = "on|off",
     success = function(value)
       return "Builder Flourish upkeep " .. (value and "enabled" or "disabled") .. "."
+    end,
+  },
+  {
+    command = "rp",
+    type = "toggle",
+    setting = "roleplayEnabled",
+    usage = "on|off",
+    success = function(value)
+      return "Roleplay emotes " .. (value and "enabled" or "disabled") .. "."
+    end,
+  },
+  {
+    command = "personality",
+    type = "enum",
+    setting = "roleplayPersonality",
+    usage = "silent|scoundrel|venom",
+    values = {
+      silent = "silent",
+      scoundrel = "scoundrel",
+      venom = "venom",
+    },
+    success = function(value)
+      return "Roleplay personality set to " .. value .. "."
     end,
   },
 }

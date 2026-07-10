@@ -110,6 +110,7 @@ local sectionIcons = {
   ["Defensives"] = "Interface\\Icons\\Spell_Shadow_ShadowWard",
   ["Thresholds"] = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
   ["Highlights"] = "Interface\\Icons\\INV_Misc_Spyglass_02",
+  ["Roleplay"] = "Interface\\Icons\\INV_Misc_Mask_01",
   ["Macros"] = "Interface\\Icons\\INV_Misc_Note_01",
   ["Misc"] = "Interface\\Icons\\INV_Misc_Gear_01",
   macros = "Interface\\Icons\\INV_Misc_Note_01",

@@ -6,6 +6,7 @@
 ## SavedVariables: RogueAutoDB
 
 Core.lua
+Roleplay.lua
 Settings.lua
 Actions.lua
 Config.lua
