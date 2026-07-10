@@ -160,6 +160,23 @@ addon.settingDefinitions = {
     label = "Enable nearby RP emotes",
     help = "Sends occasional custom /emote messages only after confirmed actions and outcomes.",
   },
+  roleplayEnabledMode = {
+    label = "RP emotes",
+    help = "Off is the safe default. On sends throttled nearby /emote messages after confirmed actions.",
+    options = {
+      { key = "off", label = "Off" },
+      { key = "on", label = "On" },
+    },
+    get = function(self)
+      return RogueAutoDB.roleplay.enabled and "on" or "off"
+    end,
+    set = function(self, value)
+      RogueAutoDB.roleplay.enabled = value == "on"
+    end,
+    normalize = function(self, value)
+      return value == "on" and "on" or "off"
+    end,
+  },
   roleplayPersonality = {
     path = { "roleplay", "personality" },
     label = "Personality",
@@ -192,6 +209,11 @@ addon.settingDefinitions = {
 
 addon.uiSections = {
   {
+    title = "Roleplay",
+    help = "Choose Off or On, then select a personality. Emotes cover Pick Pocket, finishers, Kick, control, openers, Vanish, Sap, Shoot/Throw, and victories.",
+    items = { "roleplayEnabledMode", "roleplayPersonality", "roleplayFrequency" },
+  },
+  {
     title = "Builder",
     kind = "builder",
     help = "Auto compares Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Builder() prioritizes Feint when grouped and targeted, maintains Slice and Dice and Envenom, can optionally maintain Flourish, and sets up safe 5-point Eviscerates.",
@@ -210,11 +232,6 @@ addon.uiSections = {
   {
     title = "Highlights",
     items = { "highlightDuration" },
-  },
-  {
-    title = "Roleplay",
-    help = "Adds throttled nearby /emote flavor for confirmed rogue actions, ranged attacks, Pick Pocket outcomes, and victories.",
-    items = { "roleplayEnabled", "roleplayPersonality", "roleplayFrequency" },
   },
   { title = "Macros", kind = "macros" },
 }

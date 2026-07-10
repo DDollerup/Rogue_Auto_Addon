@@ -1,6 +1,9 @@
 local addon = RogueAuto
 
-SLASH_ROGUEAUTO1 = "/ra"
+SLASH_ROGUEAUTO1 = "/rogueauto"
+SLASH_ROGUEAUTO2 = "/rga"
+
+local primarySlashCommand = "/rga"
 
 local frame = CreateFrame("Frame", "RogueAutoConfigFrame", UIParent)
 addon.configFrame = frame
@@ -578,18 +581,18 @@ function addon:ToggleConfig()
 end
 
 local function printHelp()
-  addon:Print("/ra opens config.")
-  addon:Print("/ra help")
-  addon:Print("/ra reset")
+  addon:Print(primarySlashCommand .. " opens config.")
+  addon:Print(primarySlashCommand .. " help")
+  addon:Print(primarySlashCommand .. " reset")
   for _, definition in ipairs(addon:GetSlashDefinitions()) do
-    addon:Print("/ra " .. definition.command .. " " .. definition.usage)
+    addon:Print(primarySlashCommand .. " " .. definition.command .. " " .. definition.usage)
   end
 end
 
 local function applySlashDefinition(definition, argument)
   if definition.type == "toggle" then
     if argument ~= "on" and argument ~= "off" then
-      addon:Print("Usage: /ra " .. definition.command .. " " .. definition.usage)
+      addon:Print("Usage: " .. primarySlashCommand .. " " .. definition.command .. " " .. definition.usage)
       return
     end
 
@@ -603,7 +606,7 @@ local function applySlashDefinition(definition, argument)
   if definition.type == "enum" then
     local mappedValue = definition.values[argument]
     if mappedValue == nil then
-      addon:Print("Usage: /ra " .. definition.command .. " " .. definition.usage)
+      addon:Print("Usage: " .. primarySlashCommand .. " " .. definition.command .. " " .. definition.usage)
       return
     end
 
@@ -616,7 +619,7 @@ local function applySlashDefinition(definition, argument)
   if definition.type == "number" then
     local value = tonumber(argument)
     if not value then
-      addon:Print("Usage: /ra " .. definition.command .. " " .. definition.usage)
+      addon:Print("Usage: " .. primarySlashCommand .. " " .. definition.command .. " " .. definition.usage)
       return
     end
 
@@ -662,7 +665,7 @@ SlashCmdList.ROGUEAUTO = function(message)
     end
   end
 
-  addon:Print("Unknown command. Use /ra help")
+  addon:Print("Unknown command. Use " .. primarySlashCommand .. " help")
 end
 
 local minimapButton = CreateFrame("Button", "RogueAutoMinimapButton", Minimap)
