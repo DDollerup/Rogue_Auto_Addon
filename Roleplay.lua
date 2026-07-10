@@ -106,6 +106,8 @@ addon.roleplayPhrases = {
       "upgrades {target} to the lighter, more aerodynamic model.",
       "removes several coins from {target} in the interest of public safety.",
       "borrows from {target} under extremely flexible repayment terms.",
+      "rebalances {target}'s cargo manifest in favor of a captain currently without a ship.",
+      "liberates a few coins before they can sink with their present owner.",
     },
     pick_empty = {
       "finds {target}'s pockets as empty as their prospects.",
@@ -115,6 +117,8 @@ addon.roleplayPhrases = {
       "finds an IOU addressed to 'the next thief.'",
       "returns {target}'s lint out of professional courtesy.",
       "checks the other pocket in case poverty was merely asymmetrical.",
+      "charts {target}'s pockets and marks the map, 'Here Be Nothing.'",
+      "finds {target}'s finances entirely becalmed.",
     },
     pick_failure = {
       "looks deeply offended that {target} noticed.",
@@ -124,6 +128,8 @@ addon.roleplayPhrases = {
       "claims to have been measuring {target} for emergency trousers.",
       "looks appalled to discover that {target} considers pockets private property.",
       "whistles innocently with all the confidence of someone who cannot whistle.",
+      "declares the incident a misunderstanding of maritime salvage law.",
+      "withdraws with the dignity of a captain leaving the wrong cabin.",
     },
     envenom = {
       "adds a little something special before introducing the blade to {target}.",
@@ -133,6 +139,8 @@ addon.roleplayPhrases = {
       "applies a poison labelled 'Probably Fine.'",
       "offers {target} a complimentary tasting of the house venom.",
       "mentions that the antidote is available in the considerably more expensive package.",
+      "anoints the blade with something the apothecary begged not to discuss.",
+      "toasts {target} with a blade carrying a suspiciously nautical vintage.",
     },
     eviscerate = {
       "collects a particularly personal debt from {target}.",
@@ -142,6 +150,8 @@ addon.roleplayPhrases = {
       "submits {target}'s resignation in triplicate, using a knife.",
       "demonstrates the important distinction between cutpurse and purse-cutter.",
       "concludes negotiations with the traditional aggressive punctuation.",
+      "steers the blade neatly through a gap in {target}'s defenses.",
+      "settles the dispute by declaring {target} mutinous and acting accordingly.",
     },
     kick = {
       "objects to {target}'s speech with a well-placed boot.",
@@ -151,6 +161,8 @@ addon.roleplayPhrases = {
       "denies {target} planning permission for further magic.",
       "reminds {target} that uninterrupted casting was never included in the contract.",
       "returns {target}'s spell to the sender, unfinished and slightly dented.",
+      "keelhauls {target}'s spell before it can leave the harbor.",
+      "corrects {target}'s casting posture with a boot and unsolicited seamanship.",
     },
     gouge = {
       "wins the staring contest rather decisively.",
@@ -160,6 +172,8 @@ addon.roleplayPhrases = {
       "performs an unscheduled warranty check on {target}'s depth perception.",
       "points out something fascinating immediately behind {target}'s eyeball.",
       "temporarily reduces {target}'s available viewing options.",
+      "checks behind {target}'s eye for a misplaced piece of treasure.",
+      "adjusts the compass using {target}'s depth perception.",
     },
     blind = {
       "throws a little mystery directly into {target}'s eyes.",
@@ -169,6 +183,8 @@ addon.roleplayPhrases = {
       "deploys a carefully curated selection of artisanal pocket dust.",
       "turns down the brightness on {target} without asking.",
       "helps {target} appreciate the fight from an entirely audio-based perspective.",
+      "produces a private fog bank from a surprisingly small pocket.",
+      "orders {target} to navigate by stars that are suddenly unavailable.",
     },
     ambush = {
       "appears behind {target} right on the punchline.",
@@ -178,6 +194,8 @@ addon.roleplayPhrases = {
       "appears behind {target} for a surprise performance review.",
       "arrives without an appointment and immediately begins the examination.",
       "demonstrates that personal space is mostly a matter of opinion.",
+      "boards {target} from the stern without declaring any useful intentions.",
+      "emerges from the shadows like a pirate following a deeply disputed map.",
     },
     garrote = {
       "helps {target} keep the next complaint brief.",
@@ -187,6 +205,8 @@ addon.roleplayPhrases = {
       "helps {target} discover a much quieter indoor voice.",
       "tightens the discussion until {target} runs out of counterarguments.",
       "offers {target} a necklace from the extremely limited strangulation collection.",
+      "ties a nautical knot around {target}'s remaining objections.",
+      "demonstrates that rope remains persuasive even this far from the sea.",
     },
     cheap_shot = {
       "fights dirty because clean fighting costs extra.",
@@ -196,6 +216,8 @@ addon.roleplayPhrases = {
       "delivers a blow with no visible fees, only hidden ones.",
       "proves that honor is simply another unnecessary operating expense.",
       "strikes below both the belt and the recommended retail price.",
+      "cites an extremely convenient footnote in the pirate code.",
+      "fights as fairly as the sea is dry.",
     },
     vanish = {
       "remembers an urgent appointment somewhere less dangerous.",
@@ -205,6 +227,8 @@ addon.roleplayPhrases = {
       "demonstrates the advanced technique of becoming someone else's problem.",
       "leaves abruptly, pursued by consequences and several unpaid invoices.",
       "disappears before anyone can assign blame correctly.",
+      "abandons ship despite the notable absence of a ship.",
+      "sails over a horizon conveniently located three steps away.",
     },
     sap = {
       "invites {target} to take an unscheduled nap.",
@@ -214,6 +238,8 @@ addon.roleplayPhrases = {
       "conducts a surprise pillow inspection without providing a pillow.",
       "places {target} on temporary leave, minus the pay.",
       "switches {target} off and looks around for the instruction manual.",
+      "sends {target} below decks for a nap, deck not included.",
+      "declares shore leave for {target} and enforces it immediately.",
     },
     ranged = {
       "sends {target} a sharp little note by air mail.",
@@ -223,6 +249,8 @@ addon.roleplayPhrases = {
       "files a complaint with {target} by air mail.",
       "participates in the violence remotely.",
       "sends {target} something sharp with postage due.",
+      "fires a warning shot suspiciously well aimed at {target}.",
+      "sends steel across the distance under a flag of vague hostility.",
     },
     victory = {
       "checks the fallen foe for a gratuity.",
@@ -232,6 +260,8 @@ addon.roleplayPhrases = {
       "marks the matter 'Resolved' on an imaginary clipboard.",
       "bows to an audience that has become noticeably less responsive.",
       "dusts off both hands and announces absolutely nothing, professionally.",
+      "claims salvage rights and declines to explain the applicable law.",
+      "looks for a ship, a crew, and a plausible alibi, in that order.",
     },
   },
   venom = {
