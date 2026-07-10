@@ -70,6 +70,37 @@ addon.kickInterruptSpells = {
   ["dark mending"] = true,
 }
 
+addon.castStoppingControlSpells = {
+  ["bash"] = true,
+  ["blackout"] = true,
+  ["blind"] = true,
+  ["cheap shot"] = true,
+  ["concussion blow"] = true,
+  ["counterspell - silenced"] = true,
+  ["death coil"] = true,
+  ["fear"] = true,
+  ["freezing trap effect"] = true,
+  ["gouge"] = true,
+  ["hammer of justice"] = true,
+  ["impact"] = true,
+  ["improved concussive shot"] = true,
+  ["intercept stun"] = true,
+  ["intimidating shout"] = true,
+  ["kidney shot"] = true,
+  ["polymorph"] = true,
+  ["pounce"] = true,
+  ["psychic scream"] = true,
+  ["repentance"] = true,
+  ["sap"] = true,
+  ["scatter shot"] = true,
+  ["seduction"] = true,
+  ["silence"] = true,
+  ["silenced"] = true,
+  ["spell lock"] = true,
+  ["war stomp"] = true,
+  ["wyvern sting"] = true,
+}
+
 addon.defaults = {
   targeting = {
     nearestFallback = true,
@@ -133,6 +164,7 @@ addon.state = {
   learnedTargetKey = nil,
   learningFight = nil,
   activeEnemyCast = nil,
+  suppressedEnemyCastBar = nil,
   pendingKidneyShotCheck = nil,
   builderEviscerateArm = nil,
   activeRotationMode = nil,
@@ -1384,6 +1416,8 @@ function addon:OnSpellSelfDamage(message)
   if not message then
     return
   end
+
+  self:OnFriendlySpellMessage(message)
 
   if self:OnCombatEnergyMessage(message) then
     return
@@ -3592,14 +3626,31 @@ function addon:PruneActiveEnemyCast()
   end
 
   if castInfo.expiresAt and castInfo.expiresAt <= GetTime() then
-    self.state.activeEnemyCast = nil
+    if castInfo.source == "castbar" then
+      self.state.suppressedEnemyCastBar = {
+        targetKey = castInfo.targetKey,
+        spellName = castInfo.spellName,
+      }
+    end
+    self:ClearActiveEnemyCast("timeout")
     return
   end
 
   local targetKey = self:GetTargetKey()
   if castInfo.targetKey and targetKey and castInfo.targetKey ~= targetKey then
-    self.state.activeEnemyCast = nil
+    self:ClearActiveEnemyCast("target changed")
   end
+end
+
+function addon:ClearActiveEnemyCast(reason)
+  local activeCast = self.state.activeEnemyCast
+  if activeCast then
+    self:Debug(
+      "Clearing enemy cast " .. tostring(activeCast.spellName or "unknown") ..
+      " (" .. tostring(reason or "unspecified") .. ")"
+    )
+  end
+  self.state.activeEnemyCast = nil
 end
 
 function addon:GetInterruptibleEnemyCast()
@@ -3609,21 +3660,14 @@ function addon:GetInterruptibleEnemyCast()
   end
 
   local now = GetTime()
-  local liveCast = self:GetLiveTargetCastInfo()
-  if liveCast then
-    self.state.activeEnemyCast = liveCast
-    activeCast = liveCast
-  elseif self:HasReliableNoActiveTargetCast() then
-    self.state.activeEnemyCast = nil
-    return nil
-  elseif activeCast.source ~= "live" and (now - (activeCast.startedAt or now)) > 1.2 then
-    self.state.activeEnemyCast = nil
+  if activeCast.source == "message" and (now - (activeCast.startedAt or now)) > 1.2 then
+    self:ClearActiveEnemyCast("message fallback expired")
     return nil
   end
 
   activeCast.remaining = math.max((activeCast.expiresAt or now) - now, 0)
-  if activeCast.remaining <= 0.1 then
-    self.state.activeEnemyCast = nil
+  if activeCast.remaining <= 0.15 then
+    self:ClearActiveEnemyCast("too little cast time remaining")
     return nil
   end
 
@@ -3635,48 +3679,34 @@ function addon:HasReliableNoActiveTargetCast()
     return true
   end
 
-  local checked = false
+  local authoritativeChecked = false
+  local authoritativeCast = false
 
   if UnitCastingInfo then
-    checked = true
+    authoritativeChecked = true
     local name = UnitCastingInfo("target")
     if name and name ~= "" then
-      return false
+      authoritativeCast = true
     end
   end
 
   if UnitChannelInfo then
-    checked = true
+    authoritativeChecked = true
     local name = UnitChannelInfo("target")
     if name and name ~= "" then
-      return false
+      authoritativeCast = true
     end
   end
 
-  if CastingInfo then
-    checked = true
-    local name = CastingInfo("target")
-    if name and name ~= "" then
-      return false
-    end
-  end
-
-  if ChannelInfo then
-    checked = true
-    local name = ChannelInfo("target")
-    if name and name ~= "" then
-      return false
-    end
+  if authoritativeChecked then
+    return not authoritativeCast
   end
 
   if TargetFrameSpellBar then
-    checked = true
-    if TargetFrameSpellBar:IsShown() then
-      return false
-    end
+    return not TargetFrameSpellBar:IsShown()
   end
 
-  return checked
+  return false
 end
 
 function addon:GetLiveTargetCastInfo()
@@ -3686,9 +3716,11 @@ function addon:GetLiveTargetCastInfo()
 
   local spellName = nil
   local endTime = nil
-  local sawCastBar = false
+  local authoritativeChecked = false
+  local castBarRemaining = nil
 
   if UnitCastingInfo then
+    authoritativeChecked = true
     local name, _, _, _, castEndTimeMs = UnitCastingInfo("target")
     if name and name ~= "" then
       spellName = name
@@ -3699,6 +3731,7 @@ function addon:GetLiveTargetCastInfo()
   end
 
   if (not spellName or spellName == "") and UnitChannelInfo then
+    authoritativeChecked = true
     local name, _, _, _, channelEndTimeMs = UnitChannelInfo("target")
     if name and name ~= "" then
       spellName = name
@@ -3708,24 +3741,12 @@ function addon:GetLiveTargetCastInfo()
     end
   end
 
-  if (not spellName or spellName == "") and CastingInfo then
-    local name = CastingInfo("target")
-    if name and name ~= "" then
-      spellName = name
-      sawCastBar = true
-    end
+  if authoritativeChecked and (not spellName or spellName == "") then
+    return nil, true
   end
 
-  if (not spellName or spellName == "") and ChannelInfo then
-    local name = ChannelInfo("target")
-    if name and name ~= "" then
-      spellName = name
-      sawCastBar = true
-    end
-  end
-
-  if (not spellName or spellName == "") and TargetFrameSpellBar and TargetFrameSpellBar:IsShown() then
-    sawCastBar = true
+  local source = "api"
+  if not authoritativeChecked and TargetFrameSpellBar and TargetFrameSpellBar:IsShown() then
     local text = nil
     if TargetFrameSpellBarText and TargetFrameSpellBarText.GetText then
       text = TargetFrameSpellBarText:GetText()
@@ -3735,15 +3756,27 @@ function addon:GetLiveTargetCastInfo()
 
     if text and text ~= "" then
       spellName = text
+      source = "castbar"
+
+      if TargetFrameSpellBar.GetMinMaxValues and TargetFrameSpellBar.GetValue then
+        local minimum, maximum = TargetFrameSpellBar:GetMinMaxValues()
+        local value = TargetFrameSpellBar:GetValue()
+        if type(minimum) == "number" and type(maximum) == "number" and type(value) == "number" then
+          if TargetFrameSpellBar.channeling then
+            castBarRemaining = value - minimum
+          else
+            castBarRemaining = maximum - value
+          end
+          if castBarRemaining <= 0 or castBarRemaining > 60 then
+            castBarRemaining = nil
+          end
+        end
+      end
     end
   end
 
   if not spellName or spellName == "" then
-    if not sawCastBar then
-      return nil
-    end
-
-    spellName = "Unknown Cast"
+    return nil, authoritativeChecked
   end
 
   local targetKey = self:GetTargetKey()
@@ -3751,36 +3784,73 @@ function addon:GetLiveTargetCastInfo()
     return nil
   end
 
+  if source == "castbar" then
+    local suppressed = self.state.suppressedEnemyCastBar
+    if suppressed
+      and suppressed.targetKey == targetKey
+      and suppressed.spellName == spellName then
+      return nil, false
+    end
+    self.state.suppressedEnemyCastBar = nil
+  end
+
+  local now = GetTime()
+  local expiresAt = endTime
+  if source == "castbar" then
+    local current = self.state.activeEnemyCast
+    if current
+      and current.source == "castbar"
+      and current.targetKey == targetKey
+      and current.spellName == spellName then
+      expiresAt = current.expiresAt
+    else
+      expiresAt = now + (castBarRemaining or 1.5)
+    end
+  end
+
   return {
     targetKey = targetKey,
     casterName = UnitName("target"),
     spellName = spellName,
-    startedAt = GetTime(),
-    expiresAt = endTime or (GetTime() + 1.5),
-    source = "live",
-  }
+    startedAt = now,
+    expiresAt = expiresAt or (now + 1.5),
+    source = source,
+  }, authoritativeChecked
 end
 
 function addon:RefreshActiveEnemyCast()
-  local liveCast = self:GetLiveTargetCastInfo()
+  local liveCast, authoritativeChecked = self:GetLiveTargetCastInfo()
+  if authoritativeChecked then
+    if liveCast then
+      self.state.activeEnemyCast = liveCast
+    else
+      self:ClearActiveEnemyCast("authoritative no-cast")
+    end
+    return
+  end
+
   if not liveCast then
-    if self.state.activeEnemyCast and self:HasReliableNoActiveTargetCast() then
-      self.state.activeEnemyCast = nil
+    if TargetFrameSpellBar and not TargetFrameSpellBar:IsShown() then
+      self.state.suppressedEnemyCastBar = nil
+    end
+    if self.state.activeEnemyCast
+      and self.state.activeEnemyCast.source == "castbar"
+      and self:HasReliableNoActiveTargetCast() then
+      self:ClearActiveEnemyCast("cast bar hidden")
     end
     return
   end
 
   local current = self.state.activeEnemyCast
+  self.state.activeEnemyCast = liveCast
   if not current
     or current.targetKey ~= liveCast.targetKey
     or current.spellName ~= liveCast.spellName
-    or current.source == "live" then
-    self.state.activeEnemyCast = liveCast
-    return
-  end
-
-  if current.expiresAt and liveCast.expiresAt and liveCast.expiresAt > current.expiresAt then
-    current.expiresAt = liveCast.expiresAt
+    or current.source ~= liveCast.source then
+    self:Debug(
+      "Tracking enemy cast " .. tostring(liveCast.spellName) ..
+      " from " .. tostring(liveCast.source)
+    )
   end
 end
 
@@ -3808,6 +3878,8 @@ function addon:TrackHostileCastFromMessage(casterName, spellName)
   if not targetKey then
     return
   end
+
+  self.state.suppressedEnemyCastBar = nil
 
   self.state.activeEnemyCast = {
     targetKey = targetKey,
@@ -3904,6 +3976,56 @@ function addon:ExtractHostileOutcomeFromMessage(message)
     }
   end
 
+  _, _, casterName, spellName, targetName = string.find(message, "^(.-)'s (.-) misses (.-)%.?$")
+  if casterName and spellName then
+    return {
+      casterName = trim(casterName),
+      spellName = trim(spellName),
+      targetName = trim(targetName or ""),
+      outcomeType = "miss",
+    }
+  end
+
+  _, _, casterName, spellName, targetName = string.find(message, "^(.-)'s (.-) was resisted by (.-)%.?$")
+  if casterName and spellName then
+    return {
+      casterName = trim(casterName),
+      spellName = trim(spellName),
+      targetName = trim(targetName or ""),
+      outcomeType = "resist",
+    }
+  end
+
+  _, _, casterName, spellName = string.find(message, "^You resist (.-)'s (.-)%.?$")
+  if casterName and spellName then
+    return {
+      casterName = trim(casterName),
+      spellName = trim(spellName),
+      targetName = "you",
+      outcomeType = "resist",
+    }
+  end
+
+  _, _, targetName, casterName, spellName = string.find(message, "^(.-) is immune to (.-)'s (.-)%.?$")
+  if casterName and spellName then
+    return {
+      casterName = trim(casterName),
+      spellName = trim(spellName),
+      targetName = trim(targetName or ""),
+      outcomeType = "immune",
+    }
+  end
+
+  _, _, casterName, spellName, targetName = string.find(message, "^(.-)'s (.-) is absorbed by (.-)%.?$")
+  if casterName and spellName then
+    return {
+      casterName = trim(casterName),
+      spellName = trim(spellName),
+      targetName = trim(targetName or ""),
+      outcomeType = "absorb",
+    }
+  end
+
   _, _, targetName, spellName = string.find(message, "^(.-) gains (.-)%.?$")
   if targetName and spellName then
     return {
@@ -3982,7 +4104,84 @@ function addon:OnHostileSpellCastMessage(message)
 end
 
 function addon:OnHostileSpellOutcomeMessage(message)
-  -- Static interrupt matching replaced per-mob spell outcome learning.
+  local outcome = self:ExtractHostileOutcomeFromMessage(message)
+  if not outcome then
+    return
+  end
+
+  local activeCast = self.state.activeEnemyCast
+  if not activeCast then
+    return
+  end
+
+  local activeSpellKey = self:NormalizeInterruptSpellKey(activeCast.spellName)
+  local outcomeSpellKey = self:NormalizeInterruptSpellKey(outcome.spellName)
+  if not activeSpellKey or activeSpellKey ~= outcomeSpellKey then
+    return
+  end
+
+  local targetName = string.lower(UnitName("target") or "")
+  local casterName = string.lower(trim(outcome.casterName or ""))
+  if casterName ~= "" and casterName ~= targetName then
+    return
+  end
+
+  self:ClearActiveEnemyCast("spell completed")
+end
+
+function addon:IsCastStoppingControlSpell(spellName)
+  local spellKey = self:NormalizeInterruptSpellKey(spellName)
+  return spellKey and self.castStoppingControlSpells[spellKey] == true
+end
+
+function addon:MessageConfirmsCurrentTargetCastStopped(message)
+  local activeCast = self.state.activeEnemyCast
+  if not activeCast or not message or message == "" then
+    return false
+  end
+
+  local targetName = string.lower(UnitName("target") or "")
+  if targetName == "" then
+    return false
+  end
+
+  local lower = string.lower(message)
+  local activeSpellKey = self:NormalizeInterruptSpellKey(activeCast.spellName)
+  if string.find(lower, "interrupt", 1, true)
+    and string.find(lower, targetName, 1, true)
+    and (not activeSpellKey or string.find(lower, activeSpellKey, 1, true)) then
+    return true
+  end
+
+  local outcome = self:ExtractHostileOutcomeFromMessage(message)
+  if outcome and outcome.outcomeType == "control" then
+    local controlledTarget = string.lower(trim(outcome.targetName or ""))
+    if controlledTarget == targetName and self:IsCastStoppingControlSpell(outcome.spellName) then
+      return true
+    end
+  end
+
+  local spellName, controlledTarget
+  _, _, spellName, controlledTarget = string.find(message, "^Your (.-) hits (.-) for ")
+  if not spellName then
+    _, _, spellName, controlledTarget = string.find(message, "^Your (.-) hits (.-)%.?$")
+  end
+  if not spellName then
+    _, _, _, spellName, controlledTarget = string.find(message, "^(.-)'s (.-) hits (.-) for ")
+  end
+  if not spellName then
+    _, _, _, spellName, controlledTarget = string.find(message, "^(.-)'s (.-) hits (.-)%.?$")
+  end
+
+  return spellName
+    and string.lower(trim(controlledTarget or "")) == targetName
+    and self:IsCastStoppingControlSpell(spellName)
+end
+
+function addon:OnFriendlySpellMessage(message)
+  if self:MessageConfirmsCurrentTargetCastStopped(message) then
+    self:ClearActiveEnemyCast("interrupted or controlled")
+  end
 end
 
 function addon:IsHostileTarget()
@@ -4566,6 +4765,10 @@ function addon:GetComboPointContext(mode)
     liveRemainingFightDuration = liveRemainingFightDuration,
     poisonReliable = self:HasReliablePoisonStateOnTarget(),
   }
+  context.activeEnemyCast = self:GetInterruptibleEnemyCast()
+  context.interruptResponse, context.activeEnemyCast,
+    context.interruptDangerScore, context.activeCastInterruptConfidence =
+    self:GetInterruptResponseForActiveCast(context, context.activeEnemyCast, true)
   context.reserveKick = self:ShouldReserveKickEnergy(context)
 
   self.state.activeRotationMode = mode
@@ -4610,8 +4813,15 @@ function addon:GetActiveCastInterruptScore(activeCast)
   return 0, 0
 end
 
-function addon:GetInterruptResponseForActiveCast(context)
-  local activeCast = self:GetInterruptibleEnemyCast()
+function addon:GetInterruptResponseForActiveCast(context, activeCast, castWasResolved)
+  if context and context.interruptResponse then
+    return context.interruptResponse, context.activeEnemyCast,
+      context.interruptDangerScore or 0, context.activeCastInterruptConfidence or 0
+  end
+
+  if not castWasResolved then
+    activeCast = self:GetInterruptibleEnemyCast()
+  end
   if not activeCast then
     return "ignore", nil, 0, 0
   end
@@ -4641,12 +4851,12 @@ function addon:GetInterruptResponseForActiveCast(context)
   return "ignore", activeCast, dangerScore, confidence
 end
 
-function addon:ShouldKickCurrentTarget()
+function addon:ShouldKickCurrentTarget(context)
   if not self:HasSpell("Kick") then
     return false
   end
 
-  local response = self:GetInterruptResponseForActiveCast()
+  local response = self:GetInterruptResponseForActiveCast(context)
   return response == "kick"
 end
 
@@ -4655,7 +4865,7 @@ function addon:ShouldReserveKickEnergy(context)
     return false
   end
 
-  if self:ShouldKickCurrentTarget() then
+  if self:ShouldKickCurrentTarget(context) then
     return true
   end
 
@@ -4663,7 +4873,7 @@ function addon:ShouldReserveKickEnergy(context)
     return false
   end
 
-  local activeCast = self:GetInterruptibleEnemyCast()
+  local activeCast = context.activeEnemyCast
   if activeCast and self:IsStaticKickInterruptSpell(activeCast.spellName) then
     return self:HasSpell("Kick") and self:IsSpellReady("Kick")
   end
@@ -6470,8 +6680,8 @@ function addon:TryRiposte()
   return false
 end
 
-function addon:TryRotationKick()
-  if not self:ShouldKickCurrentTarget() then
+function addon:TryRotationKick(context)
+  if not self:ShouldKickCurrentTarget(context) then
     return false
   end
 
@@ -6545,6 +6755,7 @@ end
 
 function addon:OnCombatEnded()
   self.state.activeEnemyCast = nil
+  self.state.suppressedEnemyCastBar = nil
   self:ClearPendingKidneyShotCheck()
   self:ClearBuilderEviscerateArm()
   self:FinalizeLearningFight("combat_end")
@@ -6706,6 +6917,7 @@ function addon:OnTargetChanged()
   self:FinalizeLearningFight("target_change")
   self:UpdateComboPointFrame(true)
   self.state.activeEnemyCast = nil
+  self.state.suppressedEnemyCastBar = nil
   self:ClearPendingKidneyShotCheck()
   self:ClearBuilderEviscerateArm()
   self.state.currentTargetKey = nil
@@ -6739,6 +6951,15 @@ frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
 frame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
 frame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 frame:RegisterEvent("CHAT_MSG_SPELL_SELF_BUFF")
+frame:RegisterEvent("CHAT_MSG_SPELL_PARTY_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_PARTY_BUFF")
+frame:RegisterEvent("CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF")
+frame:RegisterEvent("CHAT_MSG_SPELL_PET_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_PET_BUFF")
+frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE")
 frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS")
 frame:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
 frame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
@@ -6781,6 +7002,17 @@ frame:SetScript("OnEvent", function()
     addon:OnSpellSelfDamage(arg1)
   elseif event == "CHAT_MSG_SPELL_SELF_BUFF" then
     addon:OnSelfBuffMessage(arg1)
+    addon:OnFriendlySpellMessage(arg1)
+  elseif event == "CHAT_MSG_SPELL_PARTY_DAMAGE"
+    or event == "CHAT_MSG_SPELL_PARTY_BUFF"
+    or event == "CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE"
+    or event == "CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF"
+    or event == "CHAT_MSG_SPELL_PET_DAMAGE"
+    or event == "CHAT_MSG_SPELL_PET_BUFF"
+    or event == "CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE"
+    or event == "CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE"
+    or event == "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE" then
+    addon:OnFriendlySpellMessage(arg1)
   elseif event == "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS" then
     addon:OnSelfBuffMessage(arg1)
   elseif event == "CHAT_MSG_SPELL_AURA_GONE_SELF" then

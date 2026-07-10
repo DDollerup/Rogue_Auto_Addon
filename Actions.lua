@@ -1,7 +1,7 @@
 local addon = RogueAuto
 
 local function runSharedCombatPreamble(self, context)
-  if self:TryRotationKick() then
+  if self:TryRotationKick(context) then
     return true
   end
 
