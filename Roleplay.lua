@@ -341,6 +341,29 @@ function addon:TryRoleplayEmote(eventKey, context, guaranteed)
   return true
 end
 
+function addon:PreviewRoleplayEmote()
+  local settings = RogueAutoDB and RogueAutoDB.roleplay
+  if not settings or not settings.enabled then
+    self:Print("Roleplay emotes are Off. Select On before testing.")
+    return false
+  end
+  if not SendChatMessage then
+    self:Print("The client SendChatMessage API is unavailable.")
+    return false
+  end
+
+  local phrase = self:ChooseRoleplayPhrase(settings.personality or "silent", "victory")
+  local message = self:FormatRoleplayPhrase(phrase, { targetName = UnitName("target") or "the mark" })
+  if not message or message == "" then
+    self:Print("No preview phrase is available for the selected personality.")
+    return false
+  end
+
+  SendChatMessage(message, "EMOTE")
+  self:Print("Test emote sent using the " .. tostring(settings.personality or "silent") .. " personality.")
+  return true
+end
+
 function addon:ExtractRoleplaySpellResult(message)
   if not message or message == "" then
     return nil, nil
@@ -373,6 +396,8 @@ function addon:OnRoleplayCombatMessage(message)
   end
 
   local lower = string.lower(message)
+  local state = self:GetRoleplayState()
+  state.lastObservedMessage = message
   if string.find(lower, "your kick", 1, true) and string.find(lower, "interrupt", 1, true) then
     local targetName = UnitName("target")
     local _, _, interruptedTarget = string.find(message, "[Ii]nterrupts (.-)'s ")
@@ -380,7 +405,6 @@ function addon:OnRoleplayCombatMessage(message)
     return
   end
 
-  local state = self:GetRoleplayState()
   local _, _, meleeTarget = string.find(message, "^You hit (.-) for ")
   if not meleeTarget then
     _, _, meleeTarget = string.find(message, "^You crit (.-) for ")
@@ -395,6 +419,30 @@ function addon:OnRoleplayCombatMessage(message)
 
   local spellName, targetName = self:ExtractRoleplaySpellResult(message)
   local normalizedSpell = normalizeName(spellName)
+  if not normalizedSpell then
+    local lastAttempt = self.state.lastSpellAttempt
+    local recentAttempt = lastAttempt
+      and lastAttempt.name
+      and lastAttempt.at
+      and GetTime() - lastAttempt.at <= 1.5
+    local attemptedSpell = recentAttempt and string.lower(lastAttempt.name) or nil
+    if attemptedSpell and string.find(lower, attemptedSpell, 1, true) then
+      normalizedSpell = attemptedSpell
+      targetName = lastAttempt.targetName or targetName
+    end
+  end
+  if normalizedSpell == "kick" then
+    local lastAttempt = self.state.lastSpellAttempt
+    local recentRotationKick = lastAttempt
+      and lastAttempt.name == "Kick"
+      and lastAttempt.at
+      and GetTime() - lastAttempt.at <= 1.5
+    if recentRotationKick then
+      state.lastMatchedEvent = "kick"
+      self:TryRoleplayEmote("kick", { targetName = targetName or lastAttempt.targetName }, false)
+    end
+    return
+  end
   local eventKey = normalizedSpell and self.roleplaySpellEvents[normalizedSpell]
   if targetName then
     state.lastDamageTarget = targetName
@@ -403,6 +451,7 @@ function addon:OnRoleplayCombatMessage(message)
   if not eventKey then
     return
   end
+  state.lastMatchedEvent = eventKey
   self:TryRoleplayEmote(eventKey, { targetName = targetName }, false)
 end
 

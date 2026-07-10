@@ -210,6 +210,7 @@ addon.settingDefinitions = {
 addon.uiSections = {
   {
     title = "Roleplay",
+    kind = "roleplay",
     help = "Choose Off or On, then select a personality. Emotes cover Pick Pocket, finishers, Kick, control, openers, Vanish, Sap, Shoot/Throw, and victories.",
     items = { "roleplayEnabledMode", "roleplayPersonality", "roleplayFrequency" },
   },

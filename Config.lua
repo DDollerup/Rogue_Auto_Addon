@@ -107,6 +107,7 @@ local buttonSpacing = 130
 
 local sectionIcons = {
   builder = "Interface\\Icons\\INV_Sword_04",
+  roleplay = "Interface\\Icons\\INV_Misc_Mask_01",
   ["Builder"] = "Interface\\Icons\\INV_Sword_04",
   ["Openers"] = "Interface\\Icons\\Ability_Stealth",
   ["Finisher"] = "Interface\\Icons\\Ability_Rogue_Eviscerate",
@@ -480,6 +481,24 @@ local function createMacroControl(parent, y)
   return control, control:GetHeight()
 end
 
+local function createRoleplayTestControl(parent, y)
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(controlWidth)
+  control:SetHeight(30)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
+
+  local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+  button:SetWidth(180)
+  button:SetHeight(24)
+  button:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
+  button:SetText("Send Test Emote")
+  button:SetScript("OnClick", function()
+    addon:PreviewRoleplayEmote()
+  end)
+
+  return control, 30
+end
+
 local function createSectionCard(parent, section, y)
   local card = CreateFrame("Frame", nil, parent)
   card:SetWidth(cardWidth)
@@ -534,6 +553,10 @@ local function createSectionCard(parent, section, y)
         _, height = createToggleControl(card, settingId, cursorY)
       end
       cursorY = cursorY - height - 6
+    end
+    if section.kind == "roleplay" then
+      local _, testHeight = createRoleplayTestControl(card, cursorY)
+      cursorY = cursorY - testHeight - 6
     end
     cursorY = cursorY - 10
   end
