@@ -1,6 +1,6 @@
 local addon = RogueAuto
 
-local function runSharedCombatPreamble(self, context)
+local function runInterruptPreamble(self, context)
   if self:TryRotationKick(context) then
     return true
   end
@@ -10,10 +10,6 @@ local function runSharedCombatPreamble(self, context)
   end
 
   if self:TryEmergencyBlindInterrupt(context) then
-    return true
-  end
-
-  if self:TryRiposte() then
     return true
   end
 
@@ -45,12 +41,16 @@ function addon:Builder()
     return
   end
 
+  local context = self:GetComboPointContext("builder")
+  if runInterruptPreamble(self, context) then
+    return
+  end
+
   if self:TryBuilderFeint() then
     return
   end
 
-  local context = self:GetComboPointContext("builder")
-  if runSharedCombatPreamble(self, context) then
+  if self:TryRiposte() then
     return
   end
 

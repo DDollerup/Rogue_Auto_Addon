@@ -13,6 +13,7 @@ addon.builderBuffHighPointRefreshWindow = 6
 addon.builderEviscerateSafeWindow = 10
 addon.builderEviscerateArmTimeout = 5
 addon.envenomMinimumRemainingFightDuration = 3
+addon.messageInterruptFallbackWindow = 2.5
 addon.observedDebuffDurations = {
   ["Rupture"] = 10,
   ["Shadow of Death"] = 12,
@@ -3701,7 +3702,8 @@ function addon:GetInterruptibleEnemyCast()
   end
 
   local now = GetTime()
-  if activeCast.source == "message" and (now - (activeCast.startedAt or now)) > 1.2 then
+  if activeCast.source == "message"
+    and (now - (activeCast.startedAt or now)) > self.messageInterruptFallbackWindow then
     self:ClearActiveEnemyCast("message fallback expired")
     return nil
   end
@@ -3927,7 +3929,7 @@ function addon:TrackHostileCastFromMessage(casterName, spellName)
     casterName = targetName,
     spellName = spellName,
     startedAt = GetTime(),
-    expiresAt = GetTime() + 1.6,
+    expiresAt = GetTime() + self.messageInterruptFallbackWindow,
     source = "message",
   }
 
@@ -4854,6 +4856,51 @@ function addon:GetActiveCastInterruptScore(activeCast)
   return 0, 0
 end
 
+function addon:DebugInterruptDecision(activeCast, decision, reason)
+  if not (RogueAutoDB and RogueAutoDB.debug) or not activeCast then
+    return
+  end
+
+  local now = GetTime()
+  local age = math.max(now - (activeCast.startedAt or now), 0)
+  local remaining = math.max((activeCast.expiresAt or now) - now, 0)
+  local kickReady = self:HasSpell("Kick") and self:IsSpellReady("Kick")
+  local melee = self:IsInMeleeRange()
+
+  self:Debug(
+    "Interrupt " .. tostring(activeCast.spellName or "unknown") ..
+    ": source=" .. tostring(activeCast.source or "unknown") ..
+    ", age=" .. string.format("%.2f", age) .. "s" ..
+    ", remaining=" .. string.format("%.2f", remaining) .. "s" ..
+    ", energy=" .. tostring(self:GetEnergy()) ..
+    "/" .. tostring(self:GetKickEnergyCost()) ..
+    ", melee=" .. tostring(melee) ..
+    ", kickReady=" .. tostring(kickReady) ..
+    ", decision=" .. tostring(decision or "ignore") ..
+    (reason and ", reason=" .. tostring(reason) or "")
+  )
+end
+
+function addon:GetKickUnavailableReason()
+  if not self:HasSpell("Kick") then
+    return "Kick not learned"
+  end
+
+  if not self:IsInMeleeRange() then
+    return "outside melee range"
+  end
+
+  if not self:IsSpellReady("Kick") then
+    return "Kick not ready"
+  end
+
+  if self:GetEnergy() < self:GetKickEnergyCost() then
+    return "not enough energy"
+  end
+
+  return "Kick unavailable"
+end
+
 function addon:GetInterruptResponseForActiveCast(context, activeCast, castWasResolved)
   if context and context.interruptResponse then
     return context.interruptResponse, context.activeEnemyCast,
@@ -4869,26 +4916,32 @@ function addon:GetInterruptResponseForActiveCast(context, activeCast, castWasRes
 
   local dangerScore, confidence = self:GetActiveCastInterruptScore(activeCast)
   if dangerScore <= 0 then
+    self:DebugInterruptDecision(activeCast, "ignore", "spell not in interrupt list")
     return "ignore", activeCast, dangerScore, confidence
   end
 
   if self:CanUseKickInterrupt() then
+    self:DebugInterruptDecision(activeCast, "kick")
     return "kick", activeCast, dangerScore, confidence
   end
 
+  local kickUnavailableReason = self:GetKickUnavailableReason()
   if context
     and context.comboPoints > 0
     and self:HasSpell("Kidney Shot")
     and self:IsInMeleeRange()
     and not self:IsTargetStunImmune(context)
     and self:CanCast("Kidney Shot") then
+    self:DebugInterruptDecision(activeCast, "kidney", kickUnavailableReason)
     return "kidney", activeCast, dangerScore, confidence
   end
 
   if self:HasSpell("Blind") and self:CanCast("Blind") and dangerScore >= 0.82 then
+    self:DebugInterruptDecision(activeCast, "blind", kickUnavailableReason)
     return "blind", activeCast, dangerScore, confidence
   end
 
+  self:DebugInterruptDecision(activeCast, "ignore", kickUnavailableReason)
   return "ignore", activeCast, dangerScore, confidence
 end
 
