@@ -45,6 +45,7 @@ addon.kickInterruptSpells = {
   ["mind flay"] = true,
   ["mana burn"] = true,
   ["immolate"] = true,
+  ["corruption"] = true,
   ["searing pain"] = true,
   ["soul fire"] = true,
   ["pyroblast"] = true,
