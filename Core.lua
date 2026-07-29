@@ -2368,22 +2368,15 @@ end
 
 function addon:HasAnyWeaponPoison()
   local states = self:GetWeaponPoisonStates()
-  local foundPoisonWithoutCharges = false
 
   for _, state in ipairs(states or {}) do
     if state.name
       and string.find(string.lower(normalizeSpellName(state.name)), "poison", 1, true) then
-      if state.charges and state.charges > 0 then
-        return true, tostring(state.hand or "weapon") .. " poison has " ..
-          tostring(state.charges) .. " charges"
-      end
-      foundPoisonWithoutCharges = true
+      return true, tostring(state.hand or "weapon") .. " weapon has " ..
+        tostring(state.name)
     end
   end
 
-  if foundPoisonWithoutCharges then
-    return false, "weapon poison has no remaining charges"
-  end
   if table.getn(states or {}) > 0 then
     return false, "active weapon enchant is not identified as poison"
   end
