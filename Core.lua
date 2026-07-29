@@ -14,6 +14,7 @@ addon.builderEviscerateSafeWindow = 10
 addon.builderEviscerateArmTimeout = 5
 addon.envenomMinimumRemainingFightDuration = 3
 addon.messageInterruptFallbackWindow = 2.5
+addon.mindFlayChannelFallbackWindow = 3.5
 addon.observedDebuffDurations = {
   ["Rupture"] = 10,
   ["Shadow of Death"] = 12,
@@ -2657,6 +2658,13 @@ end
 
 function addon:OnSelfBuffFade(message)
   local buffName = self:ExtractSelfBuffFadeName(message)
+  if buffName == "Mind Flay" then
+    local activeCast = self.state.activeEnemyCast
+    if activeCast and self:NormalizeInterruptSpellKey(activeCast.spellName) == "mind flay" then
+      self:ClearActiveEnemyCast("Mind Flay faded")
+    end
+  end
+
   if not buffName or not self:IsLocallyTrackedPlayerBuff(buffName) then
     return
   end
@@ -4185,6 +4193,15 @@ function addon:RefreshActiveEnemyCast()
   if authoritativeChecked then
     if liveCast then
       self.state.activeEnemyCast = liveCast
+    elseif self.state.activeEnemyCast
+      and self.state.activeEnemyCast.source == "affliction"
+      and self:NormalizeInterruptSpellKey(self.state.activeEnemyCast.spellName) == "mind flay"
+      and self.state.activeEnemyCast.channelVictimUnit
+      and self:FindUnitDebuffByName(
+        self.state.activeEnemyCast.channelVictimUnit,
+        "Mind Flay"
+      ) then
+      return
     else
       self:ClearActiveEnemyCast("authoritative no-cast")
     end
@@ -4269,6 +4286,11 @@ function addon:ExtractHostileCastFromMessage(message)
   end
 
   _, _, casterName, spellName = string.find(message, "^(.-) begins to perform (.-)%.?$")
+  if casterName and spellName then
+    return trim(casterName), trim(spellName)
+  end
+
+  _, _, casterName, spellName = string.find(message, "^(.-) begins to channel (.-)%.?$")
   if casterName and spellName then
     return trim(casterName), trim(spellName)
   end
@@ -4481,6 +4503,11 @@ function addon:OnHostileSpellOutcomeMessage(message)
   if not activeSpellKey or activeSpellKey ~= outcomeSpellKey then
     return
   end
+  if activeCast.source == "affliction"
+    and activeSpellKey == "mind flay"
+    and outcome.outcomeType == "control" then
+    return
+  end
 
   local targetName = string.lower(UnitName("target") or "")
   local casterName = string.lower(trim(outcome.casterName or ""))
@@ -4541,9 +4568,58 @@ function addon:MessageConfirmsCurrentTargetCastStopped(message)
 end
 
 function addon:OnFriendlySpellMessage(message)
+  self:TrackMindFlayFromAfflictionMessage(message)
+
   if self:MessageConfirmsCurrentTargetCastStopped(message) then
     self:ClearActiveEnemyCast("interrupted or controlled")
   end
+end
+
+function addon:TrackMindFlayFromAfflictionMessage(message)
+  if not message or message == "" or not self:IsHostileTarget() then
+    return false
+  end
+
+  local victimName, spellName
+  _, _, spellName = string.find(message, "^You are afflicted by (.-)%.?$")
+  if spellName then
+    victimName = "you"
+  else
+    _, _, victimName, spellName = string.find(message, "^(.-) is afflicted by (.-)%.?$")
+  end
+
+  spellName = normalizeSpellName(spellName)
+  if self:NormalizeInterruptSpellKey(spellName) ~= "mind flay" then
+    return false
+  end
+
+  local targetName = UnitName("target")
+  local targetTargetName = UnitName("targettarget")
+  if not targetName or not targetTargetName then
+    return false
+  end
+
+  local victimUnit = "targettarget"
+  if string.lower(victimName or "") == "you" then
+    local playerName = UnitName("player")
+    if not playerName or string.lower(targetTargetName) ~= string.lower(playerName) then
+      return false
+    end
+    victimUnit = "player"
+  elseif string.lower(targetTargetName) ~= string.lower(victimName or "") then
+    return false
+  end
+
+  self:TrackHostileCastFromMessage(targetName, spellName)
+  local activeCast = self.state.activeEnemyCast
+  if activeCast and self:NormalizeInterruptSpellKey(activeCast.spellName) == "mind flay" then
+    activeCast.source = "affliction"
+    activeCast.channelVictimUnit = victimUnit
+    activeCast.expiresAt = GetTime() + (self.mindFlayChannelFallbackWindow or 3.5)
+    return true
+  end
+
+  return false
 end
 
 function addon:IsHostileTarget()
@@ -7387,6 +7463,7 @@ function addon:OnChatMoney(message)
 end
 
 function addon:OnHostileSpellMessage(message)
+  self:TrackMindFlayFromAfflictionMessage(message)
   self:OnHostileSpellCastMessage(message)
   self:OnHostileSpellOutcomeMessage(message)
 end
