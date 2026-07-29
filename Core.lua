@@ -5590,35 +5590,15 @@ function addon:GetBuilderCombatBuffUpkeepSpell(context)
   local shouldRefreshSnD = self:ShouldRefreshBuilderBuff("Slice and Dice", comboPoints, context)
   local shouldRefreshEnvenom = self:ShouldRefreshBuilderBuff("Envenom", comboPoints, context)
 
-  if shouldRefreshSnD and not shouldRefreshEnvenom then
-    return "Slice and Dice"
-  end
-
-  if shouldRefreshEnvenom and not shouldRefreshSnD then
+  if shouldRefreshEnvenom then
     return "Envenom"
   end
 
-  if not shouldRefreshSnD then
-    return nil
-  end
-
-  local sndActive, sndRemaining = self:FindPlayerBuff("Slice and Dice")
-  local envenomActive, envenomRemaining = self:FindPlayerBuff("Envenom")
-
-  if sndActive ~= envenomActive then
-    if not sndActive then
-      return "Slice and Dice"
-    end
-    return "Envenom"
-  end
-
-  sndRemaining = sndRemaining or 0
-  envenomRemaining = envenomRemaining or 0
-  if sndRemaining <= envenomRemaining then
+  if shouldRefreshSnD then
     return "Slice and Dice"
   end
 
-  return "Envenom"
+  return nil
 end
 
 function addon:TryBuilderCombatBuffUpkeep(context)
