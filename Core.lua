@@ -2364,6 +2364,30 @@ function addon:GetWeaponPoisonStates()
   return states
 end
 
+function addon:HasAnyWeaponPoison()
+  local states = self:GetWeaponPoisonStates()
+  for _, state in ipairs(states or {}) do
+    if state.name
+      and string.find(string.lower(normalizeSpellName(state.name)), "poison", 1, true) then
+      return true
+    end
+  end
+
+  return false
+end
+
+function addon:ShouldUsePhysicalBuilderRotation(context)
+  if not context then
+    return false
+  end
+
+  if context.physicalBuilderRotation ~= nil then
+    return context.physicalBuilderRotation == true
+  end
+
+  return context.poisonImmune == true or context.hasWeaponPoison == false
+end
+
 function addon:GetWeaponPoisonWarningStrength(states)
   local bestStrength = 0
 
@@ -5060,6 +5084,8 @@ function addon:GetComboPointContext(mode)
   local remainingFightDuration = expectedFightDuration * (targetHealthPct / 100)
   local liveRemainingFightDuration = self:GetLiveFightRemainingDuration(targetHealthPct)
   local interruptConfidence = self:GetInterruptLearningConfidence(learningProfile)
+  local poisonImmune = self:IsCurrentTargetPoisonImmune()
+  local hasWeaponPoison = self:HasAnyWeaponPoison()
   if liveRemainingFightDuration and liveRemainingFightDuration > 0 then
     if liveRemainingFightDuration < (remainingFightDuration * 0.75) then
       remainingFightDuration = (liveRemainingFightDuration * 0.75) + (remainingFightDuration * 0.25)
@@ -5087,7 +5113,9 @@ function addon:GetComboPointContext(mode)
     remainingFightDuration = remainingFightDuration,
     liveRemainingFightDuration = liveRemainingFightDuration,
     poisonReliable = self:HasReliablePoisonStateOnTarget(),
-    poisonImmune = self:IsCurrentTargetPoisonImmune(),
+    poisonImmune = poisonImmune,
+    hasWeaponPoison = hasWeaponPoison,
+    physicalBuilderRotation = poisonImmune or not hasWeaponPoison,
   }
   context.activeEnemyCast = self:GetInterruptibleEnemyCast()
   context.interruptResponse, context.activeEnemyCast,
@@ -5457,7 +5485,7 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
     return false
   end
 
-  if spellName == "Envenom" and context and context.poisonImmune then
+  if spellName == "Envenom" and self:ShouldUsePhysicalBuilderRotation(context) then
     return false
   end
 
@@ -5584,7 +5612,7 @@ end
 function addon:AreBuilderMainBuffsSafe(minimumRemaining, context)
   local state = self:GetBuilderMainBuffState()
   local safeWindow = minimumRemaining or self.builderEviscerateSafeWindow or 10
-  if context and context.poisonImmune then
+  if self:ShouldUsePhysicalBuilderRotation(context) then
     return state.sndActive and state.sndRemaining >= safeWindow
   end
 
@@ -6749,8 +6777,12 @@ function addon:GetPreferredBuilder(context)
 
   local function buildReasons(bestSpell, preferredSpell)
     local reasons = {}
-    if context and context.poisonImmune then
-      addHeuristicReason(reasons, "Target is poison immune; using physical rotation")
+    if self:ShouldUsePhysicalBuilderRotation(context) then
+      if context.poisonImmune then
+        addHeuristicReason(reasons, "Target is poison immune; using physical rotation")
+      else
+        addHeuristicReason(reasons, "No weapon poison is active; using physical rotation")
+      end
     end
     if context and context.reserveKick then
       addHeuristicReason(reasons, "Holding enough energy to answer a cast")
@@ -6785,7 +6817,7 @@ function addon:GetPreferredBuilder(context)
     return reasons
   end
 
-  if context and context.poisonImmune then
+  if self:ShouldUsePhysicalBuilderRotation(context) then
     local sinisterScore = self:GetBuilderSpellScore("Sinister Strike", context, modeHint)
     if sinisterScore then
       return "Sinister Strike", {
@@ -6876,7 +6908,7 @@ function addon:GetPreferredBuilder(context)
 end
 
 function addon:GetBuilderSpellScore(spellName, context, modeHint)
-  if spellName == "Noxious Assault" and context and context.poisonImmune then
+  if spellName == "Noxious Assault" and self:ShouldUsePhysicalBuilderRotation(context) then
     return nil
   end
 
@@ -7136,7 +7168,9 @@ function addon:TryPreferredBuilder(context)
   context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
   local mode = RogueAutoDB.builder.mode
 
-  if mode == "auto" and not context.poisonImmune and self:ShouldUseBuilderGhostlyStrike(context) then
+  if mode == "auto"
+    and not self:ShouldUsePhysicalBuilderRotation(context)
+    and self:ShouldUseBuilderGhostlyStrike(context) then
     if self:TryCast("Ghostly Strike") then
       return true
     end
