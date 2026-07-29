@@ -2368,6 +2368,7 @@ end
 
 function addon:HasAnyWeaponPoison()
   local states = self:GetWeaponPoisonStates()
+  local hasUnidentifiedActiveEnchant = false
 
   for _, state in ipairs(states or {}) do
     if state.name
@@ -2375,6 +2376,13 @@ function addon:HasAnyWeaponPoison()
       return true, tostring(state.hand or "weapon") .. " weapon has " ..
         tostring(state.name)
     end
+    if not state.name then
+      hasUnidentifiedActiveEnchant = true
+    end
+  end
+
+  if hasUnidentifiedActiveEnchant then
+    return true, "active weapon enchant reported; poison name unavailable"
   end
 
   if table.getn(states or {}) > 0 then
