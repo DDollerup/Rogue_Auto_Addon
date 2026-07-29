@@ -2084,30 +2084,29 @@ function addon:EnsurePoisonImmunityFrame()
 
   local parent = TargetFrame or UIParent
   local immunityFrame = CreateFrame("Frame", "RogueAutoPoisonImmunityFrame", parent)
-  immunityFrame:SetWidth(30)
-  immunityFrame:SetHeight(30)
+  immunityFrame:SetWidth(20)
+  immunityFrame:SetHeight(20)
   immunityFrame:SetFrameStrata("HIGH")
   immunityFrame:SetFrameLevel((TargetFrame and TargetFrame:GetFrameLevel() or 1) + 14)
   immunityFrame:SetClampedToScreen(true)
   immunityFrame:EnableMouse(true)
 
   local icon = immunityFrame:CreateTexture(nil, "ARTWORK")
-  icon:SetWidth(26)
-  icon:SetHeight(26)
+  icon:SetWidth(16)
+  icon:SetHeight(16)
   icon:SetPoint("TOPLEFT", immunityFrame, "TOPLEFT", 2, -2)
   icon:SetTexture(self.weaponPoisonFallbackTexture)
-  icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   immunityFrame.icon = icon
 
   local border = immunityFrame:CreateTexture(nil, "BORDER")
   border:SetAllPoints(immunityFrame)
   border:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-  border:SetVertexColor(1, 0.12, 0.12, 1)
+  border:SetVertexColor(0.65, 0.65, 0.65, 0.85)
   immunityFrame.border = border
 
   local blocked = immunityFrame:CreateFontString(nil, "OVERLAY")
   blocked:SetPoint("CENTER", immunityFrame, "CENTER", 0, 0)
-  blocked:SetFont(STANDARD_TEXT_FONT, 18, "OUTLINE")
+  blocked:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
   blocked:SetText("X")
   blocked:SetTextColor(1, 0.08, 0.08, 1)
   blocked:SetShadowColor(0, 0, 0, 1)
@@ -2141,13 +2140,8 @@ function addon:PositionPoisonImmunityFrame()
   end
 
   immunityFrame:ClearAllPoints()
-  if TargetFramePortrait then
-    immunityFrame:SetPoint("TOPLEFT", TargetFramePortrait, "TOPRIGHT", 44, 8)
-    return immunityFrame
-  end
-
-  if TargetFrame then
-    immunityFrame:SetPoint("TOPLEFT", TargetFrame, "TOPRIGHT", 96, -1)
+  if TargetFrame and TargetFrame.IsShown and TargetFrame:IsShown() then
+    immunityFrame:SetPoint("TOPRIGHT", TargetFrame, "TOPRIGHT", 12, -4)
     return immunityFrame
   end
 
@@ -2167,6 +2161,11 @@ function addon:UpdatePoisonImmunityFrame()
 
   local immunityFrame = self:PositionPoisonImmunityFrame()
   if immunityFrame then
+    local poisonStates = self:GetWeaponPoisonStates()
+    local poisonState = poisonStates and poisonStates[1] or nil
+    immunityFrame.icon:SetTexture(
+      poisonState and poisonState.texture or self.weaponPoisonFallbackTexture
+    )
     immunityFrame:Show()
   end
 end
