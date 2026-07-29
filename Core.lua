@@ -2338,8 +2338,10 @@ function addon:GetWeaponPoisonStates()
 
   local hasMainHand, mainHandExpiration, mainHandCharges, hasOffHand, offHandExpiration, offHandCharges = GetWeaponEnchantInfo()
   local states = {}
+  local mainHandActive = hasMainHand == true or hasMainHand == 1
+  local offHandActive = hasOffHand == true or hasOffHand == 1
 
-  if hasMainHand then
+  if mainHandActive then
     local poisonName = self:GetWeaponPoisonName(16)
     table.insert(states, {
       hand = "main",
@@ -2350,7 +2352,7 @@ function addon:GetWeaponPoisonStates()
     })
   end
 
-  if hasOffHand then
+  if offHandActive then
     local poisonName = self:GetWeaponPoisonName(17)
     table.insert(states, {
       hand = "off",
@@ -2366,14 +2368,26 @@ end
 
 function addon:HasAnyWeaponPoison()
   local states = self:GetWeaponPoisonStates()
+  local foundPoisonWithoutCharges = false
+
   for _, state in ipairs(states or {}) do
     if state.name
       and string.find(string.lower(normalizeSpellName(state.name)), "poison", 1, true) then
-      return true
+      if state.charges and state.charges > 0 then
+        return true, tostring(state.hand or "weapon") .. " poison has " ..
+          tostring(state.charges) .. " charges"
+      end
+      foundPoisonWithoutCharges = true
     end
   end
 
-  return false
+  if foundPoisonWithoutCharges then
+    return false, "weapon poison has no remaining charges"
+  end
+  if table.getn(states or {}) > 0 then
+    return false, "active weapon enchant is not identified as poison"
+  end
+  return false, "no active weapon poison"
 end
 
 function addon:ShouldUsePhysicalBuilderRotation(context)
@@ -5085,7 +5099,7 @@ function addon:GetComboPointContext(mode)
   local liveRemainingFightDuration = self:GetLiveFightRemainingDuration(targetHealthPct)
   local interruptConfidence = self:GetInterruptLearningConfidence(learningProfile)
   local poisonImmune = self:IsCurrentTargetPoisonImmune()
-  local hasWeaponPoison = self:HasAnyWeaponPoison()
+  local hasWeaponPoison, weaponPoisonReason = self:HasAnyWeaponPoison()
   if liveRemainingFightDuration and liveRemainingFightDuration > 0 then
     if liveRemainingFightDuration < (remainingFightDuration * 0.75) then
       remainingFightDuration = (liveRemainingFightDuration * 0.75) + (remainingFightDuration * 0.25)
@@ -5115,8 +5129,25 @@ function addon:GetComboPointContext(mode)
     poisonReliable = self:HasReliablePoisonStateOnTarget(),
     poisonImmune = poisonImmune,
     hasWeaponPoison = hasWeaponPoison,
+    weaponPoisonReason = weaponPoisonReason,
     physicalBuilderRotation = poisonImmune or not hasWeaponPoison,
   }
+  if RogueAutoDB and RogueAutoDB.debug then
+    local poisonRotationSignature =
+      tostring(context.poisonImmune) .. ":" ..
+      tostring(context.hasWeaponPoison) .. ":" ..
+      tostring(context.physicalBuilderRotation) .. ":" ..
+      tostring(context.weaponPoisonReason)
+    if self.state.lastPoisonRotationDebug ~= poisonRotationSignature then
+      self.state.lastPoisonRotationDebug = poisonRotationSignature
+      self:Debug(
+        "Builder poison check: equipped=" .. tostring(context.hasWeaponPoison) ..
+        ", targetImmune=" .. tostring(context.poisonImmune) ..
+        ", rotation=" .. (context.physicalBuilderRotation and "physical" or "poison") ..
+        ", reason=" .. tostring(context.weaponPoisonReason)
+      )
+    end
+  end
   context.activeEnemyCast = self:GetInterruptibleEnemyCast()
   context.interruptResponse, context.activeEnemyCast,
     context.interruptDangerScore, context.activeCastInterruptConfidence =
