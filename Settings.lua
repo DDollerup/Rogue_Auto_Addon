@@ -217,7 +217,7 @@ addon.uiSections = {
   {
     title = "Builder",
     kind = "builder",
-    help = "Auto compares Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Builder() handles interrupts before Feint, maintains Slice and Dice and Envenom, can optionally maintain Flourish, and sets up safe 5-point Eviscerates. After confirmed poison immunity, it skips Envenom and Noxious Assault, prefers Sinister Strike, and requires only Slice and Dice for Eviscerate cycles.",
+    help = "Auto compares Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Builder() handles interrupts before Feint, maintains Slice and Dice and Envenom, can optionally maintain Flourish, and sets up safe 5-point Eviscerates. After confirmed poison immunity, a red-marked poison icon appears beside the target frame; Builder skips Envenom and Noxious Assault, prefers Sinister Strike, and requires only Slice and Dice for Eviscerate cycles.",
     items = { "builderFlourish", "builderGhostlyStrike" },
   },
   {

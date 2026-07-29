@@ -1289,6 +1289,9 @@ function addon:ClearTargetPoisonImmunity(reason)
     )
   end
   self.state.poisonImmunity = nil
+  if self.poisonImmunityFrame then
+    self.poisonImmunityFrame:Hide()
+  end
 end
 
 function addon:IsCurrentTargetPoisonImmune()
@@ -1333,6 +1336,7 @@ function addon:MarkCurrentTargetPoisonImmune(spellName, message, observedTargetN
     current.spellName = normalizedSpell
     current.message = message
     current.detectedAt = GetTime()
+    self:UpdatePoisonImmunityFrame()
     return true
   end
 
@@ -1348,6 +1352,7 @@ function addon:MarkCurrentTargetPoisonImmune(spellName, message, observedTargetN
     " by " .. tostring(normalizedSpell) ..
     "; switching Builder to physical rotation"
   )
+  self:UpdatePoisonImmunityFrame()
   return true
 end
 
@@ -2070,6 +2075,100 @@ function addon:EnsureWeaponPoisonFrame()
 
   self.weaponPoisonFrame = poisonFrame
   return poisonFrame
+end
+
+function addon:EnsurePoisonImmunityFrame()
+  if self.poisonImmunityFrame then
+    return self.poisonImmunityFrame
+  end
+
+  local parent = TargetFrame or UIParent
+  local immunityFrame = CreateFrame("Frame", "RogueAutoPoisonImmunityFrame", parent)
+  immunityFrame:SetWidth(30)
+  immunityFrame:SetHeight(30)
+  immunityFrame:SetFrameStrata("HIGH")
+  immunityFrame:SetFrameLevel((TargetFrame and TargetFrame:GetFrameLevel() or 1) + 14)
+  immunityFrame:SetClampedToScreen(true)
+  immunityFrame:EnableMouse(true)
+
+  local icon = immunityFrame:CreateTexture(nil, "ARTWORK")
+  icon:SetWidth(26)
+  icon:SetHeight(26)
+  icon:SetPoint("TOPLEFT", immunityFrame, "TOPLEFT", 2, -2)
+  icon:SetTexture(self.weaponPoisonFallbackTexture)
+  icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  immunityFrame.icon = icon
+
+  local border = immunityFrame:CreateTexture(nil, "BORDER")
+  border:SetAllPoints(immunityFrame)
+  border:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+  border:SetVertexColor(1, 0.12, 0.12, 1)
+  immunityFrame.border = border
+
+  local blocked = immunityFrame:CreateFontString(nil, "OVERLAY")
+  blocked:SetPoint("CENTER", immunityFrame, "CENTER", 0, 0)
+  blocked:SetFont(STANDARD_TEXT_FONT, 18, "OUTLINE")
+  blocked:SetText("X")
+  blocked:SetTextColor(1, 0.08, 0.08, 1)
+  blocked:SetShadowColor(0, 0, 0, 1)
+  blocked:SetShadowOffset(1, -1)
+  immunityFrame.blocked = blocked
+
+  immunityFrame:SetScript("OnEnter", function()
+    local immunity = addon.state.poisonImmunity
+    GameTooltip:SetOwner(immunityFrame, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Poison Immune", 1, 0.2, 0.2)
+    if immunity and immunity.spellName then
+      GameTooltip:AddLine("Detected by: " .. tostring(immunity.spellName), 1, 0.82, 0.2)
+    end
+    GameTooltip:AddLine("Builder skips Envenom and Noxious Assault.", 0.9, 0.9, 0.9, true)
+    GameTooltip:AddLine("Using Slice and Dice, Sinister Strike, and Eviscerate.", 0.65, 1, 0.65, true)
+    GameTooltip:Show()
+  end)
+  immunityFrame:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+
+  immunityFrame:Hide()
+  self.poisonImmunityFrame = immunityFrame
+  return immunityFrame
+end
+
+function addon:PositionPoisonImmunityFrame()
+  local immunityFrame = self:EnsurePoisonImmunityFrame()
+  if not immunityFrame then
+    return nil
+  end
+
+  immunityFrame:ClearAllPoints()
+  if TargetFramePortrait then
+    immunityFrame:SetPoint("TOPLEFT", TargetFramePortrait, "TOPRIGHT", 44, 8)
+    return immunityFrame
+  end
+
+  if TargetFrame then
+    immunityFrame:SetPoint("TOPLEFT", TargetFrame, "TOPRIGHT", 96, -1)
+    return immunityFrame
+  end
+
+  immunityFrame:Hide()
+  return nil
+end
+
+function addon:UpdatePoisonImmunityFrame()
+  local immunity = self.state.poisonImmunity
+  local targetKey = self:GetTargetKey()
+  if not immunity or not targetKey or immunity.targetKey ~= targetKey then
+    if self.poisonImmunityFrame then
+      self.poisonImmunityFrame:Hide()
+    end
+    return
+  end
+
+  local immunityFrame = self:PositionPoisonImmunityFrame()
+  if immunityFrame then
+    immunityFrame:Show()
+  end
 end
 
 function addon:EnsureWeaponPoisonWarningFrame()
