@@ -170,6 +170,7 @@ addon.state = {
   currentTargetKey = nil,
   learnedTargetKey = nil,
   learningFight = nil,
+  poisonImmunity = nil,
   activeEnemyCast = nil,
   suppressedEnemyCastBar = nil,
   pendingKidneyShotCheck = nil,
@@ -1258,6 +1259,183 @@ function addon:IsPoisonDirectSpell(name)
   return string.find(normalized, "Poison") ~= nil
 end
 
+function addon:IsPoisonImmunitySpell(name)
+  local normalized = normalizeSpellName(name)
+  if normalized == "" then
+    return false
+  end
+
+  return normalized == "Envenom"
+    or normalized == "Noxious Assault"
+    or string.find(string.lower(normalized), "poison", 1, true) ~= nil
+end
+
+function addon:IsPositivePoisonEvidenceSpell(name)
+  local normalized = normalizeSpellName(name)
+  if normalized == "" or normalized == "Noxious Assault" then
+    return false
+  end
+
+  return normalized == "Envenom"
+    or string.find(string.lower(normalized), "poison", 1, true) ~= nil
+end
+
+function addon:ClearTargetPoisonImmunity(reason)
+  local immunity = self.state.poisonImmunity
+  if immunity then
+    self:Debug(
+      "Clearing poison immunity for " .. tostring(immunity.targetName or "target") ..
+      " (" .. tostring(reason or "unspecified") .. ")"
+    )
+  end
+  self.state.poisonImmunity = nil
+end
+
+function addon:IsCurrentTargetPoisonImmune()
+  local immunity = self.state.poisonImmunity
+  if not immunity then
+    return false
+  end
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey or immunity.targetKey ~= targetKey then
+    self:ClearTargetPoisonImmunity("target changed")
+    return false
+  end
+
+  return true
+end
+
+function addon:MarkCurrentTargetPoisonImmune(spellName, message, observedTargetName)
+  if not self:IsHostileTarget() or not self:IsPoisonImmunitySpell(spellName) then
+    return false
+  end
+
+  local targetName = UnitName("target")
+  if not targetName or targetName == "" then
+    return false
+  end
+
+  if observedTargetName
+    and observedTargetName ~= ""
+    and string.lower(trim(observedTargetName)) ~= string.lower(targetName) then
+    return false
+  end
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey then
+    return false
+  end
+
+  local normalizedSpell = normalizeSpellName(spellName)
+  local current = self.state.poisonImmunity
+  if current and current.targetKey == targetKey then
+    current.spellName = normalizedSpell
+    current.message = message
+    current.detectedAt = GetTime()
+    return true
+  end
+
+  self.state.poisonImmunity = {
+    targetKey = targetKey,
+    targetName = targetName,
+    spellName = normalizedSpell,
+    message = message,
+    detectedAt = GetTime(),
+  }
+  self:Debug(
+    "Poison immunity confirmed for " .. tostring(targetName) ..
+    " by " .. tostring(normalizedSpell) ..
+    "; switching Builder to physical rotation"
+  )
+  return true
+end
+
+function addon:ExtractPoisonImmunityEvidence(message)
+  if not message or message == "" then
+    return nil, nil
+  end
+
+  local _, _, targetName, spellName = string.find(message, "^(.-) is immune to your (.-)%.?$")
+  if targetName and spellName then
+    return trim(targetName), normalizeSpellName(spellName)
+  end
+
+  _, _, spellName, targetName = string.find(message, "^Your (.-) failed%. (.-) is immune%.?$")
+  if targetName and spellName then
+    return trim(targetName), normalizeSpellName(spellName)
+  end
+
+  return nil, nil
+end
+
+function addon:ExtractPositivePoisonEvidence(message)
+  if not message or message == "" then
+    return nil, nil
+  end
+
+  local targetName, spellName
+  _, _, spellName, targetName = string.find(message, "^Your (.-) hits (.-) for ")
+  if not spellName then
+    _, _, spellName, targetName = string.find(message, "^Your (.-) crits (.-) for ")
+  end
+  if not spellName then
+    _, _, targetName, spellName = string.find(message, "^(.-) is afflicted by your (.-)%.?$")
+  end
+  if not spellName then
+    _, _, targetName, spellName = string.find(message, "^(.-) suffers %d+ .- damage from your (.-)%.?$")
+  end
+
+  if targetName and spellName and self:IsPositivePoisonEvidenceSpell(spellName) then
+    return trim(targetName), normalizeSpellName(spellName)
+  end
+
+  return nil, nil
+end
+
+function addon:OnPoisonCombatMessage(message)
+  local immuneTarget, immuneSpell = self:ExtractPoisonImmunityEvidence(message)
+  if immuneTarget and immuneSpell then
+    self:MarkCurrentTargetPoisonImmune(immuneSpell, message, immuneTarget)
+    return
+  end
+
+  if not self:IsCurrentTargetPoisonImmune() then
+    return
+  end
+
+  local successTarget, successSpell = self:ExtractPositivePoisonEvidence(message)
+  if not successTarget or not successSpell then
+    return
+  end
+
+  local targetName = UnitName("target")
+  if targetName and string.lower(successTarget) == string.lower(targetName) then
+    self:ClearTargetPoisonImmunity("later poison success: " .. tostring(successSpell))
+  end
+end
+
+function addon:OnPoisonUiError(message)
+  if not message or not string.find(string.lower(message), "immune", 1, true) then
+    return
+  end
+
+  local lastAttempt = self.state.lastSpellAttempt
+  local recentAttempt = lastAttempt
+    and lastAttempt.at
+    and (GetTime() - lastAttempt.at) <= 1
+  if not recentAttempt or not self:IsPoisonImmunitySpell(lastAttempt.name) then
+    return
+  end
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey or lastAttempt.targetKey ~= targetKey then
+    return
+  end
+
+  self:MarkCurrentTargetPoisonImmune(lastAttempt.name, message, lastAttempt.targetName)
+end
+
 function addon:ClassifyDamageEvent(sourceType, spellName, school)
   if sourceType == "melee" then
     return "melee"
@@ -1445,6 +1623,8 @@ function addon:OnSpellSelfDamage(message)
     return
   end
 
+  self:OnPoisonCombatMessage(message)
+
   if self.OnRoleplayCombatMessage then
     self:OnRoleplayCombatMessage(message)
   end
@@ -1505,6 +1685,8 @@ function addon:OnSpellPeriodicDamage(message)
   if not message then
     return
   end
+
+  self:OnPoisonCombatMessage(message)
 
   if self.OnRoleplayCombatMessage then
     self:OnRoleplayCombatMessage(message)
@@ -4807,6 +4989,7 @@ function addon:GetComboPointContext(mode)
     remainingFightDuration = remainingFightDuration,
     liveRemainingFightDuration = liveRemainingFightDuration,
     poisonReliable = self:HasReliablePoisonStateOnTarget(),
+    poisonImmune = self:IsCurrentTargetPoisonImmune(),
   }
   context.activeEnemyCast = self:GetInterruptibleEnemyCast()
   context.interruptResponse, context.activeEnemyCast,
@@ -5176,6 +5359,10 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
     return false
   end
 
+  if spellName == "Envenom" and context and context.poisonImmune then
+    return false
+  end
+
   if not self:CanCast(spellName) or not self:CanCastWithoutBreakingKickReserve(spellName, context) then
     return false
   end
@@ -5296,9 +5483,13 @@ function addon:GetBuilderMainBuffState()
   }
 end
 
-function addon:AreBuilderMainBuffsSafe(minimumRemaining)
+function addon:AreBuilderMainBuffsSafe(minimumRemaining, context)
   local state = self:GetBuilderMainBuffState()
   local safeWindow = minimumRemaining or self.builderEviscerateSafeWindow or 10
+  if context and context.poisonImmune then
+    return state.sndActive and state.sndRemaining >= safeWindow
+  end
+
   return state.sndActive
     and state.envenomActive
     and state.sndRemaining >= safeWindow
@@ -5335,7 +5526,7 @@ function addon:ArmBuilderEviscerate(context)
     return false
   end
 
-  if not self:AreBuilderMainBuffsSafe() then
+  if not self:AreBuilderMainBuffsSafe(nil, context) then
     return false
   end
 
@@ -5361,7 +5552,7 @@ function addon:CanUseBuilderEviscerate(context, allowArmed)
   end
 
   local armed = allowArmed and self:IsBuilderEviscerateArmed(context)
-  if not armed and not self:AreBuilderMainBuffsSafe() then
+  if not armed and not self:AreBuilderMainBuffsSafe(nil, context) then
     return false
   end
 
@@ -6460,6 +6651,9 @@ function addon:GetPreferredBuilder(context)
 
   local function buildReasons(bestSpell, preferredSpell)
     local reasons = {}
+    if context and context.poisonImmune then
+      addHeuristicReason(reasons, "Target is poison immune; using physical rotation")
+    end
     if context and context.reserveKick then
       addHeuristicReason(reasons, "Holding enough energy to answer a cast")
     end
@@ -6491,6 +6685,38 @@ function addon:GetPreferredBuilder(context)
     end
 
     return reasons
+  end
+
+  if context and context.poisonImmune then
+    local sinisterScore = self:GetBuilderSpellScore("Sinister Strike", context, modeHint)
+    if sinisterScore then
+      return "Sinister Strike", {
+        reasons = buildReasons("Sinister Strike", "Sinister Strike"),
+      }
+    end
+
+    local bestPhysicalSpell = nil
+    local bestPhysicalScore = nil
+    local physicalFallbacks = {
+      "Backstab",
+      "Surprise Attack",
+      "Hemorrhage",
+    }
+    for _, spellName in ipairs(physicalFallbacks) do
+      local score = self:GetBuilderSpellScore(spellName, context, modeHint)
+      if score and (not bestPhysicalScore or score > bestPhysicalScore) then
+        bestPhysicalScore = score
+        bestPhysicalSpell = spellName
+      end
+    end
+
+    if bestPhysicalSpell then
+      return bestPhysicalSpell, {
+        reasons = buildReasons(bestPhysicalSpell, "Sinister Strike"),
+      }
+    end
+
+    return nil
   end
 
   if mode == "auto" then
@@ -6552,6 +6778,10 @@ function addon:GetPreferredBuilder(context)
 end
 
 function addon:GetBuilderSpellScore(spellName, context, modeHint)
+  if spellName == "Noxious Assault" and context and context.poisonImmune then
+    return nil
+  end
+
   if not self:CanCast(spellName) then
     return nil
   end
@@ -6808,7 +7038,7 @@ function addon:TryPreferredBuilder(context)
   context = context or self:GetComboPointContext(self.state.activeRotationMode or "builder")
   local mode = RogueAutoDB.builder.mode
 
-  if mode == "auto" and self:ShouldUseBuilderGhostlyStrike(context) then
+  if mode == "auto" and not context.poisonImmune and self:ShouldUseBuilderGhostlyStrike(context) then
     if self:TryCast("Ghostly Strike") then
       return true
     end
@@ -6854,6 +7084,7 @@ function addon:OnCombatEnded()
   end
   self.state.activeEnemyCast = nil
   self.state.suppressedEnemyCastBar = nil
+  self:ClearTargetPoisonImmunity("combat ended")
   self:ClearPendingKidneyShotCheck()
   self:ClearBuilderEviscerateArm()
   self:FinalizeLearningFight("combat_end")
@@ -6910,6 +7141,8 @@ function addon:OnCombatMiss(message)
     return
   end
 
+  self:OnPoisonCombatMessage(message)
+
   local lower = string.lower(message)
   if string.find(lower, "parry") then
     self.state.riposteReadyUntil = GetTime() + 5
@@ -6936,6 +7169,8 @@ function addon:OnUiError(message)
   if not message then
     return
   end
+
+  self:OnPoisonUiError(message)
 
   local lower = string.lower(message)
   local lastAttempt = self.state.lastSpellAttempt
@@ -7013,6 +7248,9 @@ function addon:OnHostileSpellMessage(message)
 end
 
 function addon:OnSpellFailedLocalPlayer(message)
+  self:OnPoisonCombatMessage(message)
+  self:OnPoisonUiError(message)
+
   if self.OnRoleplayPickPocketFailure then
     self:OnRoleplayPickPocketFailure(message)
   end
@@ -7032,6 +7270,7 @@ function addon:OnTargetChanged()
   self:UpdateComboPointFrame(true)
   self.state.activeEnemyCast = nil
   self.state.suppressedEnemyCastBar = nil
+  self:ClearTargetPoisonImmunity("target changed")
   self:ClearPendingKidneyShotCheck()
   self:ClearBuilderEviscerateArm()
   self.state.currentTargetKey = nil

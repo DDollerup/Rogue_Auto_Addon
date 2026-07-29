@@ -91,7 +91,7 @@ addon.macroDefinitions = {
   {
     id = "builder",
     macro = "/script RogueAuto:Builder()",
-    description = "Builder: prioritizes Feint when grouped and targeted, handles interrupts, maintains Slice and Dice and Envenom, can optionally maintain Flourish, scores the best legal builder, and uses Eviscerate at 5 combo points when both main buffs are safe.",
+    description = "Builder: handles interrupts before Feint, maintains Slice and Dice and Envenom, can optionally maintain Flourish, scores the best legal builder, and uses Eviscerate at 5 combo points. Poison-immune targets automatically switch to a Slice and Dice, Sinister Strike, and Eviscerate rotation.",
   },
   {
     id = "opener",
@@ -217,7 +217,7 @@ addon.uiSections = {
   {
     title = "Builder",
     kind = "builder",
-    help = "Auto compares Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Builder() prioritizes Feint when grouped and targeted, maintains Slice and Dice and Envenom, can optionally maintain Flourish, and sets up safe 5-point Eviscerates.",
+    help = "Auto compares Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Builder() handles interrupts before Feint, maintains Slice and Dice and Envenom, can optionally maintain Flourish, and sets up safe 5-point Eviscerates. After confirmed poison immunity, it skips Envenom and Noxious Assault, prefers Sinister Strike, and requires only Slice and Dice for Eviscerate cycles.",
     items = { "builderFlourish", "builderGhostlyStrike" },
   },
   {
