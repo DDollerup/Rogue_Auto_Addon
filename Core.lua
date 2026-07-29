@@ -38,6 +38,7 @@ addon.kickInterruptSpells = {
   ["shadow bolt volley"] = true,
   ["fireball"] = true,
   ["frostbolt"] = true,
+  ["arcane bolt"] = true,
   ["lightning bolt"] = true,
   ["chain lightning"] = true,
   ["wrath"] = true,
