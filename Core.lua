@@ -35,6 +35,7 @@ addon.closeRangeSpells = {
 
 addon.kickInterruptSpells = {
   ["shadow bolt"] = true,
+  ["shadow bolt volley"] = true,
   ["fireball"] = true,
   ["frostbolt"] = true,
   ["lightning bolt"] = true,
