@@ -2218,6 +2218,24 @@ function addon:UpdatePoisonImmunityFrame()
   end
 end
 
+function addon:SizeWeaponPoisonWarningFrame(warningFrame)
+  if not warningFrame then
+    return
+  end
+
+  local uiScale = UIParent:GetScale() or 1
+  if uiScale <= 0 then
+    uiScale = 1
+  end
+
+  warningFrame:ClearAllPoints()
+  warningFrame:SetScale(1 / uiScale)
+  warningFrame:SetWidth(UIParent:GetWidth() or 0)
+  warningFrame:SetHeight(UIParent:GetHeight() or 0)
+  warningFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+  warningFrame.uiParentScale = uiScale
+end
+
 function addon:RebuildWeaponPoisonWarningBorder(warningFrame)
   if not warningFrame then
     return
@@ -2228,8 +2246,8 @@ function addon:RebuildWeaponPoisonWarningBorder(warningFrame)
   end
   warningFrame.edges = {}
 
-  local width = UIParent:GetWidth() or 0
-  local height = UIParent:GetHeight() or 0
+  local width = warningFrame:GetWidth() or 0
+  local height = warningFrame:GetHeight() or 0
   if width <= 0 or height <= 0 then
     return
   end
@@ -2291,11 +2309,11 @@ function addon:EnsureWeaponPoisonWarningFrame()
   end
 
   local warningFrame = CreateFrame("Frame", "RogueAutoWeaponPoisonWarningFrame", UIParent)
-  warningFrame:SetAllPoints(UIParent)
   warningFrame:SetFrameStrata("FULLSCREEN")
   warningFrame:SetFrameLevel(1)
   warningFrame:EnableMouse(false)
   warningFrame.edges = {}
+  self:SizeWeaponPoisonWarningFrame(warningFrame)
   self:RebuildWeaponPoisonWarningBorder(warningFrame)
 
   warningFrame:Hide()
@@ -2579,8 +2597,11 @@ function addon:UpdateWeaponPoisonWarningFrame(force)
 
   local width = UIParent:GetWidth() or 0
   local height = UIParent:GetHeight() or 0
+  local uiScale = UIParent:GetScale() or 1
   if math.abs(width - (warningFrame.borderWidth or 0)) > 0.5
-    or math.abs(height - (warningFrame.borderHeight or 0)) > 0.5 then
+    or math.abs(height - (warningFrame.borderHeight or 0)) > 0.5
+    or math.abs(uiScale - (warningFrame.uiParentScale or 0)) > 0.001 then
+    self:SizeWeaponPoisonWarningFrame(warningFrame)
     self:RebuildWeaponPoisonWarningBorder(warningFrame)
   end
 
