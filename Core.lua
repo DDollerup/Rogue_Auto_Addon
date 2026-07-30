@@ -176,6 +176,7 @@ addon.state = {
   learnedTargetKey = nil,
   learningFight = nil,
   poisonImmunity = nil,
+  poisonImmunities = {},
   activeEnemyCast = nil,
   suppressedEnemyCastBar = nil,
   pendingKidneyShotCheck = nil,
@@ -242,6 +243,7 @@ addon.cooldownTrackedSpells = {
 }
 
 addon.weaponPoisonFallbackTexture = "Interface\\Icons\\Ability_Poisons"
+addon.weaponPoisonWarningTexture = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningBorder"
 addon.weaponPoisonLowCharges = 12
 addon.weaponPoisonLowTimeMs = 5 * 60 * 1000
 addon.weaponPoisonNames = {
@@ -1285,13 +1287,23 @@ function addon:IsPositivePoisonEvidenceSpell(name)
     or string.find(string.lower(normalized), "poison", 1, true) ~= nil
 end
 
-function addon:ClearTargetPoisonImmunity(reason)
+function addon:GetPoisonImmunityKey(targetName)
+  return self:NormalizeMobLearningKey(targetName)
+end
+
+function addon:ClearTargetPoisonImmunity(reason, targetName)
   local immunity = self.state.poisonImmunity
+  local immunityKey = self:GetPoisonImmunityKey(
+    targetName or (immunity and immunity.targetName) or UnitName("target")
+  )
   if immunity then
     self:Debug(
       "Clearing poison immunity for " .. tostring(immunity.targetName or "target") ..
       " (" .. tostring(reason or "unspecified") .. ")"
     )
+  end
+  if immunityKey then
+    self.state.poisonImmunities[immunityKey] = nil
   end
   self.state.poisonImmunity = nil
   if self.poisonImmunityFrame then
@@ -1300,17 +1312,28 @@ function addon:ClearTargetPoisonImmunity(reason)
 end
 
 function addon:IsCurrentTargetPoisonImmune()
-  local immunity = self.state.poisonImmunity
-  if not immunity then
+  if not self:IsHostileTarget() then
+    self.state.poisonImmunity = nil
     return false
   end
 
+  local targetName = UnitName("target")
+  local immunityKey = self:GetPoisonImmunityKey(targetName)
   local targetKey = self:GetTargetKey()
-  if not targetKey or immunity.targetKey ~= targetKey then
-    self:ClearTargetPoisonImmunity("target changed")
+  if not immunityKey or not targetKey then
+    self.state.poisonImmunity = nil
     return false
   end
 
+  local immunity = self.state.poisonImmunities[immunityKey]
+  if not immunity then
+    self.state.poisonImmunity = nil
+    return false
+  end
+
+  immunity.targetKey = targetKey
+  immunity.targetName = targetName
+  self.state.poisonImmunity = immunity
   return true
 end
 
@@ -1335,27 +1358,38 @@ function addon:MarkCurrentTargetPoisonImmune(spellName, message, observedTargetN
     return false
   end
 
+  local immunityKey = self:GetPoisonImmunityKey(targetName)
+  if not immunityKey then
+    return false
+  end
+
   local normalizedSpell = normalizeSpellName(spellName)
-  local current = self.state.poisonImmunity
-  if current and current.targetKey == targetKey then
+  local current = self.state.poisonImmunities[immunityKey]
+  if current then
+    current.targetKey = targetKey
+    current.targetName = targetName
     current.spellName = normalizedSpell
     current.message = message
     current.detectedAt = GetTime()
+    self.state.poisonImmunity = current
     self:UpdatePoisonImmunityFrame()
     return true
   end
 
-  self.state.poisonImmunity = {
+  local immunity = {
+    immunityKey = immunityKey,
     targetKey = targetKey,
     targetName = targetName,
     spellName = normalizedSpell,
     message = message,
     detectedAt = GetTime(),
   }
+  self.state.poisonImmunities[immunityKey] = immunity
+  self.state.poisonImmunity = immunity
   self:Debug(
-    "Poison immunity confirmed for " .. tostring(targetName) ..
+    "Poison immunity remembered for " .. tostring(targetName) ..
     " by " .. tostring(normalizedSpell) ..
-    "; switching Builder to physical rotation"
+    "; matching targets will use the physical rotation until poison succeeds"
   )
   self:UpdatePoisonImmunityFrame()
   return true
@@ -1421,7 +1455,10 @@ function addon:OnPoisonCombatMessage(message)
 
   local targetName = UnitName("target")
   if targetName and string.lower(successTarget) == string.lower(targetName) then
-    self:ClearTargetPoisonImmunity("later poison success: " .. tostring(successSpell))
+    self:ClearTargetPoisonImmunity(
+      "later poison success: " .. tostring(successSpell),
+      successTarget
+    )
   end
 end
 
@@ -2155,15 +2192,14 @@ function addon:PositionPoisonImmunityFrame()
 end
 
 function addon:UpdatePoisonImmunityFrame()
-  local immunity = self.state.poisonImmunity
-  local targetKey = self:GetTargetKey()
-  if not immunity or not targetKey or immunity.targetKey ~= targetKey then
+  if not self:IsCurrentTargetPoisonImmune() then
     if self.poisonImmunityFrame then
       self.poisonImmunityFrame:Hide()
     end
     return
   end
 
+  local immunity = self.state.poisonImmunity
   local immunityFrame = self:PositionPoisonImmunityFrame()
   if immunityFrame then
     local poisonStates = self:GetWeaponPoisonStates()
@@ -2187,38 +2223,64 @@ function addon:EnsureWeaponPoisonWarningFrame()
   warningFrame:EnableMouse(false)
   warningFrame.edges = {}
 
-  local function createEdge(name, orientation, thickness, side)
+  local texturePath = self.weaponPoisonWarningTexture
+  local cornerSize = 150
+  local edgeThickness = 52
+  local centerOrnamentSize = 78
+
+  local function createPiece(name, width, height, left, right, top, bottom)
     local edge = warningFrame:CreateTexture(nil, "BACKGROUND")
-    edge:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    edge:SetVertexColor(0.1, 1, 0.18, 0.18)
-
-    if orientation == "horizontal" then
-      if side == "top" then
-        edge:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, 0)
-        edge:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, 0)
-      else
-        edge:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", 0, 0)
-        edge:SetPoint("BOTTOMRIGHT", warningFrame, "BOTTOMRIGHT", 0, 0)
-      end
-      edge:SetHeight(thickness)
-    else
-      if side == "left" then
-        edge:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, 0)
-        edge:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", 0, 0)
-      else
-        edge:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, 0)
-        edge:SetPoint("BOTTOMRIGHT", warningFrame, "BOTTOMRIGHT", 0, 0)
-      end
-      edge:SetWidth(thickness)
+    edge:SetTexture(texturePath)
+    edge:SetTexCoord(left, right, top, bottom)
+    if width then
+      edge:SetWidth(width)
     end
-
+    if height then
+      edge:SetHeight(height)
+    end
     warningFrame.edges[name] = edge
+    return edge
   end
 
-  createEdge("top", "horizontal", 28, "top")
-  createEdge("bottom", "horizontal", 28, "bottom")
-  createEdge("left", "vertical", 28, "left")
-  createEdge("right", "vertical", 28, "right")
+  local topLeft = createPiece("topLeft", cornerSize, cornerSize, 0, 0.27, 0, 0.27)
+  topLeft:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, 0)
+
+  local topRight = createPiece("topRight", cornerSize, cornerSize, 0.73, 1, 0, 0.27)
+  topRight:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, 0)
+
+  local bottomLeft = createPiece("bottomLeft", cornerSize, cornerSize, 0, 0.27, 0.73, 1)
+  bottomLeft:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", 0, 0)
+
+  local bottomRight = createPiece("bottomRight", cornerSize, cornerSize, 0.73, 1, 0.73, 1)
+  bottomRight:SetPoint("BOTTOMRIGHT", warningFrame, "BOTTOMRIGHT", 0, 0)
+
+  local topEdge = createPiece("top", nil, edgeThickness, 0.3, 0.43, 0, 0.13)
+  topEdge:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", cornerSize, 0)
+  topEdge:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", -cornerSize, 0)
+
+  local bottomEdge = createPiece("bottom", nil, edgeThickness, 0.3, 0.43, 0.87, 1)
+  bottomEdge:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", cornerSize, 0)
+  bottomEdge:SetPoint("BOTTOMRIGHT", warningFrame, "BOTTOMRIGHT", -cornerSize, 0)
+
+  local leftEdge = createPiece("left", edgeThickness, nil, 0, 0.13, 0.3, 0.43)
+  leftEdge:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, -cornerSize)
+  leftEdge:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", 0, cornerSize)
+
+  local rightEdge = createPiece("right", edgeThickness, nil, 0.87, 1, 0.3, 0.43)
+  rightEdge:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, -cornerSize)
+  rightEdge:SetPoint("BOTTOMRIGHT", warningFrame, "BOTTOMRIGHT", 0, cornerSize)
+
+  local topCenter = createPiece("topCenter", centerOrnamentSize, centerOrnamentSize, 0.43, 0.57, 0, 0.16)
+  topCenter:SetPoint("TOP", warningFrame, "TOP", 0, 0)
+
+  local bottomCenter = createPiece("bottomCenter", centerOrnamentSize, centerOrnamentSize, 0.43, 0.57, 0.84, 1)
+  bottomCenter:SetPoint("BOTTOM", warningFrame, "BOTTOM", 0, 0)
+
+  local leftCenter = createPiece("leftCenter", centerOrnamentSize, centerOrnamentSize, 0, 0.16, 0.43, 0.57)
+  leftCenter:SetPoint("LEFT", warningFrame, "LEFT", 0, 0)
+
+  local rightCenter = createPiece("rightCenter", centerOrnamentSize, centerOrnamentSize, 0.84, 1, 0.43, 0.57)
+  rightCenter:SetPoint("RIGHT", warningFrame, "RIGHT", 0, 0)
 
   warningFrame:Hide()
   self.weaponPoisonWarningFrame = warningFrame
@@ -2500,7 +2562,7 @@ function addon:UpdateWeaponPoisonWarningFrame(force)
   end
 
   local pulse = (math.sin(now * 4) + 1) * 0.5
-  local alpha = (0.05 + (strength * 0.1)) + (pulse * (0.08 + (strength * 0.12)))
+  local alpha = (0.18 + (strength * 0.22)) + (pulse * (0.12 + (strength * 0.18)))
 
   for _, edge in pairs(warningFrame.edges) do
     edge:SetAlpha(alpha)
@@ -7327,7 +7389,6 @@ function addon:OnCombatEnded()
   end
   self.state.activeEnemyCast = nil
   self.state.suppressedEnemyCastBar = nil
-  self:ClearTargetPoisonImmunity("combat ended")
   self:ClearPendingKidneyShotCheck()
   self:ClearBuilderEviscerateArm()
   self:FinalizeLearningFight("combat_end")
@@ -7517,7 +7578,6 @@ function addon:OnTargetChanged()
   self:UpdateComboPointFrame(true)
   self.state.activeEnemyCast = nil
   self.state.suppressedEnemyCastBar = nil
-  self:ClearTargetPoisonImmunity("target changed")
   self:ClearPendingKidneyShotCheck()
   self:ClearBuilderEviscerateArm()
   self.state.currentTargetKey = nil
@@ -7525,6 +7585,7 @@ function addon:OnTargetChanged()
   self.state.lastSpellAttempt = nil
   self.state.activeOpenerHint = nil
   self:ClearPendingPickPocketAttempt()
+  self:UpdatePoisonImmunityFrame()
 end
 
 function addon:OnComboPointsChanged(unit)
