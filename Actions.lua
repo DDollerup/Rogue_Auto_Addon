@@ -19,6 +19,10 @@ end
 function addon:PrepareAction(needsTarget)
   self:InitDB()
 
+  if self:IsPickPocketActionBlocked() then
+    return false
+  end
+
   if needsTarget and not self:TargetFallback() then
     return false
   end

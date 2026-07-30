@@ -13,6 +13,7 @@ addon.builderBuffHighPointRefreshWindow = 6
 addon.builderEviscerateSafeWindow = 10
 addon.builderEviscerateArmTimeout = 5
 addon.envenomMinimumRemainingFightDuration = 3
+addon.pickPocketActionDelay = 0.35
 addon.messageInterruptFallbackWindow = 2.5
 addon.mindFlayChannelFallbackWindow = 3.5
 addon.observedDebuffDurations = {
@@ -167,6 +168,7 @@ addon.state = {
   pickPocketAttempts = {},
   pendingPickPocketTarget = nil,
   pendingPickPocketExpires = 0,
+  pickPocketActionBlockedUntil = 0,
   attackSlot = nil,
   warnedMissingAttackSlot = false,
   targetSerial = 0,
@@ -6262,6 +6264,25 @@ function addon:BeginPickPocketAttempt()
 
   self.state.pendingPickPocketTarget = targetKey
   self.state.pendingPickPocketExpires = GetTime() + 2
+  self.state.pickPocketActionBlockedUntil = GetTime() + (self.pickPocketActionDelay or 0.35)
+end
+
+function addon:IsPickPocketActionBlocked()
+  return GetTime() < (self.state.pickPocketActionBlockedUntil or 0)
+end
+
+function addon:ClearPickPocketActionBlockOnResist(message)
+  if not message or not string.find(string.lower(message), "resist") then
+    return
+  end
+
+  local lastAttempt = self.state.lastSpellAttempt
+  if lastAttempt
+    and lastAttempt.name == "Pick Pocket"
+    and lastAttempt.at
+    and GetTime() - lastAttempt.at <= 1 then
+    self.state.pickPocketActionBlockedUntil = 0
+  end
 end
 
 function addon:ClearPendingPickPocketAttempt()
@@ -7364,6 +7385,7 @@ function addon:OnCombatMiss(message)
   end
 
   self:OnPoisonCombatMessage(message)
+  self:ClearPickPocketActionBlockOnResist(message)
 
   local lower = string.lower(message)
   if string.find(lower, "parry") then
@@ -7393,6 +7415,7 @@ function addon:OnUiError(message)
   end
 
   self:OnPoisonUiError(message)
+  self:ClearPickPocketActionBlockOnResist(message)
 
   local lower = string.lower(message)
   local lastAttempt = self.state.lastSpellAttempt
@@ -7473,6 +7496,7 @@ end
 function addon:OnSpellFailedLocalPlayer(message)
   self:OnPoisonCombatMessage(message)
   self:OnPoisonUiError(message)
+  self:ClearPickPocketActionBlockOnResist(message)
 
   if self.OnRoleplayPickPocketFailure then
     self:OnRoleplayPickPocketFailure(message)
