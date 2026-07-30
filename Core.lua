@@ -243,7 +243,14 @@ addon.cooldownTrackedSpells = {
 }
 
 addon.weaponPoisonFallbackTexture = "Interface\\Icons\\Ability_Poisons"
-addon.weaponPoisonWarningTexture = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningBorder.tga"
+addon.weaponPoisonWarningTextures = {
+  topLeft = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningCornerTopLeft",
+  topRight = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningCornerTopRight",
+  bottomLeft = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningCornerBottomLeft",
+  bottomRight = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningCornerBottomRight",
+  horizontal = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningEdgeHorizontal",
+  vertical = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningEdgeVertical",
+}
 addon.weaponPoisonLowCharges = 12
 addon.weaponPoisonLowTimeMs = 5 * 60 * 1000
 addon.weaponPoisonNames = {
@@ -2211,6 +2218,73 @@ function addon:UpdatePoisonImmunityFrame()
   end
 end
 
+function addon:RebuildWeaponPoisonWarningBorder(warningFrame)
+  if not warningFrame then
+    return
+  end
+
+  for _, edge in ipairs(warningFrame.edges or {}) do
+    edge:Hide()
+  end
+  warningFrame.edges = {}
+
+  local width = UIParent:GetWidth() or 0
+  local height = UIParent:GetHeight() or 0
+  if width <= 0 or height <= 0 then
+    return
+  end
+
+  local textures = self.weaponPoisonWarningTextures
+  local cornerSize = 92
+  local edgeThickness = 30
+  local tileLength = 120
+  local edgeInset = 50
+
+  local function createTexture(texturePath, layer, textureWidth, textureHeight)
+    local texture = warningFrame:CreateTexture(nil, layer or "ARTWORK")
+    texture:SetTexture(texturePath)
+    texture:SetWidth(textureWidth)
+    texture:SetHeight(textureHeight)
+    table.insert(warningFrame.edges, texture)
+    return texture
+  end
+
+  local horizontalTiles = math.max(1, math.ceil((width - (edgeInset * 2)) / tileLength))
+  for index = 1, horizontalTiles do
+    local x = edgeInset + ((index - 1) * tileLength)
+    local top = createTexture(textures.horizontal, "ARTWORK", tileLength, edgeThickness)
+    top:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", x, 0)
+
+    local bottom = createTexture(textures.horizontal, "ARTWORK", tileLength, edgeThickness)
+    bottom:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", x, 0)
+  end
+
+  local verticalTiles = math.max(1, math.ceil((height - (edgeInset * 2)) / tileLength))
+  for index = 1, verticalTiles do
+    local y = edgeInset + ((index - 1) * tileLength)
+    local left = createTexture(textures.vertical, "ARTWORK", edgeThickness, tileLength)
+    left:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, -y)
+
+    local right = createTexture(textures.vertical, "ARTWORK", edgeThickness, tileLength)
+    right:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, -y)
+  end
+
+  local topLeft = createTexture(textures.topLeft, "OVERLAY", cornerSize, cornerSize)
+  topLeft:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, 0)
+
+  local topRight = createTexture(textures.topRight, "OVERLAY", cornerSize, cornerSize)
+  topRight:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, 0)
+
+  local bottomLeft = createTexture(textures.bottomLeft, "OVERLAY", cornerSize, cornerSize)
+  bottomLeft:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", 0, 0)
+
+  local bottomRight = createTexture(textures.bottomRight, "OVERLAY", cornerSize, cornerSize)
+  bottomRight:SetPoint("BOTTOMRIGHT", warningFrame, "BOTTOMRIGHT", 0, 0)
+
+  warningFrame.borderWidth = width
+  warningFrame.borderHeight = height
+end
+
 function addon:EnsureWeaponPoisonWarningFrame()
   if self.weaponPoisonWarningFrame then
     return self.weaponPoisonWarningFrame
@@ -2222,65 +2296,7 @@ function addon:EnsureWeaponPoisonWarningFrame()
   warningFrame:SetFrameLevel(1)
   warningFrame:EnableMouse(false)
   warningFrame.edges = {}
-
-  local texturePath = self.weaponPoisonWarningTexture
-  local cornerSize = 150
-  local edgeThickness = 52
-  local centerOrnamentSize = 78
-
-  local function createPiece(name, width, height, left, right, top, bottom)
-    local edge = warningFrame:CreateTexture(nil, "BACKGROUND")
-    edge:SetTexture(texturePath)
-    edge:SetTexCoord(left, right, top, bottom)
-    if width then
-      edge:SetWidth(width)
-    end
-    if height then
-      edge:SetHeight(height)
-    end
-    warningFrame.edges[name] = edge
-    return edge
-  end
-
-  local topLeft = createPiece("topLeft", cornerSize, cornerSize, 0, 0.27, 0, 0.27)
-  topLeft:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, 0)
-
-  local topRight = createPiece("topRight", cornerSize, cornerSize, 0.73, 1, 0, 0.27)
-  topRight:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, 0)
-
-  local bottomLeft = createPiece("bottomLeft", cornerSize, cornerSize, 0, 0.27, 0.73, 1)
-  bottomLeft:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", 0, 0)
-
-  local bottomRight = createPiece("bottomRight", cornerSize, cornerSize, 0.73, 1, 0.73, 1)
-  bottomRight:SetPoint("BOTTOMRIGHT", warningFrame, "BOTTOMRIGHT", 0, 0)
-
-  local topEdge = createPiece("top", nil, edgeThickness, 0.3, 0.43, 0, 0.13)
-  topEdge:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", cornerSize, 0)
-  topEdge:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", -cornerSize, 0)
-
-  local bottomEdge = createPiece("bottom", nil, edgeThickness, 0.3, 0.43, 0.87, 1)
-  bottomEdge:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", cornerSize, 0)
-  bottomEdge:SetPoint("BOTTOMRIGHT", warningFrame, "BOTTOMRIGHT", -cornerSize, 0)
-
-  local leftEdge = createPiece("left", edgeThickness, nil, 0, 0.13, 0.3, 0.43)
-  leftEdge:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, -cornerSize)
-  leftEdge:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", 0, cornerSize)
-
-  local rightEdge = createPiece("right", edgeThickness, nil, 0.87, 1, 0.3, 0.43)
-  rightEdge:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, -cornerSize)
-  rightEdge:SetPoint("BOTTOMRIGHT", warningFrame, "BOTTOMRIGHT", 0, cornerSize)
-
-  local topCenter = createPiece("topCenter", centerOrnamentSize, centerOrnamentSize, 0.43, 0.57, 0, 0.16)
-  topCenter:SetPoint("TOP", warningFrame, "TOP", 0, 0)
-
-  local bottomCenter = createPiece("bottomCenter", centerOrnamentSize, centerOrnamentSize, 0.43, 0.57, 0.84, 1)
-  bottomCenter:SetPoint("BOTTOM", warningFrame, "BOTTOM", 0, 0)
-
-  local leftCenter = createPiece("leftCenter", centerOrnamentSize, centerOrnamentSize, 0, 0.16, 0.43, 0.57)
-  leftCenter:SetPoint("LEFT", warningFrame, "LEFT", 0, 0)
-
-  local rightCenter = createPiece("rightCenter", centerOrnamentSize, centerOrnamentSize, 0.84, 1, 0.43, 0.57)
-  rightCenter:SetPoint("RIGHT", warningFrame, "RIGHT", 0, 0)
+  self:RebuildWeaponPoisonWarningBorder(warningFrame)
 
   warningFrame:Hide()
   self.weaponPoisonWarningFrame = warningFrame
@@ -2561,10 +2577,17 @@ function addon:UpdateWeaponPoisonWarningFrame(force)
     return
   end
 
+  local width = UIParent:GetWidth() or 0
+  local height = UIParent:GetHeight() or 0
+  if math.abs(width - (warningFrame.borderWidth or 0)) > 0.5
+    or math.abs(height - (warningFrame.borderHeight or 0)) > 0.5 then
+    self:RebuildWeaponPoisonWarningBorder(warningFrame)
+  end
+
   local pulse = (math.sin(now * 4) + 1) * 0.5
   local alpha = (0.18 + (strength * 0.22)) + (pulse * (0.12 + (strength * 0.18)))
 
-  for _, edge in pairs(warningFrame.edges) do
+  for _, edge in ipairs(warningFrame.edges) do
     edge:SetAlpha(alpha)
   end
 
