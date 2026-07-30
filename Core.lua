@@ -248,8 +248,10 @@ addon.weaponPoisonWarningTextures = {
   topRight = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningCornerTopRight",
   bottomLeft = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningCornerBottomLeft",
   bottomRight = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningCornerBottomRight",
-  horizontal = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningEdgeHorizontal",
-  vertical = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningEdgeVertical",
+  top = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningEdgeTop",
+  bottom = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningEdgeBottom",
+  left = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningEdgeLeft",
+  right = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningEdgeRight",
 }
 addon.weaponPoisonLowCharges = 12
 addon.weaponPoisonLowTimeMs = 5 * 60 * 1000
@@ -2256,7 +2258,6 @@ function addon:RebuildWeaponPoisonWarningBorder(warningFrame)
   local cornerSize = 92
   local edgeThickness = 30
   local tileLength = 120
-  local edgeInset = 50
 
   local function createTexture(texturePath, layer, textureWidth, textureHeight)
     local texture = warningFrame:CreateTexture(nil, layer or "ARTWORK")
@@ -2267,23 +2268,27 @@ function addon:RebuildWeaponPoisonWarningBorder(warningFrame)
     return texture
   end
 
-  local horizontalTiles = math.max(1, math.ceil((width - (edgeInset * 2)) / tileLength))
+  local horizontalSpan = math.max(width - (cornerSize * 2), 1)
+  local horizontalTiles = math.max(1, math.ceil(horizontalSpan / tileLength))
+  local horizontalTileWidth = horizontalSpan / horizontalTiles
   for index = 1, horizontalTiles do
-    local x = edgeInset + ((index - 1) * tileLength)
-    local top = createTexture(textures.horizontal, "ARTWORK", tileLength, edgeThickness)
+    local x = cornerSize + ((index - 1) * horizontalTileWidth)
+    local top = createTexture(textures.top, "ARTWORK", horizontalTileWidth, edgeThickness)
     top:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", x, 0)
 
-    local bottom = createTexture(textures.horizontal, "ARTWORK", tileLength, edgeThickness)
+    local bottom = createTexture(textures.bottom, "ARTWORK", horizontalTileWidth, edgeThickness)
     bottom:SetPoint("BOTTOMLEFT", warningFrame, "BOTTOMLEFT", x, 0)
   end
 
-  local verticalTiles = math.max(1, math.ceil((height - (edgeInset * 2)) / tileLength))
+  local verticalSpan = math.max(height - (cornerSize * 2), 1)
+  local verticalTiles = math.max(1, math.ceil(verticalSpan / tileLength))
+  local verticalTileHeight = verticalSpan / verticalTiles
   for index = 1, verticalTiles do
-    local y = edgeInset + ((index - 1) * tileLength)
-    local left = createTexture(textures.vertical, "ARTWORK", edgeThickness, tileLength)
+    local y = cornerSize + ((index - 1) * verticalTileHeight)
+    local left = createTexture(textures.left, "ARTWORK", edgeThickness, verticalTileHeight)
     left:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, -y)
 
-    local right = createTexture(textures.vertical, "ARTWORK", edgeThickness, tileLength)
+    local right = createTexture(textures.right, "ARTWORK", edgeThickness, verticalTileHeight)
     right:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, -y)
   end
 
