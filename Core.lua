@@ -243,7 +243,7 @@ addon.cooldownTrackedSpells = {
 }
 
 addon.weaponPoisonFallbackTexture = "Interface\\Icons\\Ability_Poisons"
-addon.weaponPoisonWarningTexture = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningBorder"
+addon.weaponPoisonWarningTexture = "Interface\\AddOns\\RogueAuto\\Assets\\PoisonWarningBorder.tga"
 addon.weaponPoisonLowCharges = 12
 addon.weaponPoisonLowTimeMs = 5 * 60 * 1000
 addon.weaponPoisonNames = {
