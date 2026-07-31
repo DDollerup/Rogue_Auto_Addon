@@ -608,6 +608,9 @@ function addon:RefreshConfig()
   if addon.UpdateComboPointFrame then
     addon:UpdateComboPointFrame(true)
   end
+  if addon.UpdatePickPocketGoldStatsFrame then
+    addon:UpdatePickPocketGoldStatsFrame(true)
+  end
 
   updateScrollBounds()
 end
@@ -670,6 +673,23 @@ local function applySlashDefinition(definition, argument)
     local currentValue = addon:GetSetting(definition.setting)
     addon:RefreshConfig()
     addon:Print(definition.success(currentValue))
+    return
+  end
+
+  if definition.type == "action" then
+    if argument ~= definition.usage then
+      addon:Print("Usage: " .. primarySlashCommand .. " " .. definition.command .. " " .. definition.usage)
+      return
+    end
+
+    if definition.action then
+      local message = definition.action(argument)
+      if message then
+        addon:Print(message)
+      end
+      addon:RefreshConfig()
+      return
+    end
   end
 end
 

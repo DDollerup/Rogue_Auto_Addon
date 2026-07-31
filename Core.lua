@@ -132,9 +132,20 @@ addon.defaults = {
       x = 0,
       y = 58,
     },
+    pickPocketStats = {
+      enabled = true,
+      unlocked = false,
+      x = 0,
+      y = -80,
+    },
   },
   notifications = {
     highlightDuration = 8,
+  },
+  stats = {
+    pickPocket = {
+      lifetimeCopper = 0,
+    },
   },
   roleplay = {
     enabled = false,
@@ -186,6 +197,10 @@ addon.state = {
   combatSession = nil,
   pickPocketLootSession = nil,
   activeNotices = {},
+  pickPocketGold = {
+    sessionStart = 0,
+    sessionCopper = 0,
+  },
   cachedPlayerCritChance = nil,
   selfBuffTimeline = {},
   trackedPlayerBuffs = {},
@@ -939,6 +954,7 @@ end
 
 function addon:ResetDB()
   RogueAutoDB = deepCopy(self.defaults)
+  self:ResetPickPocketGoldSession()
   self:RefreshKnownSpells()
   self:Print("Settings reset to defaults.")
 end
@@ -965,6 +981,18 @@ function addon:MigrateSettings()
       roleplay.personality = "silent"
     end
     roleplay.frequency = math.max(10, math.min(tonumber(roleplay.frequency) or 35, 100))
+  end
+
+  if not RogueAutoDB.stats then
+    RogueAutoDB.stats = {}
+  end
+
+  if not RogueAutoDB.stats.pickPocket then
+    RogueAutoDB.stats.pickPocket = { lifetimeCopper = 0 }
+  elseif type(RogueAutoDB.stats.pickPocket) ~= "table" then
+    RogueAutoDB.stats.pickPocket = { lifetimeCopper = 0 }
+  elseif type(RogueAutoDB.stats.pickPocket.lifetimeCopper) ~= "number" then
+    RogueAutoDB.stats.pickPocket.lifetimeCopper = tonumber(RogueAutoDB.stats.pickPocket.lifetimeCopper) or 0
   end
 end
 
@@ -1004,6 +1032,304 @@ local function formatShortSeconds(value)
   end
 
   return string.format("%.1fs", value)
+end
+
+local function formatCopperToMoneyString(copper)
+  if not copper or copper < 0 then
+    copper = 0
+  end
+
+  copper = math.floor(copper + 0.5)
+  local gold = math.floor(copper / 10000)
+  local silver = math.floor((copper % 10000) / 100)
+  local remainingCopper = copper % 100
+  return tostring(gold) .. "g " .. tostring(silver) .. "s " .. tostring(remainingCopper) .. "c"
+end
+
+local function parseCopperFromLootText(message)
+  if not message then
+    return nil
+  end
+
+  local cleaned = trim(message)
+  cleaned = string.lower(cleaned)
+  cleaned = string.gsub(cleaned, ",", "")
+  cleaned = string.gsub(cleaned, "|c%x%x%x%x%x%x%x%x", "")
+  cleaned = string.gsub(cleaned, "|r", "")
+  cleaned = string.gsub(cleaned, "and", " ")
+
+  local totalCopper = 0
+  local hasAmount = false
+  for amountText, currencyText in string.gmatch(cleaned, "(%d+)%s*([a-z]+)") do
+    local amount = tonumber(amountText)
+    if amount then
+      local normalizedCurrency = string.gsub(currencyText, "[^a-z]", "")
+      if string.find(normalizedCurrency, "gold") or normalizedCurrency == "g" then
+        totalCopper = totalCopper + (amount * 10000)
+        hasAmount = true
+      elseif string.find(normalizedCurrency, "silver") or normalizedCurrency == "s" then
+        totalCopper = totalCopper + (amount * 100)
+        hasAmount = true
+      elseif string.find(normalizedCurrency, "copper") or normalizedCurrency == "c" then
+        totalCopper = totalCopper + amount
+        hasAmount = true
+      end
+    end
+  end
+
+  if not hasAmount then
+    return nil
+  end
+
+  return totalCopper
+end
+
+function addon:GetPickPocketGoldStats()
+  if not RogueAutoDB then
+    return nil
+  end
+
+  if not RogueAutoDB.stats then
+    RogueAutoDB.stats = {}
+  end
+  if not RogueAutoDB.stats.pickPocket then
+    RogueAutoDB.stats.pickPocket = { lifetimeCopper = 0 }
+  end
+
+  local pickPocketStats = RogueAutoDB.stats.pickPocket
+  if type(pickPocketStats.lifetimeCopper) ~= "number" then
+    pickPocketStats.lifetimeCopper = tonumber(pickPocketStats.lifetimeCopper) or 0
+  end
+
+  return pickPocketStats
+end
+
+function addon:EnsurePickPocketGoldSessionState()
+  if not self.state.pickPocketGold then
+    self.state.pickPocketGold = {
+      sessionStart = 0,
+      sessionCopper = 0,
+    }
+  end
+
+  if self.state.pickPocketGold.sessionStart == nil then
+    self.state.pickPocketGold.sessionStart = 0
+  end
+  if self.state.pickPocketGold.sessionCopper == nil then
+    self.state.pickPocketGold.sessionCopper = 0
+  end
+end
+
+function addon:InitializePickPocketGoldStats()
+  self:EnsurePickPocketGoldSessionState()
+  self.state.pickPocketGold.sessionStart = GetTime()
+  if self.state.pickPocketGold.sessionCopper == nil then
+    self.state.pickPocketGold.sessionCopper = 0
+  end
+end
+
+function addon:ResetPickPocketGoldSession()
+  self:EnsurePickPocketGoldSessionState()
+  self.state.pickPocketGold.sessionStart = GetTime()
+  self.state.pickPocketGold.sessionCopper = 0
+end
+
+function addon:ResetPickPocketGoldStats()
+  local stats = self:GetPickPocketGoldStats()
+  if not stats then
+    return
+  end
+
+  stats.lifetimeCopper = 0
+  self:ResetPickPocketGoldSession()
+  self:UpdatePickPocketGoldStatsFrame(true)
+end
+
+function addon:ParsePickPocketMoneyAmount(message)
+  return parseCopperFromLootText(message)
+end
+
+function addon:RecordPickPocketGold(amountCopper)
+  if not amountCopper or amountCopper <= 0 then
+    return
+  end
+
+  local stats = self:GetPickPocketGoldStats()
+  if not stats then
+    return
+  end
+
+  self:EnsurePickPocketGoldSessionState()
+  local rounded = math.floor(tonumber(amountCopper) + 0.5)
+  if rounded <= 0 then
+    return
+  end
+
+  stats.lifetimeCopper = (stats.lifetimeCopper or 0) + rounded
+  self.state.pickPocketGold.sessionCopper = (self.state.pickPocketGold.sessionCopper or 0) + rounded
+  if self.state.pickPocketGold.sessionStart <= 0 then
+    self.state.pickPocketGold.sessionStart = GetTime()
+  end
+end
+
+function addon:GetPickPocketGoldPerHour()
+  self:EnsurePickPocketGoldSessionState()
+  if self.state.pickPocketGold.sessionStart <= 0 or self.state.pickPocketGold.sessionCopper <= 0 then
+    return 0
+  end
+
+  local elapsed = GetTime() - self.state.pickPocketGold.sessionStart
+  if elapsed <= 0 then
+    return 0
+  end
+
+  return (self.state.pickPocketGold.sessionCopper / elapsed) * 3600
+end
+
+function addon:EnsurePickPocketGoldStatsFrame()
+  if self.pickPocketGoldStatsFrame then
+    return self.pickPocketGoldStatsFrame
+  end
+
+  local frame = CreateFrame("Frame", "RogueAutoPickPocketGoldStatsFrame", UIParent)
+  frame:SetWidth(235)
+  frame:SetHeight(68)
+  frame:SetFrameStrata("MEDIUM")
+  frame:SetFrameLevel(70)
+  frame:SetClampedToScreen(true)
+  frame:SetMovable(true)
+  frame:EnableMouse(false)
+  frame:RegisterForDrag("LeftButton")
+  frame:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 12,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
+  })
+  frame:SetBackdropColor(0.06, 0.06, 0.08, 0.86)
+  frame:SetBackdropBorderColor(0.75, 0.58, 0.12, 0.6)
+  frame:SetAlpha(0.9)
+  frame.isPositionInitialized = false
+
+  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
+  title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -8)
+  title:SetJustifyH("LEFT")
+  title:SetText("Pick Pocket Gold")
+  title:SetTextColor(1, 0.9, 0.35)
+
+  local lifetimeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  lifetimeLabel:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+  lifetimeLabel:SetText("Lifetime:")
+  lifetimeLabel:SetWidth(90)
+  lifetimeLabel:SetJustifyH("LEFT")
+  lifetimeLabel:SetTextColor(0.9, 0.9, 0.9)
+
+  local lifetimeValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  lifetimeValue:SetPoint("RIGHT", frame, "RIGHT", -8, -28)
+  lifetimeValue:SetJustifyH("RIGHT")
+  lifetimeValue:SetTextColor(1, 1, 1)
+
+  local hourlyLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  hourlyLabel:SetPoint("TOPLEFT", lifetimeLabel, "BOTTOMLEFT", 0, -16)
+  hourlyLabel:SetText("Per Hour:")
+  hourlyLabel:SetWidth(90)
+  hourlyLabel:SetJustifyH("LEFT")
+  hourlyLabel:SetTextColor(0.9, 0.9, 0.9)
+
+  local hourlyValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  hourlyValue:SetPoint("RIGHT", frame, "RIGHT", -8, -48)
+  hourlyValue:SetJustifyH("RIGHT")
+  hourlyValue:SetTextColor(1, 0.95, 0.6)
+
+  frame.lifetimeValue = lifetimeValue
+  frame.hourlyValue = hourlyValue
+  frame.title = title
+
+  frame:SetScript("OnDragStart", function()
+    local settings = RogueAutoDB and RogueAutoDB.ui and RogueAutoDB.ui.pickPocketStats
+    if not settings or not settings.unlocked then
+      return
+    end
+
+    frame:StartMoving()
+  end)
+
+  frame:SetScript("OnDragStop", function()
+    local settings = RogueAutoDB and RogueAutoDB.ui and RogueAutoDB.ui.pickPocketStats
+    if not settings then
+      frame:StopMovingOrSizing()
+      return
+    end
+
+    frame:StopMovingOrSizing()
+    if not settings.unlocked then
+      return
+    end
+
+    local centerX, centerY = UIParent:GetCenter()
+    local frameCenterX, frameCenterY = frame:GetCenter()
+    if centerX and centerY and frameCenterX and frameCenterY then
+      settings.x = frameCenterX - centerX
+      settings.y = frameCenterY - centerY
+    end
+    frame.isPositionInitialized = true
+    self:PositionPickPocketGoldStatsFrame(true)
+  end)
+
+  self.pickPocketGoldStatsFrame = frame
+  return frame
+end
+
+function addon:PositionPickPocketGoldStatsFrame(force)
+  local frame = self:EnsurePickPocketGoldStatsFrame()
+  if not frame then
+    return nil
+  end
+
+  local settings = RogueAutoDB and RogueAutoDB.ui and RogueAutoDB.ui.pickPocketStats
+  if not settings then
+    return frame
+  end
+
+  frame:EnableMouse(settings.unlocked == true)
+
+  if not settings.unlocked or force or not frame.isPositionInitialized then
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", settings.x or 0, settings.y or -80)
+    frame.isPositionInitialized = true
+  end
+
+  return frame
+end
+
+function addon:UpdatePickPocketGoldStatsFrame(force)
+  local settings = RogueAutoDB and RogueAutoDB.ui and RogueAutoDB.ui.pickPocketStats
+  if not settings or settings.enabled == false then
+    if self.pickPocketGoldStatsFrame then
+      self.pickPocketGoldStatsFrame:Hide()
+    end
+    return
+  end
+
+  local frame = self:EnsurePickPocketGoldStatsFrame()
+  if not frame then
+    return
+  end
+
+  self:PositionPickPocketGoldStatsFrame(force)
+  local stats = self:GetPickPocketGoldStats() or {}
+  local lifetimeCopper = 0
+  if type(stats.lifetimeCopper) == "number" then
+    lifetimeCopper = stats.lifetimeCopper
+  end
+
+  local perHourCopper = self:GetPickPocketGoldPerHour()
+  frame.lifetimeValue:SetText(formatCopperToMoneyString(lifetimeCopper))
+  frame.hourlyValue:SetText(string.format("%.2f g/h", perHourCopper / 10000))
+  frame:Show()
 end
 
 function addon:UpdateNoticeFramePositions()
@@ -1786,16 +2112,21 @@ function addon:AddPickPocketLootEntry(text, texture)
     return
   end
 
+  local inferredTexture = texture or inferPickPocketEntryTexture(normalized)
+  if inferredTexture == self.coinTexture then
+    self:RecordPickPocketGold(self:ParsePickPocketMoneyAmount(normalized))
+  end
+
   local entries = session.entries
   if not session.seen[normalized] then
     local entry = {
       text = normalized,
-      icon = texture or inferPickPocketEntryTexture(normalized),
+      icon = inferredTexture,
     }
     table.insert(entries, entry)
     session.seen[normalized] = entry
-  elseif texture and session.seen[normalized] and (not session.seen[normalized].icon or session.seen[normalized].icon == self.pickPocketFallbackTexture) then
-    session.seen[normalized].icon = texture
+  elseif inferredTexture and session.seen[normalized] and (not session.seen[normalized].icon or session.seen[normalized].icon == self.pickPocketFallbackTexture) then
+    session.seen[normalized].icon = inferredTexture
   end
 
   session.finishAt = GetTime() + 0.5
@@ -7413,11 +7744,13 @@ end
 function addon:OnPlayerLogin()
   self:InstallUiErrorFilter()
   self:RefreshKnownSpells()
+  self:InitializePickPocketGoldStats()
   self:UpdateComboPointFrame(true)
   self:UpdateCooldownListFrame(true)
   self:UpdateSelfBuffTimelineFrame(true)
   self:UpdateWeaponPoisonFrame(true)
   self:UpdateWeaponPoisonWarningFrame(true)
+  self:UpdatePickPocketGoldStatsFrame(true)
   self:Debug("Loaded version " .. self.version)
 end
 
@@ -7771,6 +8104,7 @@ frame:SetScript("OnUpdate", function()
   addon:UpdateCooldownListFrame(false)
   addon:UpdateSelfBuffTimelineFrame(false)
   addon:UpdateComboPointFrame(false)
+  addon:UpdatePickPocketGoldStatsFrame(false)
   addon:UpdateWeaponPoisonFrame(false)
   addon:UpdateWeaponPoisonWarningFrame(false)
 end)

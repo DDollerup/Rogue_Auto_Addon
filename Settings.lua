@@ -132,6 +132,16 @@ addon.settingDefinitions = {
     label = "Unlock combo point bullets for dragging",
     help = "When enabled, drag the bullets to move them. Disable it to lock them back in place.",
   },
+  pickPocketGoldStatsEnabled = {
+    path = { "ui", "pickPocketStats", "enabled" },
+    label = "Show Pick Pocket gold stats panel",
+    help = "Displays Pick Pocket gold per-hour and lifetime totals in a small draggable panel.",
+  },
+  pickPocketGoldStatsUnlocked = {
+    path = { "ui", "pickPocketStats", "unlocked" },
+    label = "Unlock Pick Pocket gold stats panel",
+    help = "When enabled, drag the stats panel to place it anywhere. Disable it to lock it in place.",
+  },
   builderGhostlyStrike = {
     path = { "builder", "useGhostlyStrike" },
     label = "Prioritize Ghostly Strike in Auto",
@@ -226,6 +236,11 @@ addon.uiSections = {
     items = { "pickPocketHumanoids" },
   },
   {
+    title = "Pick Pocket Gold",
+    help = "Track Pick Pocket income with a draggable lifetime and per-hour gold stat panel.",
+    items = { "pickPocketGoldStatsEnabled", "pickPocketGoldStatsUnlocked" },
+  },
+  {
     title = "Combo Points",
     help = "By default the bullets sit centered above the player. Unlock them to drag the display to a better spot, then lock it again when you're done.",
     items = { "comboPointsEnabled", "comboPointsUnlocked" },
@@ -245,6 +260,17 @@ addon.slashCommandDefinitions = {
     usage = "on|off",
     success = function(value)
       return "Pick Pocket before opener " .. (value and "enabled" or "disabled") .. "."
+    end,
+  },
+  {
+    command = "ppstats",
+    type = "action",
+    usage = "reset",
+    action = function()
+      if addon.ResetPickPocketGoldStats then
+        addon:ResetPickPocketGoldStats()
+      end
+      return "Pick Pocket gold stats reset."
     end,
   },
   {
