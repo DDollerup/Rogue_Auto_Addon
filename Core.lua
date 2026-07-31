@@ -14,6 +14,7 @@ addon.builderEviscerateSafeWindow = 10
 addon.builderEviscerateArmTimeout = 5
 addon.envenomMinimumRemainingFightDuration = 3
 addon.pickPocketActionDelay = 0.35
+addon.pickPocketResetDuration = 600
 addon.messageInterruptFallbackWindow = 2.5
 addon.mindFlayChannelFallbackWindow = 3.5
 addon.observedDebuffDurations = {
@@ -123,7 +124,7 @@ addon.defaults = {
     useFlourish = false,
   },
   minimap = {
-    angle = 220,
+    angle = 235,
   },
   ui = {
     comboPoints = {
@@ -985,6 +986,10 @@ function addon:MigrateSettings()
 
   if not RogueAutoDB.stats then
     RogueAutoDB.stats = {}
+  end
+
+  if RogueAutoDB.minimap and RogueAutoDB.minimap.angle == 220 then
+    RogueAutoDB.minimap.angle = self.defaults.minimap.angle
   end
 
   if not RogueAutoDB.stats.pickPocket then
@@ -6659,9 +6664,9 @@ function addon:MarkTargetPickPocketed(targetKey)
     return
   end
 
-  -- Suppress repeated Pick Pocket attempts on the same target long enough
-  -- for the next keypress to advance into an actual stealth opener.
-  self.state.pickPocketedTargets[targetKey] = GetTime() + 10
+  -- Suppress repeated Pick Pocket attempts on the same target until the
+  -- target pocket timer expires.
+  self.state.pickPocketedTargets[targetKey] = GetTime() + (self.pickPocketResetDuration or 600)
   self.state.pickPocketAttempts[targetKey] = nil
 end
 
@@ -6691,6 +6696,27 @@ function addon:GetPickPocketAttemptCount()
   end
 
   return info.count or 0
+end
+
+function addon:GetPickPocketResetTimerForCurrentTarget()
+  self:PrunePickPocketTargets()
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey then
+    return nil
+  end
+
+  local expiry = self.state.pickPocketedTargets[targetKey]
+  if not expiry then
+    return 0
+  end
+
+  local remaining = expiry - GetTime()
+  if remaining <= 0 then
+    return 0
+  end
+
+  return remaining
 end
 
 function addon:BeginPickPocketAttempt()

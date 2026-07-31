@@ -237,6 +237,7 @@ addon.uiSections = {
   },
   {
     title = "Pick Pocket Gold",
+    kind = "pickPocketGold",
     help = "Track Pick Pocket income with a draggable lifetime and per-hour gold stat panel.",
     items = { "pickPocketGoldStatsEnabled", "pickPocketGoldStatsUnlocked" },
   },

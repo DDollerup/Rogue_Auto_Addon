@@ -104,6 +104,7 @@ local controlWidth = 392
 local textWidth = 372
 local buttonWidth = 122
 local buttonSpacing = 130
+local pickPocketResetMenuControl = nil
 
 local sectionIcons = {
   builder = "Interface\\Icons\\INV_Sword_04",
@@ -240,6 +241,66 @@ local function createWrappedText(parent, text, font, y, color, width)
   local height = getFontStringHeight(label, estimateWrappedTextHeight(text, width, font))
 
   return label, height
+end
+
+local function formatPickPocketMenuTimer(seconds)
+  if seconds == nil then
+    return "No target selected"
+  end
+
+  if seconds <= 0 then
+    return "Ready"
+  end
+
+  local rounded = math.floor(seconds + 0.5)
+  local minutes = math.floor(rounded / 60)
+  local remainingSeconds = rounded % 60
+  if minutes > 0 then
+    return string.format("%dm %02ds", minutes, remainingSeconds)
+  end
+
+  return string.format("%ds", remainingSeconds)
+end
+
+local function createPickPocketResetTimerControl(parent, y)
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(controlWidth)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
+  control:SetHeight(52)
+
+  local title = control:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
+  title:SetWidth(textWidth)
+  title:SetJustifyH("LEFT")
+  title:SetText("Current target Pick Pocket reset")
+  title:SetTextColor(1, 0.82, 0.12)
+
+  local value = control:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  value:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+  value:SetWidth(textWidth)
+  value:SetJustifyH("LEFT")
+  value:SetTextColor(1, 0.95, 0.6)
+
+  local help = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  help:SetPoint("TOPLEFT", value, "BOTTOMLEFT", 0, -4)
+  help:SetWidth(textWidth)
+  help:SetJustifyH("LEFT")
+  help:SetText("Shows countdown to when this target can be Pick Pocketed again.")
+  help:SetTextColor(0.75, 0.75, 0.75)
+
+  control.Refresh = function()
+    if not addon.GetPickPocketResetTimerForCurrentTarget then
+      value:SetText("Unavailable")
+      return
+    end
+
+    local remaining = addon:GetPickPocketResetTimerForCurrentTarget()
+    value:SetText(formatPickPocketMenuTimer(remaining))
+  end
+
+  registerRefreshable(control)
+  pickPocketResetMenuControl = control
+  return control, 52
 end
 
 local function createToggleControl(parent, settingId, y)
@@ -557,6 +618,23 @@ local function createSectionCard(parent, section, y)
       cursorY = cursorY - itemHeight - 6
     end
     cursorY = cursorY - 10
+  elseif section.kind == "pickPocketGold" then
+    for _, settingId in ipairs(section.items or {}) do
+      local definition = addon.settingDefinitions[settingId]
+      local _, itemHeight
+      if definition.min then
+        _, itemHeight = createSliderControl(card, settingId, cursorY)
+      elseif definition.options then
+        _, itemHeight = createOptionButtonsControl(card, settingId, cursorY)
+      else
+        _, itemHeight = createToggleControl(card, settingId, cursorY)
+      end
+      cursorY = cursorY - itemHeight - 6
+    end
+
+    local _, timerHeight = createPickPocketResetTimerControl(card, cursorY)
+    cursorY = cursorY - timerHeight - 6
+    cursorY = cursorY - 10
   elseif section.kind == "macros" then
     local _, height = createMacroControl(card, cursorY)
     cursorY = cursorY - height - 12
@@ -634,6 +712,28 @@ local function printHelp()
     addon:Print(primarySlashCommand .. " " .. definition.command .. " " .. definition.usage)
   end
 end
+
+local menuTimerUpdateAccumulator = 0
+frame:SetScript("OnUpdate", function(_, elapsed)
+  if not frame:IsShown() then
+    menuTimerUpdateAccumulator = 0
+    return
+  end
+
+  if not pickPocketResetMenuControl then
+    return
+  end
+
+  menuTimerUpdateAccumulator = menuTimerUpdateAccumulator + elapsed
+  if menuTimerUpdateAccumulator < 0.5 then
+    return
+  end
+
+  menuTimerUpdateAccumulator = 0
+  if pickPocketResetMenuControl.Refresh then
+    pickPocketResetMenuControl.Refresh()
+  end
+end)
 
 local function applySlashDefinition(definition, argument)
   if definition.type == "toggle" then
@@ -789,7 +889,7 @@ local function updateMinimapButtonPosition()
     return
   end
 
-  local angle = math.rad(RogueAutoDB.minimap.angle or 220)
+  local angle = math.rad(RogueAutoDB.minimap.angle or 235)
   local radius = (Minimap:GetWidth() / 2) + 5
   local x = math.cos(angle) * radius
   local y = math.sin(angle) * radius
