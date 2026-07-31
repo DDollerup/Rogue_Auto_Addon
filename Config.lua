@@ -2,6 +2,8 @@ local addon = RogueAuto
 
 SLASH_ROGUEAUTO1 = "/rogueauto"
 SLASH_ROGUEAUTO2 = "/rga"
+SLASH_ROGUEMENU1 = "/roguemenu"
+SLASH_ROGUEMENU2 = "/rgaopen"
 
 local primarySlashCommand = "/rga"
 
@@ -705,6 +707,7 @@ end
 
 local function printHelp()
   addon:Print(primarySlashCommand .. " opens config.")
+  addon:Print("/roguemenu | /rgaopen opens config.")
   addon:Print(primarySlashCommand .. " help")
   addon:Print(primarySlashCommand .. " reset")
   addon:Print(primarySlashCommand .. " rptest")
