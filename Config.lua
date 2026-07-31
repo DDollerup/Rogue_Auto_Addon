@@ -839,6 +839,10 @@ SlashCmdList.ROGUEAUTO = function(message)
   addon:Print("Unknown command. Use " .. primarySlashCommand .. " help")
 end
 
+SlashCmdList.ROGUEMENU = function()
+  SlashCmdList.ROGUEAUTO()
+end
+
 local minimapButton = CreateFrame("Button", "RogueAutoMinimapButton", Minimap)
 addon.minimapButton = minimapButton
 
