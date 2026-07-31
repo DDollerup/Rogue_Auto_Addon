@@ -256,7 +256,7 @@ local function formatPickPocketMenuTimer(seconds)
 
   local rounded = math.floor(seconds + 0.5)
   local minutes = math.floor(rounded / 60)
-  local remainingSeconds = rounded % 60
+  local remainingSeconds = math.mod(rounded, 60)
   if minutes > 0 then
     return string.format("%dm %02ds", minutes, remainingSeconds)
   end

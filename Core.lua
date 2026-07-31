@@ -1046,8 +1046,8 @@ local function formatCopperToMoneyString(copper)
 
   copper = math.floor(copper + 0.5)
   local gold = math.floor(copper / 10000)
-  local silver = math.floor((copper % 10000) / 100)
-  local remainingCopper = copper % 100
+  local silver = math.floor(math.mod(copper, 10000) / 100)
+  local remainingCopper = math.mod(copper, 100)
   return tostring(gold) .. "g " .. tostring(silver) .. "s " .. tostring(remainingCopper) .. "c"
 end
 
