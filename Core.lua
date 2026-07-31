@@ -202,6 +202,7 @@ addon.state = {
     sessionStart = 0,
     sessionCopper = 0,
   },
+  pickPocketMoneyTracking = nil,
   cachedPlayerCritChance = nil,
   selfBuffTimeline = {},
   trackedPlayerBuffs = {},
@@ -1065,7 +1066,7 @@ local function parseCopperFromLootText(message)
 
   local totalCopper = 0
   local hasAmount = false
-  for amountText, currencyText in string.gmatch(cleaned, "(%d+)%s*([a-z]+)") do
+  for amountText, currencyText in string.gfind(cleaned, "(%d+)%s*([a-z]+)") do
     local amount = tonumber(amountText)
     if amount then
       local normalizedCurrency = string.gsub(currencyText, "[^a-z]", "")
@@ -1197,8 +1198,8 @@ function addon:EnsurePickPocketGoldStatsFrame()
   end
 
   local frame = CreateFrame("Frame", "RogueAutoPickPocketGoldStatsFrame", UIParent)
-  frame:SetWidth(235)
-  frame:SetHeight(68)
+  frame:SetWidth(250)
+  frame:SetHeight(90)
   frame:SetFrameStrata("MEDIUM")
   frame:SetFrameLevel(70)
   frame:SetClampedToScreen(true)
@@ -1225,28 +1226,40 @@ function addon:EnsurePickPocketGoldStatsFrame()
   title:SetText("Pick Pocket Gold")
   title:SetTextColor(1, 0.9, 0.35)
 
+  local divider = frame:CreateTexture(nil, "ARTWORK")
+  divider:SetPoint("TOPLEFT", frame, "TOPLEFT", 9, -27)
+  divider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -9, -27)
+  divider:SetHeight(1)
+  divider:SetTexture(1, 0.82, 0.25, 0.28)
+
   local lifetimeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  lifetimeLabel:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+  lifetimeLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -36)
   lifetimeLabel:SetText("Lifetime:")
   lifetimeLabel:SetWidth(90)
   lifetimeLabel:SetJustifyH("LEFT")
   lifetimeLabel:SetTextColor(0.9, 0.9, 0.9)
 
   local lifetimeValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  lifetimeValue:SetPoint("RIGHT", frame, "RIGHT", -8, -28)
+  lifetimeValue:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -36)
+  lifetimeValue:SetWidth(135)
+  lifetimeValue:SetHeight(14)
   lifetimeValue:SetJustifyH("RIGHT")
+  lifetimeValue:SetJustifyV("TOP")
   lifetimeValue:SetTextColor(1, 1, 1)
 
   local hourlyLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  hourlyLabel:SetPoint("TOPLEFT", lifetimeLabel, "BOTTOMLEFT", 0, -16)
+  hourlyLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -60)
   hourlyLabel:SetText("Per Hour:")
   hourlyLabel:SetWidth(90)
   hourlyLabel:SetJustifyH("LEFT")
   hourlyLabel:SetTextColor(0.9, 0.9, 0.9)
 
   local hourlyValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  hourlyValue:SetPoint("RIGHT", frame, "RIGHT", -8, -48)
+  hourlyValue:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -60)
+  hourlyValue:SetWidth(135)
+  hourlyValue:SetHeight(14)
   hourlyValue:SetJustifyH("RIGHT")
+  hourlyValue:SetJustifyV("TOP")
   hourlyValue:SetTextColor(1, 0.95, 0.6)
 
   frame.lifetimeValue = lifetimeValue
@@ -2118,12 +2131,19 @@ function addon:AddPickPocketLootEntry(text, texture)
   end
 
   local inferredTexture = texture or inferPickPocketEntryTexture(normalized)
-  if inferredTexture == self.coinTexture then
-    self:RecordPickPocketGold(self:ParsePickPocketMoneyAmount(normalized))
-  end
-
   local entries = session.entries
   if not session.seen[normalized] then
+    local moneyAmount = self:ParsePickPocketMoneyAmount(normalized)
+    if moneyAmount and not session.moneyRecorded then
+      inferredTexture = self.coinTexture
+      session.moneyRecorded = true
+      if self.state.pickPocketMoneyTracking then
+        self.state.pickPocketMoneyTracking.recorded = true
+      end
+      self:RecordPickPocketGold(moneyAmount)
+      self:UpdatePickPocketGoldStatsFrame(true)
+    end
+
     local entry = {
       text = normalized,
       icon = inferredTexture,
@@ -6725,6 +6745,11 @@ function addon:BeginPickPocketAttempt()
     return
   end
 
+  self.state.pickPocketMoneyTracking = {
+    before = GetMoney and GetMoney() or 0,
+    expires = GetTime() + 5,
+  }
+
   local info = self.state.pickPocketAttempts[targetKey] or { count = 0, expires = 0 }
   info.count = info.count + 1
   info.expires = GetTime() + 15
@@ -6773,6 +6798,7 @@ function addon:RevertPendingPickPocketAttempt()
   end
 
   self:ClearPendingPickPocketAttempt()
+  self.state.pickPocketMoneyTracking = nil
 end
 
 function addon:PrunePendingPickPocketAttempt()
@@ -7296,11 +7322,13 @@ function addon:Cast(name)
     targetName = UnitName("target"),
     at = GetTime(),
   }
-  CastSpellByName(name)
-
   if name == "Pick Pocket" then
     self:BeginPickPocketAttempt()
-  elseif name == "Kick" then
+  end
+
+  CastSpellByName(name)
+
+  if name == "Kick" then
     self.state.activeEnemyCast = nil
   elseif name == "Kidney Shot" then
     self:BeginPendingKidneyShotCheck()
@@ -7921,8 +7949,17 @@ end
 
 function addon:OnLootOpened()
   self:PrunePendingPickPocketAttempt()
-  if self.state.pendingPickPocketTarget then
-    self:MarkTargetPickPocketed(self.state.pendingPickPocketTarget)
+  local targetKey = self.state.pendingPickPocketTarget
+  if not targetKey and UnitExists("target") and not UnitIsDead("target") then
+    targetKey = self:GetTargetKey()
+    self.state.pickPocketMoneyTracking = {
+      before = GetMoney and GetMoney() or 0,
+      expires = GetTime() + 5,
+    }
+  end
+
+  if targetKey then
+    self:MarkTargetPickPocketed(targetKey)
     self:BeginPickPocketLootSession()
     self:CapturePickPocketLootWindow()
     self:ClearPendingPickPocketAttempt()
@@ -7953,6 +7990,28 @@ function addon:OnChatMoney(message)
 
   if message and message ~= "" then
     self:AddPickPocketLootEntry(message)
+  end
+end
+
+function addon:OnPlayerMoney()
+  local tracking = self.state.pickPocketMoneyTracking
+  if not tracking then
+    return
+  end
+
+  if GetTime() > (tracking.expires or 0) then
+    self.state.pickPocketMoneyTracking = nil
+    return
+  end
+
+  local currentMoney = GetMoney and GetMoney() or 0
+  local gainedCopper = currentMoney - (tracking.before or currentMoney)
+  if gainedCopper > 0 then
+    if not tracking.recorded then
+      self:RecordPickPocketGold(gainedCopper)
+      self:UpdatePickPocketGoldStatsFrame(true)
+    end
+    self.state.pickPocketMoneyTracking = nil
   end
 end
 
@@ -8047,6 +8106,7 @@ frame:RegisterEvent("LOOT_OPENED")
 frame:RegisterEvent("LOOT_CLOSED")
 frame:RegisterEvent("CHAT_MSG_LOOT")
 frame:RegisterEvent("CHAT_MSG_MONEY")
+frame:RegisterEvent("PLAYER_MONEY")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 
@@ -8117,6 +8177,8 @@ frame:SetScript("OnEvent", function()
     addon:OnChatLoot(arg1)
   elseif event == "CHAT_MSG_MONEY" then
     addon:OnChatMoney(arg1)
+  elseif event == "PLAYER_MONEY" then
+    addon:OnPlayerMoney()
   elseif event == "CHAT_MSG_COMBAT_HOSTILE_DEATH" then
     addon:OnHostileDeath(arg1)
   elseif event == "PLAYER_TARGET_CHANGED" then
