@@ -11,6 +11,7 @@ addon.builderBuffEarlyRefreshWindow = 4
 addon.builderBuffEmergencyRefreshWindow = 1.5
 addon.builderBuffHighPointRefreshWindow = 6
 addon.builderEviscerateSafeWindow = 10
+addon.builderEviscerateShockWindow = 7
 addon.builderEviscerateArmTimeout = 5
 addon.envenomMinimumRemainingFightDuration = 3
 addon.pickPocketActionDelay = 0.35
@@ -6334,6 +6335,15 @@ function addon:IsBuilderEviscerateUrgent(context)
   return previousComboPoints <= 3 and (currentComboPoints - previousComboPoints) >= 2
 end
 
+function addon:HasBuilderEviscerateShockWindow(context)
+  local minimumRemaining = self.builderEviscerateShockWindow or 7
+  local state = self:GetBuilderMainBuffState()
+  return state.sndActive
+    and state.envenomActive
+    and state.sndRemaining >= minimumRemaining
+    and state.envenomRemaining >= minimumRemaining
+end
+
 function addon:IsBuilderEviscerateArmed(context)
   local arm = self.state.builderEviscerateArm
   if not arm or not context then
@@ -6355,12 +6365,16 @@ function addon:IsBuilderEviscerateArmed(context)
   return true
 end
 
-function addon:ArmBuilderEviscerate(context)
+function addon:ArmBuilderEviscerate(context, requireShockWindow)
   if not context or context.comboPoints ~= 4 or not self:HasSpell("Eviscerate") then
     return false
   end
 
-  if not self:AreBuilderMainBuffsSafe(nil, context) then
+  if requireShockWindow then
+    if not self:HasBuilderEviscerateShockWindow(context) then
+      return false
+    end
+  elseif not self:AreBuilderMainBuffsSafe(nil, context) then
     return false
   end
 

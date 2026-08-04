@@ -91,9 +91,18 @@ function addon:Builder()
     return
   end
 
-  if context.comboPoints == 4 and self:ArmBuilderEviscerate(context) then
-    self:TryPreferredBuilder(context)
-    return
+  if context.comboPoints == 4 then
+    local shockWindow = self.builderEviscerateShockWindow or 7
+    if self:HasBuilderEviscerateShockWindow(context) then
+      if self:ArmBuilderEviscerate(context, true) then
+        self:Debug("Shock Eviscerate path: arming at 4 CP with SnD/Envenom >= " .. shockWindow .. "s")
+        self:TryPreferredBuilder(context)
+        return
+      end
+    elseif self:ArmBuilderEviscerate(context) then
+      self:TryPreferredBuilder(context)
+      return
+    end
   end
 
   self:TryPreferredBuilder(context)
