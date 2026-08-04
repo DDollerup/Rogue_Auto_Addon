@@ -6316,6 +6316,24 @@ function addon:ClearBuilderEviscerateUrgent()
   self.state.builderEviscerateUrgentAtFive = false
 end
 
+function addon:IsBuilderEviscerateUrgent(context)
+  local currentComboPoints = context and context.comboPoints or self:GetComboPoints()
+  if currentComboPoints < 5 then
+    return false
+  end
+
+  if self.state.builderEviscerateUrgentAtFive then
+    return true
+  end
+
+  local previousComboPoints = self.state.lastBuilderComboPoints
+  if previousComboPoints == nil then
+    return false
+  end
+
+  return previousComboPoints <= 3 and (currentComboPoints - previousComboPoints) >= 2
+end
+
 function addon:IsBuilderEviscerateArmed(context)
   local arm = self.state.builderEviscerateArm
   if not arm or not context then
