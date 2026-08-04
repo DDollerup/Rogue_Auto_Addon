@@ -193,6 +193,8 @@ addon.state = {
   suppressedEnemyCastBar = nil,
   pendingKidneyShotCheck = nil,
   builderEviscerateArm = nil,
+  builderEviscerateUrgentAtFive = false,
+  lastBuilderComboPoints = nil,
   activeRotationMode = nil,
   activeOpenerHint = nil,
   combatSession = nil,
@@ -201,6 +203,11 @@ addon.state = {
   pickPocketGold = {
     sessionStart = 0,
     sessionCopper = 0,
+  },
+  pickPocketRunTimer = {
+    remaining = 600,
+    startedAt = nil,
+    running = false,
   },
   pickPocketMoneyTracking = nil,
   cachedPlayerCritChance = nil,
@@ -1052,6 +1059,13 @@ local function formatCopperToMoneyString(copper)
   return tostring(gold) .. "g " .. tostring(silver) .. "s " .. tostring(remainingCopper) .. "c"
 end
 
+local function formatPickPocketRunTimer(seconds)
+  local rounded = math.max(0, math.floor((seconds or 0) + 0.5))
+  local minutes = math.floor(rounded / 60)
+  local remainingSeconds = math.mod(rounded, 60)
+  return string.format("%02d:%02d", minutes, remainingSeconds)
+end
+
 local function parseCopperFromLootText(message)
   if not message then
     return nil
@@ -1192,6 +1206,60 @@ function addon:GetPickPocketGoldPerHour()
   return (self.state.pickPocketGold.sessionCopper / elapsed) * 3600
 end
 
+function addon:GetPickPocketRunTimerRemaining()
+  local timer = self.state.pickPocketRunTimer
+  if not timer then
+    timer = { remaining = self.pickPocketResetDuration or 600, startedAt = nil, running = false }
+    self.state.pickPocketRunTimer = timer
+  end
+
+  if timer.running and timer.startedAt then
+    local remaining = (timer.remaining or 0) - (GetTime() - timer.startedAt)
+    if remaining <= 0 then
+      timer.remaining = 0
+      timer.startedAt = nil
+      timer.running = false
+      return 0
+    end
+    return remaining
+  end
+
+  return timer.remaining or (self.pickPocketResetDuration or 600)
+end
+
+function addon:IsPickPocketRunTimerRunning()
+  self:GetPickPocketRunTimerRemaining()
+  return self.state.pickPocketRunTimer and self.state.pickPocketRunTimer.running == true
+end
+
+function addon:StartPickPocketRunTimer()
+  local remaining = self:GetPickPocketRunTimerRemaining()
+  local timer = self.state.pickPocketRunTimer
+  if remaining <= 0 then
+    timer.remaining = self.pickPocketResetDuration or 600
+  else
+    timer.remaining = remaining
+  end
+  timer.startedAt = GetTime()
+  timer.running = true
+end
+
+function addon:StopPickPocketRunTimer()
+  local remaining = self:GetPickPocketRunTimerRemaining()
+  local timer = self.state.pickPocketRunTimer
+  timer.remaining = remaining
+  timer.startedAt = nil
+  timer.running = false
+end
+
+function addon:ResetPickPocketRunTimer()
+  self.state.pickPocketRunTimer = {
+    remaining = self.pickPocketResetDuration or 600,
+    startedAt = nil,
+    running = false,
+  }
+end
+
 function addon:EnsurePickPocketGoldStatsFrame()
   if self.pickPocketGoldStatsFrame then
     return self.pickPocketGoldStatsFrame
@@ -1199,7 +1267,7 @@ function addon:EnsurePickPocketGoldStatsFrame()
 
   local frame = CreateFrame("Frame", "RogueAutoPickPocketGoldStatsFrame", UIParent)
   frame:SetWidth(250)
-  frame:SetHeight(90)
+  frame:SetHeight(116)
   frame:SetFrameStrata("MEDIUM")
   frame:SetFrameLevel(70)
   frame:SetClampedToScreen(true)
@@ -1226,21 +1294,71 @@ function addon:EnsurePickPocketGoldStatsFrame()
   title:SetText("Pick Pocket Gold")
   title:SetTextColor(1, 0.9, 0.35)
 
+  local function createTimerIconButton(texture, tooltip, xOffset, onClick)
+    local button = CreateFrame("Button", nil, frame)
+    button:SetWidth(18)
+    button:SetHeight(18)
+    button:SetPoint("TOPRIGHT", frame, "TOPRIGHT", xOffset, -7)
+    button:SetNormalTexture(texture)
+    button:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight")
+    button:SetScript("OnClick", function()
+      onClick()
+      self:UpdatePickPocketGoldStatsFrame(true)
+      if self.RefreshConfig then
+        self:RefreshConfig()
+      end
+    end)
+    button:SetScript("OnEnter", function()
+      GameTooltip:SetOwner(button, "ANCHOR_TOP")
+      GameTooltip:SetText(tooltip)
+      GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function()
+      GameTooltip:Hide()
+    end)
+    return button
+  end
+
+  createTimerIconButton("Interface\\Icons\\Ability_Rogue_Sprint", "Start run timer", -55, function()
+    self:StartPickPocketRunTimer()
+  end)
+  createTimerIconButton("Interface\\Icons\\Ability_Rogue_Feint", "Stop run timer", -34, function()
+    self:StopPickPocketRunTimer()
+  end)
+  createTimerIconButton("Interface\\Icons\\INV_Misc_PocketWatch_01", "Reset run timer", -13, function()
+    self:ResetPickPocketRunTimer()
+  end)
+
+  local timerLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  timerLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -34)
+  timerLabel:SetWidth(90)
+  timerLabel:SetHeight(14)
+  timerLabel:SetJustifyH("LEFT")
+  timerLabel:SetText("Run Timer:")
+  timerLabel:SetTextColor(0.9, 0.9, 0.9)
+
+  local timerValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  timerValue:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -34)
+  timerValue:SetWidth(150)
+  timerValue:SetHeight(14)
+  timerValue:SetJustifyH("RIGHT")
+  timerValue:SetJustifyV("TOP")
+
   local divider = frame:CreateTexture(nil, "ARTWORK")
-  divider:SetPoint("TOPLEFT", frame, "TOPLEFT", 9, -27)
-  divider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -9, -27)
+  divider:SetPoint("TOPLEFT", frame, "TOPLEFT", 9, -55)
+  divider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -9, -55)
   divider:SetHeight(1)
   divider:SetTexture(1, 0.82, 0.25, 0.28)
 
   local lifetimeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  lifetimeLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -36)
+  lifetimeLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -64)
   lifetimeLabel:SetText("Lifetime:")
   lifetimeLabel:SetWidth(90)
   lifetimeLabel:SetJustifyH("LEFT")
   lifetimeLabel:SetTextColor(0.9, 0.9, 0.9)
 
   local lifetimeValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  lifetimeValue:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -36)
+  lifetimeValue:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -64)
   lifetimeValue:SetWidth(135)
   lifetimeValue:SetHeight(14)
   lifetimeValue:SetJustifyH("RIGHT")
@@ -1248,14 +1366,14 @@ function addon:EnsurePickPocketGoldStatsFrame()
   lifetimeValue:SetTextColor(1, 1, 1)
 
   local hourlyLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  hourlyLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -60)
+  hourlyLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -88)
   hourlyLabel:SetText("Per Hour:")
   hourlyLabel:SetWidth(90)
   hourlyLabel:SetJustifyH("LEFT")
   hourlyLabel:SetTextColor(0.9, 0.9, 0.9)
 
   local hourlyValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  hourlyValue:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -60)
+  hourlyValue:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -88)
   hourlyValue:SetWidth(135)
   hourlyValue:SetHeight(14)
   hourlyValue:SetJustifyH("RIGHT")
@@ -1264,6 +1382,7 @@ function addon:EnsurePickPocketGoldStatsFrame()
 
   frame.lifetimeValue = lifetimeValue
   frame.hourlyValue = hourlyValue
+  frame.timerValue = timerValue
   frame.title = title
 
   frame:SetScript("OnDragStart", function()
@@ -1345,6 +1464,14 @@ function addon:UpdatePickPocketGoldStatsFrame(force)
   end
 
   local perHourCopper = self:GetPickPocketGoldPerHour()
+  local timerRemaining = self:GetPickPocketRunTimerRemaining()
+  local timerRunning = self:IsPickPocketRunTimerRunning()
+  frame.timerValue:SetText(formatPickPocketRunTimer(timerRemaining) .. (timerRunning and "  Running" or "  Stopped"))
+  if timerRunning then
+    frame.timerValue:SetTextColor(1, 0.9, 0.3)
+  else
+    frame.timerValue:SetTextColor(0.7, 0.7, 0.7)
+  end
   frame.lifetimeValue:SetText(formatCopperToMoneyString(lifetimeCopper))
   frame.hourlyValue:SetText(string.format("%.2f g/h", perHourCopper / 10000))
   frame:Show()
@@ -6185,6 +6312,10 @@ function addon:ClearBuilderEviscerateArm()
   self.state.builderEviscerateArm = nil
 end
 
+function addon:ClearBuilderEviscerateUrgent()
+  self.state.builderEviscerateUrgentAtFive = false
+end
+
 function addon:IsBuilderEviscerateArmed(context)
   local arm = self.state.builderEviscerateArm
   if not arm or not context then
@@ -6231,13 +6362,13 @@ function addon:ArmBuilderEviscerate(context)
   return true
 end
 
-function addon:CanUseBuilderEviscerate(context, allowArmed)
+function addon:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe)
   if not context or context.comboPoints < 5 or not self:HasSpell("Eviscerate") then
     return false
   end
 
   local armed = allowArmed and self:IsBuilderEviscerateArmed(context)
-  if not armed and not self:AreBuilderMainBuffsSafe(nil, context) then
+  if not armed and not allowUnsafe and not self:AreBuilderMainBuffsSafe(nil, context) then
     return false
   end
 
@@ -6253,12 +6384,16 @@ function addon:CanUseBuilderEviscerate(context, allowArmed)
   return true
 end
 
-function addon:TryBuilderEviscerate(context, allowArmed)
-  if not self:CanUseBuilderEviscerate(context, allowArmed) then
+function addon:TryBuilderEviscerate(context, allowArmed, allowUnsafe)
+  if not self:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe) then
     return false
   end
 
-  return self:TryCast("Eviscerate")
+  local success = self:TryCast("Eviscerate")
+  if success then
+    self:ClearBuilderEviscerateUrgent()
+  end
+  return success
 end
 
 function addon:TryBuilderFlourishUpkeep(context)
@@ -7810,6 +7945,7 @@ end
 
 function addon:OnCombatStarted()
   self:ClearBuilderEviscerateArm()
+  self:ClearBuilderEviscerateUrgent()
   if not self:IsCombatSessionActive() then
     self:StartCombatSession()
   end
@@ -7827,6 +7963,7 @@ function addon:OnCombatEnded()
   self.state.suppressedEnemyCastBar = nil
   self:ClearPendingKidneyShotCheck()
   self:ClearBuilderEviscerateArm()
+  self:ClearBuilderEviscerateUrgent()
   self:FinalizeLearningFight("combat_end")
   self:FinishCombatSession()
   self:UpdateComboPointFrame(true)
@@ -8047,6 +8184,7 @@ function addon:OnTargetChanged()
   self.state.suppressedEnemyCastBar = nil
   self:ClearPendingKidneyShotCheck()
   self:ClearBuilderEviscerateArm()
+  self:ClearBuilderEviscerateUrgent()
   self.state.currentTargetKey = nil
   self.state.learnedTargetKey = nil
   self.state.lastSpellAttempt = nil
@@ -8060,10 +8198,20 @@ function addon:OnComboPointsChanged(unit)
     return
   end
 
-  if self:GetComboPoints() < 4 then
+  local currentComboPoints = self:GetComboPoints()
+  local previousComboPoints = self.state.lastBuilderComboPoints or currentComboPoints
+
+  if currentComboPoints >= 5 and previousComboPoints <= 3 and (currentComboPoints - previousComboPoints) >= 2 then
+    self.state.builderEviscerateUrgentAtFive = true
+  elseif currentComboPoints < 5 then
+    self:ClearBuilderEviscerateUrgent()
+  end
+
+  if currentComboPoints < 4 then
     self:ClearBuilderEviscerateArm()
   end
 
+  self.state.lastBuilderComboPoints = currentComboPoints
   self:UpdateComboPointFrame(true)
 end
 

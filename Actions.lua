@@ -58,6 +58,11 @@ function addon:Builder()
     return
   end
 
+  if context.comboPoints >= 5 and self.state.builderEviscerateUrgentAtFive then
+    self:TryBuilderEviscerate(context, false, true)
+    return
+  end
+
   if self:IsBuilderEviscerateArmed(context) then
     if context.comboPoints >= 5 then
       self:TryBuilderEviscerate(context, true)
