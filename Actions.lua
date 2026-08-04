@@ -70,7 +70,7 @@ function addon:Builder()
 
   if self:IsBuilderEviscerateArmed(context) then
     if context.comboPoints >= 5 then
-      self:TryBuilderEviscerate(context, true)
+      self:TryBuilderEviscerate(context, true, true, true)
       return
     end
 

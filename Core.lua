@@ -6424,10 +6424,7 @@ function addon:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreK
     return false, "Eviscerate not ready"
   end
 
-  local shouldIgnoreKickReserve = ignoreKickReserve == true
-  if armed and self.state.builderEviscerateArm and self.state.builderEviscerateArm.shockWindow == true then
-    shouldIgnoreKickReserve = true
-  end
+  local shouldIgnoreKickReserve = ignoreKickReserve == true or armed == true
 
   if not shouldIgnoreKickReserve and not self:CanCastWithoutBreakingKickReserve("Eviscerate", context) then
     return false, "Eviscerate blocked by kick reserve"
@@ -6443,6 +6440,8 @@ function addon:TryBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreKick
       self:Trace("Urgent Eviscerate blocked: " .. tostring(reason))
     elseif allowArmed then
       self:Trace("Armed Eviscerate blocked: " .. tostring(reason))
+    else
+      self:Trace("Eviscerate blocked: " .. tostring(reason))
     end
     return false
   end
@@ -6450,8 +6449,11 @@ function addon:TryBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreKick
   local success = self:TryCast("Eviscerate")
   if success then
     self:ClearBuilderEviscerateUrgent()
+    return success
   end
-  return success
+
+  self:Trace("Eviscerate cast failed after passing checks")
+  return false
 end
 
 function addon:TryBuilderFlourishUpkeep(context)
