@@ -6420,6 +6420,12 @@ function addon:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreK
     return false, "Eviscerate out of range"
   end
 
+  local energyCost = self:GetSpellEnergyCost("Eviscerate")
+  local currentEnergy = self:GetEnergy()
+  if energyCost and currentEnergy < energyCost then
+    return false, "Eviscerate blocked by energy: have " .. currentEnergy .. ", need " .. energyCost
+  end
+
   if not self:CanCast("Eviscerate") then
     return false, "Eviscerate not ready"
   end
