@@ -70,6 +70,7 @@ function addon:Builder()
 
   if self:IsBuilderEviscerateArmed(context) then
     if context.comboPoints >= 5 then
+      self:Trace("Armed 5 CP Eviscerate path: attempting cast")
       self:TryBuilderEviscerate(context, true, true, true)
       return
     end
