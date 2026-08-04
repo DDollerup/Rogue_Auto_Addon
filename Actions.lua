@@ -60,6 +60,7 @@ function addon:Builder()
 
   if self:IsBuilderEviscerateUrgent(context) then
     self.state.builderEviscerateUrgentAtFive = true
+    self:Debug("Urgent builder Eviscerate at 5 combo points; casting immediately")
     self:TryBuilderEviscerate(context, false, true)
     return
   end
