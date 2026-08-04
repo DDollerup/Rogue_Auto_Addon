@@ -61,8 +61,11 @@ function addon:Builder()
   if self:IsBuilderEviscerateUrgent(context) then
     self.state.builderEviscerateUrgentAtFive = true
     self:Trace("Urgent builder Eviscerate at 5 combo points; casting immediately")
-    self:TryBuilderEviscerate(context, false, true, true)
-    return
+    if self:TryBuilderEviscerate(context, true, true, true) then
+      return
+    end
+
+    self:Trace("Urgent Eviscerate attempt failed; falling back to armed/normal eviscerate path")
   end
 
   if self:IsBuilderEviscerateArmed(context) then

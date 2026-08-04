@@ -6400,6 +6400,7 @@ function addon:ArmBuilderEviscerate(context, requireShockWindow)
   self.state.builderEviscerateArm = {
     targetKey = targetKey,
     armedAt = GetTime(),
+    shockWindow = requireShockWindow == true,
   }
   return true
 end
@@ -6423,7 +6424,12 @@ function addon:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreK
     return false, "Eviscerate not ready"
   end
 
-  if not ignoreKickReserve and not self:CanCastWithoutBreakingKickReserve("Eviscerate", context) then
+  local shouldIgnoreKickReserve = ignoreKickReserve == true
+  if armed and self.state.builderEviscerateArm and self.state.builderEviscerateArm.shockWindow == true then
+    shouldIgnoreKickReserve = true
+  end
+
+  if not shouldIgnoreKickReserve and not self:CanCastWithoutBreakingKickReserve("Eviscerate", context) then
     return false, "Eviscerate blocked by kick reserve"
   end
 
@@ -6435,6 +6441,8 @@ function addon:TryBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreKick
   if not canUse then
     if allowUnsafe and not allowArmed then
       self:Trace("Urgent Eviscerate blocked: " .. tostring(reason))
+    elseif allowArmed then
+      self:Trace("Armed Eviscerate blocked: " .. tostring(reason))
     end
     return false
   end
