@@ -6404,30 +6404,38 @@ function addon:ArmBuilderEviscerate(context, requireShockWindow)
   return true
 end
 
-function addon:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe)
+function addon:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreKickReserve)
   if not context or context.comboPoints < 5 or not self:HasSpell("Eviscerate") then
-    return false
+    return false, "invalid context, combo points, or missing Eviscerate"
   end
 
   local armed = allowArmed and self:IsBuilderEviscerateArmed(context)
   if not armed and not allowUnsafe and not self:AreBuilderMainBuffsSafe(nil, context) then
-    return false
+    return false, "main buffs unsafe for unarmed Eviscerate"
   end
 
   local inRange = self:IsSpellInRangeSafe("Eviscerate", "target")
   if inRange == 0 then
-    return false
+    return false, "Eviscerate out of range"
   end
 
-  if not self:CanCast("Eviscerate") or not self:CanCastWithoutBreakingKickReserve("Eviscerate", context) then
-    return false
+  if not self:CanCast("Eviscerate") then
+    return false, "Eviscerate not ready"
+  end
+
+  if not ignoreKickReserve and not self:CanCastWithoutBreakingKickReserve("Eviscerate", context) then
+    return false, "Eviscerate blocked by kick reserve"
   end
 
   return true
 end
 
-function addon:TryBuilderEviscerate(context, allowArmed, allowUnsafe)
-  if not self:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe) then
+function addon:TryBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreKickReserve)
+  local canUse, reason = self:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreKickReserve)
+  if not canUse then
+    if allowUnsafe and not allowArmed then
+      self:Trace("Urgent Eviscerate blocked: " .. tostring(reason))
+    end
     return false
   end
 
@@ -8245,6 +8253,7 @@ function addon:OnComboPointsChanged(unit)
 
   if currentComboPoints >= 5 and previousComboPoints <= 3 and (currentComboPoints - previousComboPoints) >= 2 then
     self.state.builderEviscerateUrgentAtFive = true
+    self:Trace("Combo jump " .. previousComboPoints .. "->" .. currentComboPoints .. "; forcing next Eviscerate")
   elseif currentComboPoints < 5 then
     self:ClearBuilderEviscerateUrgent()
   end
