@@ -60,7 +60,7 @@ function addon:Builder()
 
   if self:IsBuilderEviscerateUrgent(context) then
     self.state.builderEviscerateUrgentAtFive = true
-    self:Debug("Urgent builder Eviscerate at 5 combo points; casting immediately")
+    self:Trace("Urgent builder Eviscerate at 5 combo points; casting immediately")
     self:TryBuilderEviscerate(context, false, true)
     return
   end
@@ -95,7 +95,7 @@ function addon:Builder()
     local shockWindow = self.builderEviscerateShockWindow or 7
     if self:HasBuilderEviscerateShockWindow(context) then
       if self:ArmBuilderEviscerate(context, true) then
-        self:Debug("Shock Eviscerate path: arming at 4 CP with SnD/Envenom >= " .. shockWindow .. "s")
+        self:Trace("Shock Eviscerate path: arming at 4 CP with SnD/Envenom >= " .. shockWindow .. "s")
         self:TryPreferredBuilder(context)
         return
       end

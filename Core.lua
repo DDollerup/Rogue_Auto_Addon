@@ -50,6 +50,7 @@ addon.kickInterruptSpells = {
   ["holy fire"] = true,
   ["mind blast"] = true,
   ["mind flay"] = true,
+  ["venom spit"] = true,
   ["mana burn"] = true,
   ["immolate"] = true,
   ["corruption"] = true,
@@ -909,6 +910,15 @@ function addon:Debug(message)
   if RogueAutoDB and RogueAutoDB.debug then
     self:Print(message)
   end
+end
+
+function addon:Trace(message)
+  if RogueAutoDB and RogueAutoDB.debug then
+    self:Debug(message)
+    return
+  end
+
+  self:Print("TRACE: " .. message)
 end
 
 function addon:IsSuppressedUiErrorMessage(message)
