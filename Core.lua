@@ -925,7 +925,13 @@ function addon:Trace(message)
     return
   end
 
-  self:Print("TRACE: " .. message)
+  local text = "TRACE: " .. tostring(message)
+  if self.state.lastDebugMessage == text then
+    return
+  end
+
+  self.state.lastDebugMessage = text
+  self:Print(text)
 end
 
 function addon:IsSuppressedUiErrorMessage(message)
