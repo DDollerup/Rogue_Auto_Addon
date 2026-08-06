@@ -8393,78 +8393,78 @@ frame:RegisterEvent("PLAYER_MONEY")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 
-frame:SetScript("OnEvent", function()
-  if event == "VARIABLES_LOADED" then
+frame:SetScript("OnEvent", function(_, eventName, arg1)
+  if eventName == "VARIABLES_LOADED" then
     addon:OnVariablesLoaded()
-  elseif event == "PLAYER_LOGIN" then
+  elseif eventName == "PLAYER_LOGIN" then
     addon:OnPlayerLogin()
-  elseif event == "PLAYER_REGEN_DISABLED" then
+  elseif eventName == "PLAYER_REGEN_DISABLED" then
     addon:OnCombatStarted()
-  elseif event == "PLAYER_REGEN_ENABLED" then
+  elseif eventName == "PLAYER_REGEN_ENABLED" then
     addon:OnCombatEnded()
-  elseif event == "UNIT_ENERGY" then
+  elseif eventName == "UNIT_ENERGY" then
     addon:OnEnergyChanged(arg1)
-  elseif event == "UNIT_COMBO_POINTS" then
+  elseif eventName == "UNIT_COMBO_POINTS" then
     addon:OnComboPointsChanged(arg1)
-  elseif event == "LEARNED_SPELL_IN_TAB" or event == "CHARACTER_POINTS_CHANGED" then
+  elseif eventName == "LEARNED_SPELL_IN_TAB" or eventName == "CHARACTER_POINTS_CHANGED" then
     addon:OnSpellbookChanged()
-  elseif event == "CHAT_MSG_COMBAT_SELF_HITS" then
+  elseif eventName == "CHAT_MSG_COMBAT_SELF_HITS" then
     addon:OnCombatSelfHit(arg1)
-  elseif event == "CHAT_MSG_COMBAT_SELF_MISSES" then
+  elseif eventName == "CHAT_MSG_COMBAT_SELF_MISSES" then
     addon:OnCombatMiss(arg1)
-  elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
+  elseif eventName == "CHAT_MSG_SPELL_SELF_DAMAGE" then
     addon:OnSpellSelfDamage(arg1)
-  elseif event == "CHAT_MSG_SPELL_SELF_BUFF" then
+  elseif eventName == "CHAT_MSG_SPELL_SELF_BUFF" then
     addon:OnSelfBuffMessage(arg1)
     addon:OnFriendlySpellMessage(arg1)
     if addon.OnRoleplaySelfBuffMessage then
       addon:OnRoleplaySelfBuffMessage(arg1)
     end
-  elseif event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" then
+  elseif eventName == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" then
     addon:OnSpellFailedLocalPlayer(arg1)
-  elseif event == "CHAT_MSG_SPELL_PARTY_DAMAGE"
-    or event == "CHAT_MSG_SPELL_PARTY_BUFF"
-    or event == "CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE"
-    or event == "CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF"
-    or event == "CHAT_MSG_SPELL_PET_DAMAGE"
-    or event == "CHAT_MSG_SPELL_PET_BUFF"
-    or event == "CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE"
-    or event == "CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE"
-    or event == "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE" then
+  elseif eventName == "CHAT_MSG_SPELL_PARTY_DAMAGE"
+    or eventName == "CHAT_MSG_SPELL_PARTY_BUFF"
+    or eventName == "CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE"
+    or eventName == "CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF"
+    or eventName == "CHAT_MSG_SPELL_PET_DAMAGE"
+    or eventName == "CHAT_MSG_SPELL_PET_BUFF"
+    or eventName == "CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE"
+    or eventName == "CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE"
+    or eventName == "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE" then
     addon:OnFriendlySpellMessage(arg1)
-  elseif event == "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS" then
+  elseif eventName == "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS" then
     addon:OnSelfBuffMessage(arg1)
     if addon.OnRoleplaySelfBuffMessage then
       addon:OnRoleplaySelfBuffMessage(arg1)
     end
-  elseif event == "CHAT_MSG_SPELL_AURA_GONE_SELF" then
+  elseif eventName == "CHAT_MSG_SPELL_AURA_GONE_SELF" then
     addon:OnSelfBuffFade(arg1)
-  elseif event == "CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE"
-    or event == "CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF"
-    or event == "CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE"
-    or event == "CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF"
-    or event == "CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE"
-    or event == "CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF"
-    or event == "CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE"
-    or event == "CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF" then
+  elseif eventName == "CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE"
+    or eventName == "CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF"
+    or eventName == "CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE"
+    or eventName == "CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF"
+    or eventName == "CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE"
+    or eventName == "CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF"
+    or eventName == "CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE"
+    or eventName == "CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF" then
     addon:OnHostileSpellMessage(arg1)
-  elseif event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" or event == "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE" then
+  elseif eventName == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" or eventName == "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE" then
     addon:OnSpellPeriodicDamage(arg1)
-  elseif event == "UI_ERROR_MESSAGE" then
+  elseif eventName == "UI_ERROR_MESSAGE" then
     addon:OnUiError(arg1)
-  elseif event == "LOOT_OPENED" then
+  elseif eventName == "LOOT_OPENED" then
     addon:OnLootOpened()
-  elseif event == "LOOT_CLOSED" then
+  elseif eventName == "LOOT_CLOSED" then
     addon:OnLootClosed()
-  elseif event == "CHAT_MSG_LOOT" then
+  elseif eventName == "CHAT_MSG_LOOT" then
     addon:OnChatLoot(arg1)
-  elseif event == "CHAT_MSG_MONEY" then
+  elseif eventName == "CHAT_MSG_MONEY" then
     addon:OnChatMoney(arg1)
-  elseif event == "PLAYER_MONEY" then
+  elseif eventName == "PLAYER_MONEY" then
     addon:OnPlayerMoney()
-  elseif event == "CHAT_MSG_COMBAT_HOSTILE_DEATH" then
+  elseif eventName == "CHAT_MSG_COMBAT_HOSTILE_DEATH" then
     addon:OnHostileDeath(arg1)
-  elseif event == "PLAYER_TARGET_CHANGED" then
+  elseif eventName == "PLAYER_TARGET_CHANGED" then
     addon:OnTargetChanged()
   end
 end)
