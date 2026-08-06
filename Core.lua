@@ -226,6 +226,33 @@ addon.state = {
   lastDebugMessage = nil,
 }
 
+addon.DebugEvents = {
+  ["builder_rule_emergency_preamble"] = "Builder rule: emergency kick/riposte/interrupt preamble",
+  ["builder_rule_feint"] = "Builder rule: feint",
+  ["builder_rule_riposte"] = "Builder rule: riposte",
+  ["builder_rule_armed_eviscerate_5cp"] = "Builder rule: armed Eviscerate at 5 CP",
+  ["builder_rule_forced_eviscerate_5cp"] = "Builder rule: forced Eviscerate at 5 CP",
+  ["builder_rule_combat_buff_upkeep"] = "Builder rule: combat buff upkeep",
+  ["builder_rule_flourish_upkeep"] = "Builder rule: flourish upkeep",
+  ["builder_rule_arm_eviscerate_4cp"] = "Builder rule: arm eviscerate at 4 CP",
+  ["builder_rule_preferred_builder_fallback"] = "Builder rule: preferred builder fallback",
+  ["builder_shock_eviscerate_armed"] = function(shockWindow)
+    return "Shock Eviscerate path: arming at 4 CP with SnD/Envenom >= " .. tostring(shockWindow) .. "s"
+  end,
+  ["eviscerate_blocked_urgent"] = "Urgent Eviscerate blocked: %s",
+  ["eviscerate_blocked_armed"] = "Armed Eviscerate blocked: %s",
+  ["eviscerate_blocked_unarmed"] = "Eviscerate blocked: %s",
+  ["eviscerate_cast_failed"] = "Eviscerate cast failed after passing checks",
+  ["poison_immunity_cleared"] = "Clearing poison immunity for %s (%s)",
+  ["poison_immunity_remembered"] = "Poison immunity remembered for %s by %s; matching targets will use the physical rotation until poison succeeds",
+  ["active_enemy_cast_cleared"] = "Clearing enemy cast %s (%s)",
+  ["enemy_cast_tracking"] = "Tracking enemy cast %s from %s",
+  ["builder_poison_check"] = "Builder poison check: equipped=%s, targetImmune=%s, rotation=%s, reason=%s",
+  ["interrupt_decision"] = "Interrupt %s: source=%s, age=%s, remaining=%s, energy=%s/%s, melee=%s, kickReady=%s, decision=%s%s",
+  ["casting_spell"] = "Casting %s",
+  ["loaded_version"] = "Loaded version %s",
+}
+
 addon.damageCategories = {
   melee = "Melee",
   poisonDirect = "Poison Direct",
@@ -905,6 +932,33 @@ function addon:Print(message)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33cc99RogueAuto:|r " .. message)
 end
 
+function addon:FormatDebugEvent(eventName, ...)
+  local eventDefinition = self.DebugEvents and self.DebugEvents[eventName]
+  if not eventDefinition then
+    return tostring(eventName)
+  end
+
+  if type(eventDefinition) == "function" then
+    return eventDefinition(...)
+  end
+
+  if type(eventDefinition) == "string" then
+    if string.find(eventDefinition, "%%") then
+      return string.format(eventDefinition, ...)
+    end
+    return eventDefinition
+  end
+
+  if type(eventDefinition) == "table" and eventDefinition.template then
+    if type(eventDefinition.template) == "function" then
+      return eventDefinition.template(...)
+    end
+    return string.format(eventDefinition.template, ...)
+  end
+
+  return tostring(eventName)
+end
+
 function addon:Debug(message)
   if not (RogueAutoDB and RogueAutoDB.debug) then
     return
@@ -917,6 +971,14 @@ function addon:Debug(message)
 
   self.state.lastDebugMessage = text
   self:Print(text)
+end
+
+function addon:DebugEvent(eventName, ...)
+  if not (RogueAutoDB and RogueAutoDB.debug) then
+    return
+  end
+
+  self:Debug(self:FormatDebugEvent(eventName, ...))
 end
 
 function addon:Trace(message)
@@ -932,6 +994,10 @@ function addon:Trace(message)
 
   self.state.lastDebugMessage = text
   self:Print(text)
+end
+
+function addon:TraceEvent(eventName, ...)
+  self:Trace(self:FormatDebugEvent(eventName, ...))
 end
 
 function addon:IsSuppressedUiErrorMessage(message)
@@ -1801,9 +1867,10 @@ function addon:ClearTargetPoisonImmunity(reason, targetName)
     targetName or (immunity and immunity.targetName) or UnitName("target")
   )
   if immunity then
-    self:Debug(
-      "Clearing poison immunity for " .. tostring(immunity.targetName or "target") ..
-      " (" .. tostring(reason or "unspecified") .. ")"
+    self:DebugEvent(
+      "poison_immunity_cleared",
+      tostring(immunity.targetName or "target"),
+      tostring(reason or "unspecified")
     )
   end
   if immunityKey then
@@ -1890,10 +1957,10 @@ function addon:MarkCurrentTargetPoisonImmune(spellName, message, observedTargetN
   }
   self.state.poisonImmunities[immunityKey] = immunity
   self.state.poisonImmunity = immunity
-  self:Debug(
-    "Poison immunity remembered for " .. tostring(targetName) ..
-    " by " .. tostring(normalizedSpell) ..
-    "; matching targets will use the physical rotation until poison succeeds"
+  self:DebugEvent(
+    "poison_immunity_remembered",
+    tostring(targetName),
+    tostring(normalizedSpell)
   )
   self:UpdatePoisonImmunityFrame()
   return true
@@ -4636,9 +4703,10 @@ end
 function addon:ClearActiveEnemyCast(reason)
   local activeCast = self.state.activeEnemyCast
   if activeCast then
-    self:Debug(
-      "Clearing enemy cast " .. tostring(activeCast.spellName or "unknown") ..
-      " (" .. tostring(reason or "unspecified") .. ")"
+    self:DebugEvent(
+      "active_enemy_cast_cleared",
+      tostring(activeCast.spellName or "unknown"),
+      tostring(reason or "unspecified")
     )
   end
   self.state.activeEnemyCast = nil
@@ -4848,9 +4916,10 @@ function addon:RefreshActiveEnemyCast()
     or current.targetKey ~= liveCast.targetKey
     or current.spellName ~= liveCast.spellName
     or current.source ~= liveCast.source then
-    self:Debug(
-      "Tracking enemy cast " .. tostring(liveCast.spellName) ..
-      " from " .. tostring(liveCast.source)
+    self:DebugEvent(
+      "enemy_cast_tracking",
+      tostring(liveCast.spellName),
+      tostring(liveCast.source)
     )
   end
 end
@@ -5831,22 +5900,13 @@ function addon:GetComboPointContext(mode)
     weaponPoisonReason = weaponPoisonReason,
     physicalBuilderRotation = poisonImmune or not hasWeaponPoison,
   }
-  if RogueAutoDB and RogueAutoDB.debug then
-    local poisonRotationSignature =
-      tostring(context.poisonImmune) .. ":" ..
-      tostring(context.hasWeaponPoison) .. ":" ..
-      tostring(context.physicalBuilderRotation) .. ":" ..
-      tostring(context.weaponPoisonReason)
-    if self.state.lastPoisonRotationDebug ~= poisonRotationSignature then
-      self.state.lastPoisonRotationDebug = poisonRotationSignature
-      self:Debug(
-        "Builder poison check: equipped=" .. tostring(context.hasWeaponPoison) ..
-        ", targetImmune=" .. tostring(context.poisonImmune) ..
-        ", rotation=" .. (context.physicalBuilderRotation and "physical" or "poison") ..
-        ", reason=" .. tostring(context.weaponPoisonReason)
-      )
-    end
-  end
+  self:DebugEvent(
+    "builder_poison_check",
+    tostring(context.hasWeaponPoison),
+    tostring(context.poisonImmune),
+    (context.physicalBuilderRotation and "physical" or "poison"),
+    tostring(context.weaponPoisonReason)
+  )
   context.activeEnemyCast = self:GetInterruptibleEnemyCast()
   context.interruptResponse, context.activeEnemyCast,
     context.interruptDangerScore, context.activeCastInterruptConfidence =
@@ -5896,7 +5956,7 @@ function addon:GetActiveCastInterruptScore(activeCast)
 end
 
 function addon:DebugInterruptDecision(activeCast, decision, reason)
-  if not (RogueAutoDB and RogueAutoDB.debug) or not activeCast then
+  if not activeCast then
     return
   end
 
@@ -5906,17 +5966,18 @@ function addon:DebugInterruptDecision(activeCast, decision, reason)
   local kickReady = self:HasSpell("Kick") and self:IsSpellReady("Kick")
   local melee = self:IsInMeleeRange()
 
-  self:Debug(
-    "Interrupt " .. tostring(activeCast.spellName or "unknown") ..
-    ": source=" .. tostring(activeCast.source or "unknown") ..
-    ", age=" .. string.format("%.2f", age) .. "s" ..
-    ", remaining=" .. string.format("%.2f", remaining) .. "s" ..
-    ", energy=" .. tostring(self:GetEnergy()) ..
-    "/" .. tostring(self:GetKickEnergyCost()) ..
-    ", melee=" .. tostring(melee) ..
-    ", kickReady=" .. tostring(kickReady) ..
-    ", decision=" .. tostring(decision or "ignore") ..
-    (reason and ", reason=" .. tostring(reason) or "")
+  self:DebugEvent(
+    "interrupt_decision",
+    tostring(activeCast.spellName or "unknown"),
+    tostring(activeCast.source or "unknown"),
+    string.format("%.2f", age) .. "s",
+    string.format("%.2f", remaining) .. "s",
+    tostring(self:GetEnergy()),
+    tostring(self:GetKickEnergyCost()),
+    tostring(melee),
+    tostring(kickReady),
+    tostring(decision or "ignore"),
+    reason and ", reason=" .. tostring(reason) or ""
   )
 end
 
@@ -6445,11 +6506,11 @@ function addon:TryBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreKick
   local canUse, reason = self:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreKickReserve)
   if not canUse then
     if allowUnsafe and not allowArmed then
-      self:Trace("Urgent Eviscerate blocked: " .. tostring(reason))
+      self:TraceEvent("eviscerate_blocked_urgent", tostring(reason))
     elseif allowArmed then
-      self:Trace("Armed Eviscerate blocked: " .. tostring(reason))
+      self:TraceEvent("eviscerate_blocked_armed", tostring(reason))
     else
-      self:Trace("Eviscerate blocked: " .. tostring(reason))
+      self:TraceEvent("eviscerate_blocked_unarmed", tostring(reason))
     end
     return false
   end
@@ -6461,7 +6522,7 @@ function addon:TryBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreKick
     return success
   end
 
-  self:Trace("Eviscerate cast failed after passing checks")
+  self:TraceEvent("eviscerate_cast_failed")
   return false
 end
 
@@ -7519,7 +7580,7 @@ function addon:Cast(name)
   end
 
   local comboPoints = self:GetComboPoints()
-  self:Debug("Casting " .. name)
+  self:DebugEvent("casting_spell", tostring(name))
   self.state.lastSpellAttempt = {
     name = name,
     targetKey = self:GetTargetKey(),
@@ -8009,7 +8070,7 @@ function addon:OnPlayerLogin()
   self:UpdateWeaponPoisonFrame(true)
   self:UpdateWeaponPoisonWarningFrame(true)
   self:UpdatePickPocketGoldStatsFrame(true)
-  self:Debug("Loaded version " .. self.version)
+  self:DebugEvent("loaded_version", tostring(self.version))
 end
 
 function addon:OnCombatStarted()

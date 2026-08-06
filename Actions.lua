@@ -23,14 +23,19 @@ local function executeBuilderRules(self, context, rules)
       shouldRun = false
     end
 
-    if shouldRun and rule.action then
-      local wasHandled = rule.action()
-      if rule.trace and self.Trace and (wasHandled or rule.terminal) then
-        self:Trace(rule.trace)
-      end
-      if rule.terminal then
-        return true
-      end
+      if shouldRun and rule.action then
+        local wasHandled = rule.action()
+        if rule.trace and self.Trace and (wasHandled or rule.terminal) then
+          local traceArgs = {}
+          if rule.traceArgs then
+            local generated = rule.traceArgs()
+            traceArgs = generated or {}
+          end
+          self:TraceEvent(rule.trace, unpack(traceArgs))
+        end
+        if rule.terminal then
+          return true
+        end
       if wasHandled then
         return true
       end
@@ -43,25 +48,25 @@ local function buildBuilderRules(self, context)
   local shockWindow = self.builderEviscerateShockWindow or 7
   return {
     {
-      trace = "Builder rule: emergency kick/riposte/interrupt preamble",
+      trace = "builder_rule_emergency_preamble",
       action = function()
         return runInterruptPreamble(self, context)
       end,
     },
     {
-      trace = "Builder rule: feint",
+      trace = "builder_rule_feint",
       action = function()
         return self:TryBuilderFeint()
       end,
     },
     {
-      trace = "Builder rule: riposte",
+      trace = "builder_rule_riposte",
       action = function()
         return self:TryRiposte()
       end,
     },
     {
-      trace = "Builder rule: armed Eviscerate at 5 CP",
+      trace = "builder_rule_armed_eviscerate_5cp",
       when = function()
         return context.comboPoints >= 5 and self:GetBuilderEviscerateIntent(context) ~= nil
       end,
@@ -71,7 +76,7 @@ local function buildBuilderRules(self, context)
       end,
     },
     {
-      trace = "Builder rule: forced Eviscerate at 5 CP",
+      trace = "builder_rule_forced_eviscerate_5cp",
       when = function()
         return context.comboPoints >= 5
       end,
@@ -81,13 +86,13 @@ local function buildBuilderRules(self, context)
       end,
     },
     {
-      trace = "Builder rule: combat buff upkeep",
+      trace = "builder_rule_combat_buff_upkeep",
       action = function()
         return self:TryBuilderCombatBuffUpkeep(context)
       end,
     },
     {
-      trace = "Builder rule: flourish upkeep",
+      trace = "builder_rule_flourish_upkeep",
       when = function()
         return self:ShouldMaintainBuilderFlourish(context.comboPoints, context)
       end,
@@ -96,7 +101,7 @@ local function buildBuilderRules(self, context)
       end,
     },
     {
-      trace = "Builder rule: arm eviscerate at 4 CP",
+      trace = "builder_rule_arm_eviscerate_4cp",
       when = function()
         return context.comboPoints == 4
       end,
@@ -104,7 +109,7 @@ local function buildBuilderRules(self, context)
       action = function()
         if self:HasBuilderEviscerateShockWindow(context) then
           if self:ArmBuilderEviscerate(context, true) then
-            self:Trace("Shock Eviscerate path: arming at 4 CP with SnD/Envenom >= " .. shockWindow .. "s")
+            self:TraceEvent("builder_shock_eviscerate_armed", shockWindow)
             return self:TryPreferredBuilder(context)
           end
         elseif self:ArmBuilderEviscerate(context) then
@@ -114,7 +119,7 @@ local function buildBuilderRules(self, context)
       end,
     },
     {
-      trace = "Builder rule: preferred builder fallback",
+      trace = "builder_rule_preferred_builder_fallback",
       action = function()
         return self:TryPreferredBuilder(context)
       end,
