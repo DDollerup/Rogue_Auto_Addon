@@ -997,7 +997,10 @@ function addon:Trace(message)
 end
 
 function addon:TraceEvent(eventName, ...)
-  self:Trace(self:FormatDebugEvent(eventName, ...))
+  local traceText = self:FormatDebugEvent(eventName, ...)
+  if traceText then
+    self:Trace(traceText)
+  end
 end
 
 function addon:IsSuppressedUiErrorMessage(message)

@@ -29,15 +29,30 @@ local function executeBuilderRules(self, context, rules)
           local traceArgs = {}
           if rule.traceArgs then
             local generated = rule.traceArgs()
-            traceArgs = generated or {}
+            if type(generated) == "table" then
+              traceArgs = generated
+            elseif generated ~= nil then
+              traceArgs = {generated}
+            end
           end
-          self:TraceEvent(rule.trace, unpack(traceArgs))
+
+          local unpackFn = unpack or table.unpack
+          if self.TraceEvent then
+            if #traceArgs > 0 then
+              self:TraceEvent(rule.trace, unpackFn(traceArgs))
+            else
+              self:TraceEvent(rule.trace)
+            end
+          else
+            self:Trace(rule.trace)
+          end
         end
         if rule.terminal then
           return true
         end
-      if wasHandled then
-        return true
+        if wasHandled then
+          return true
+        end
       end
     end
   end
