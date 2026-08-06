@@ -95,8 +95,8 @@ addon.macroDefinitions = {
   },
   {
     id = "opener",
-    macro = "/script RogueAuto:Opener(\"Garrote\")",
-    description = "Opener(hint): use an explicit opener like Garrote, Ambush, Cheap Shot, or Pick Pocket. Example macros: /script RogueAuto:Opener(\"Garrote\") or /script RogueAuto:Opener(\"Ambush\").",
+    macro = "/rga opener Garrote",
+    description = "Opener(hint): use an explicit opener like Garrote, Ambush, Cheap Shot, or Pick Pocket. Example macros: /rga opener Garrote or /rga opener Ambush.",
   },
 }
 

@@ -7927,8 +7927,11 @@ function addon:GetBuilderSpellScore(spellName, context, modeHint)
 end
 
 function addon:ResolveOpenerHint(hint)
-  if not hint then
+  if hint == nil then
     return nil
+  end
+  if type(hint) ~= "string" then
+    hint = tostring(hint)
   end
 
   local normalized = string.lower(trim(hint))

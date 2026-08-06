@@ -176,11 +176,22 @@ function addon:Builder()
 end
 
 function addon:Opener(hint)
+  if not self or type(self) ~= "table" then
+    return false
+  end
+  if not self.state or type(self.state) ~= "table" then
+    return false
+  end
+
+  if type(hint) ~= "string" then
+    hint = tostring(hint or "")
+  end
+
   self.state.activeRotationMode = "opener"
   self.state.activeOpenerHint = self:ResolveOpenerHint(hint)
   if not self:PrepareAction(true) then
-    return
+    return false
   end
 
-  self:TryOpenerHint(hint)
+  return self:TryOpenerHint(hint)
 end

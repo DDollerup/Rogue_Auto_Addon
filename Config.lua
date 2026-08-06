@@ -107,6 +107,7 @@ local textWidth = 372
 local buttonWidth = 122
 local buttonSpacing = 130
 local pickPocketResetMenuControl = nil
+local pickPocketRunTimerMenuControl = nil
 
 local sectionIcons = {
   builder = "Interface\\Icons\\INV_Sword_04",
@@ -303,6 +304,105 @@ local function createPickPocketResetTimerControl(parent, y)
   registerRefreshable(control)
   pickPocketResetMenuControl = control
   return control, 52
+end
+
+local function createPickPocketRunTimerControl(parent, y)
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(controlWidth)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
+  control:SetHeight(82)
+
+  local title = control:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
+  title:SetText("Pocket Run Timer")
+  title:SetTextColor(1, 0.82, 0.12)
+
+  local value = control:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  value:SetPoint("TOPRIGHT", control, "TOPRIGHT", -4, 0)
+  value:SetWidth(180)
+  value:SetHeight(16)
+  value:SetJustifyH("RIGHT")
+  value:SetTextColor(1, 0.95, 0.6)
+
+  local startButton = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+  startButton:SetWidth(92)
+  startButton:SetHeight(22)
+  startButton:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -24)
+  startButton:SetText("Start")
+  startButton:SetScript("OnClick", function()
+    addon:StartPickPocketRunTimer()
+    control:Refresh()
+  end)
+
+  local stopButton = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+  stopButton:SetWidth(92)
+  stopButton:SetHeight(22)
+  stopButton:SetPoint("LEFT", startButton, "RIGHT", 8, 0)
+  stopButton:SetText("Stop")
+  stopButton:SetScript("OnClick", function()
+    addon:StopPickPocketRunTimer()
+    control:Refresh()
+  end)
+
+  local resetButton = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+  resetButton:SetWidth(92)
+  resetButton:SetHeight(22)
+  resetButton:SetPoint("LEFT", stopButton, "RIGHT", 8, 0)
+  resetButton:SetText("Reset")
+  resetButton:SetScript("OnClick", function()
+    addon:ResetPickPocketRunTimer()
+    control:Refresh()
+  end)
+
+  local help = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  help:SetPoint("TOPLEFT", startButton, "BOTTOMLEFT", 0, -6)
+  help:SetWidth(textWidth)
+  help:SetJustifyH("LEFT")
+  help:SetText("Manual 10-minute countdown until the first mobs' pockets should reset.")
+  help:SetTextColor(0.75, 0.75, 0.75)
+
+  control.Refresh = function()
+    local remaining = addon:GetPickPocketRunTimerRemaining()
+    local running = addon:IsPickPocketRunTimerRunning()
+    value:SetText(formatPickPocketMenuTimer(remaining) .. (running and "  Running" or "  Stopped"))
+    if running then
+      startButton:Disable()
+      stopButton:Enable()
+    else
+      startButton:Enable()
+      stopButton:Disable()
+    end
+  end
+
+  registerRefreshable(control)
+  pickPocketRunTimerMenuControl = control
+  return control, 82
+end
+
+local function createPickPocketGoldSessionResetControl(parent, y)
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(controlWidth)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
+  control:SetHeight(48)
+
+  local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+  button:SetWidth(160)
+  button:SetHeight(22)
+  button:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
+  button:SetText("Reset Gold / Hour")
+  button:SetScript("OnClick", function()
+    addon:ResetPickPocketGoldSession()
+    addon:UpdatePickPocketGoldStatsFrame(true)
+  end)
+
+  local help = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  help:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -5)
+  help:SetWidth(textWidth)
+  help:SetJustifyH("LEFT")
+  help:SetText("Starts a fresh hourly session without changing Lifetime Gold.")
+  help:SetTextColor(0.75, 0.75, 0.75)
+
+  return control, 48
 end
 
 local function createToggleControl(parent, settingId, y)
@@ -634,6 +734,12 @@ local function createSectionCard(parent, section, y)
       cursorY = cursorY - itemHeight - 6
     end
 
+    local _, sessionResetHeight = createPickPocketGoldSessionResetControl(card, cursorY)
+    cursorY = cursorY - sessionResetHeight - 6
+
+    local _, runTimerHeight = createPickPocketRunTimerControl(card, cursorY)
+    cursorY = cursorY - runTimerHeight - 6
+
     local _, timerHeight = createPickPocketResetTimerControl(card, cursorY)
     cursorY = cursorY - timerHeight - 6
     cursorY = cursorY - 10
@@ -711,6 +817,7 @@ local function printHelp()
   addon:Print(primarySlashCommand .. " help")
   addon:Print(primarySlashCommand .. " reset")
   addon:Print(primarySlashCommand .. " rptest")
+  addon:Print(primarySlashCommand .. " opener <garrote|ambush|cheap shot|pick pocket>")
   for _, definition in ipairs(addon:GetSlashDefinitions()) do
     addon:Print(primarySlashCommand .. " " .. definition.command .. " " .. definition.usage)
   end
@@ -735,6 +842,9 @@ frame:SetScript("OnUpdate", function(_, elapsed)
   menuTimerUpdateAccumulator = 0
   if pickPocketResetMenuControl.Refresh then
     pickPocketResetMenuControl.Refresh()
+  end
+  if pickPocketRunTimerMenuControl and pickPocketRunTimerMenuControl.Refresh then
+    pickPocketRunTimerMenuControl.Refresh()
   end
 end)
 
@@ -804,6 +914,12 @@ SlashCmdList.ROGUEAUTO = function(message)
     return
   end
 
+  local rawOpenerHint = nil
+  if message then
+    rawOpenerHint = string.gsub(message, "^[^%s]+%s*", "", 1)
+    rawOpenerHint = (string.gsub(rawOpenerHint or "", "^%s*(.-)%s*$", "%1"))
+  end
+
   local args = {}
   for token in string.gfind(message, "%S+") do
     table.insert(args, string.lower(token))
@@ -826,6 +942,25 @@ SlashCmdList.ROGUEAUTO = function(message)
 
   if command == "rptest" then
     runRoleplayTest()
+    return
+  end
+
+  if command == "opener" then
+    if rawOpenerHint == "" then
+      addon:Print("Usage: " .. primarySlashCommand .. " opener <garrote|ambush|cheap shot|pick pocket>")
+      return
+    end
+    if type(addon.Opener) ~= "function" then
+      addon:Print("Opener is unavailable; please /reload.")
+      return
+    end
+
+    local ok = pcall(function()
+      return addon:Opener(rawOpenerHint)
+    end)
+    if not ok then
+      addon:Print("Opener command failed. Use a valid opener hint and stay stealthed.")
+    end
     return
   end
 
