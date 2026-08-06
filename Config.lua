@@ -824,7 +824,12 @@ local function printHelp()
 end
 
 local menuTimerUpdateAccumulator = 0
-frame:SetScript("OnUpdate", function(_, elapsed)
+frame:SetScript("OnUpdate", function(frameOrElapsed, elapsed)
+  elapsed = elapsed or frameOrElapsed or 0
+  if type(elapsed) ~= "number" then
+    return
+  end
+
   if not frame:IsShown() then
     menuTimerUpdateAccumulator = 0
     return
