@@ -934,19 +934,19 @@ function addon:Print(message)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33cc99RogueAuto:|r " .. message)
 end
 
-function addon:FormatDebugEvent(eventName)
+function addon:FormatDebugEvent(eventName, arg1, arg2, arg3, arg4)
   local eventDefinition = self.DebugEvents and self.DebugEvents[eventName]
   if not eventDefinition then
     return tostring(eventName)
   end
 
   if type(eventDefinition) == "function" then
-    return eventDefinition(unpack(arg))
+    return eventDefinition(arg1, arg2, arg3, arg4)
   end
 
   if type(eventDefinition) == "string" then
     if string.find(eventDefinition, "%%") then
-      local ok, formatted = pcall(string.format, eventDefinition, unpack(arg))
+      local ok, formatted = pcall(string.format, eventDefinition, arg1, arg2, arg3, arg4)
       if ok then
         return formatted
       end
@@ -957,9 +957,9 @@ function addon:FormatDebugEvent(eventName)
 
   if type(eventDefinition) == "table" and eventDefinition.template then
     if type(eventDefinition.template) == "function" then
-      return eventDefinition.template(unpack(arg))
+      return eventDefinition.template(arg1, arg2, arg3, arg4)
     end
-    local ok, formatted = pcall(string.format, eventDefinition.template, unpack(arg))
+    local ok, formatted = pcall(string.format, eventDefinition.template, arg1, arg2, arg3, arg4)
     if ok then
       return formatted
     end
@@ -983,12 +983,12 @@ function addon:Debug(message)
   self:Print(text)
 end
 
-function addon:DebugEvent(eventName)
+function addon:DebugEvent(eventName, arg1, arg2, arg3, arg4)
   if not (RogueAutoDB and RogueAutoDB.debug) then
     return
   end
 
-  self:Debug(self:FormatDebugEvent(eventName, unpack(arg)))
+  self:Debug(self:FormatDebugEvent(eventName, arg1, arg2, arg3, arg4))
 end
 
 function addon:Trace(message)
@@ -1006,8 +1006,8 @@ function addon:Trace(message)
   self:Print(text)
 end
 
-function addon:TraceEvent(eventName)
-  local traceText = self:FormatDebugEvent(eventName, unpack(arg))
+function addon:TraceEvent(eventName, arg1, arg2, arg3, arg4)
+  local traceText = self:FormatDebugEvent(eventName, arg1, arg2, arg3, arg4)
   if traceText then
     self:Trace(traceText)
   end
