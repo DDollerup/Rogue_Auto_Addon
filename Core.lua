@@ -6484,12 +6484,13 @@ function addon:ArmBuilderEviscerate(context, requireShockWindow)
 end
 
 function addon:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreKickReserve)
-  if not context or context.comboPoints < 5 or not self:HasSpell("Eviscerate") then
+  local intent = allowArmed and self:GetBuilderEviscerateIntent(context)
+  local armed = intent ~= nil
+  local minimumComboPoints = armed and 4 or 5
+  if not context or context.comboPoints < minimumComboPoints or not self:HasSpell("Eviscerate") then
     return false, "invalid context, combo points, or missing Eviscerate"
   end
 
-  local intent = allowArmed and self:GetBuilderEviscerateIntent(context)
-  local armed = intent ~= nil
   if not armed and not allowUnsafe and not self:AreBuilderMainBuffsSafe(nil, context) then
     return false, "main buffs unsafe for unarmed Eviscerate"
   end

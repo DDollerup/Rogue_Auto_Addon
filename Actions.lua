@@ -124,7 +124,7 @@ local function buildBuilderRules(self, context)
         if self:HasBuilderEviscerateShockWindow(context) then
           if self:ArmBuilderEviscerate(context, true) then
             self:TraceEvent("builder_shock_eviscerate_armed", shockWindow)
-            return self:TryPreferredBuilder(context)
+            return self:TryBuilderEviscerate(context, true, true, true)
           end
         elseif self:ArmBuilderEviscerate(context) then
           return self:TryPreferredBuilder(context)
