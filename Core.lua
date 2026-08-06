@@ -8397,7 +8397,16 @@ local function resolveEventArgs(selfOrEvent, eventOrArg1, eventPayload)
   if type(selfOrEvent) == "string" then
     return selfOrEvent, eventOrArg1
   end
-  return eventOrArg1, eventPayload
+
+  if type(eventOrArg1) == "string" then
+    return eventOrArg1, eventPayload
+  end
+
+  if type(event) == "string" then
+    return event, arg1
+  end
+
+  return nil, nil
 end
 
 frame:SetScript("OnEvent", function(...)
