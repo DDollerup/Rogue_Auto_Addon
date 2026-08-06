@@ -124,6 +124,7 @@ addon.defaults = {
     mode = "auto",
     useGhostlyStrike = false,
     useFlourish = false,
+    priorityOrder = nil,
   },
   minimap = {
     angle = 235,
@@ -237,6 +238,7 @@ addon.DebugEvents = {
   ["builder_rule_combat_buff_upkeep"] = "Builder rule: combat buff upkeep",
   ["builder_rule_flourish_upkeep"] = "Builder rule: flourish upkeep",
   ["builder_rule_arm_eviscerate_4cp"] = "Builder rule: arm eviscerate at 4 CP",
+  ["builder_rule_shock_eviscerate"] = "Builder rule: shock eviscerate",
   ["builder_rule_preferred_builder_fallback"] = "Builder rule: preferred builder fallback",
   ["builder_shock_eviscerate_armed"] = function(shockWindow)
     return "Shock Eviscerate path: arming at 4 CP with SnD/Envenom >= " .. tostring(shockWindow) .. "s"

@@ -818,6 +818,8 @@ local function printHelp()
   addon:Print(primarySlashCommand .. " reset")
   addon:Print(primarySlashCommand .. " rptest")
   addon:Print(primarySlashCommand .. " opener <garrote|ambush|cheap shot|pick pocket>")
+  addon:Print(primarySlashCommand .. " priority list")
+  addon:Print(primarySlashCommand .. " priority <up|down|reset> <rule-id>")
   for _, definition in ipairs(addon:GetSlashDefinitions()) do
     addon:Print(primarySlashCommand .. " " .. definition.command .. " " .. definition.usage)
   end
@@ -966,6 +968,49 @@ SlashCmdList.ROGUEAUTO = function(message)
     if not ok then
       addon:Print("Opener command failed. Use a valid opener hint and stay stealthed.")
     end
+    return
+  end
+
+  if command == "priority" then
+    local priorityAction = args[2]
+    local priorityRule = args[3]
+    if priorityAction == "list" then
+      for index, ruleId in ipairs(addon.BuilderPriorityOrder) do
+        addon:Print(tostring(index) .. ". " .. ruleId)
+      end
+      return
+    end
+
+    if priorityAction == "reset" then
+      addon:SetBuilderPriorityOrder({
+        "interrupts",
+        "eviscerate_armed",
+        "eviscerate_forced",
+        "eviscerate_shock",
+        "combat_buff_maintenance",
+        "flourish_maintenance",
+        "feint",
+        "riposte",
+        "eviscerate_arm",
+        "preferred_builder",
+      })
+      addon:SaveBuilderPriorityOrder()
+      addon:Print("Builder priority reset.")
+      return
+    end
+
+    if (priorityAction == "up" or priorityAction == "down") and priorityRule then
+      local direction = priorityAction == "up" and -1 or 1
+      if addon:MoveBuilderPriority(priorityRule, direction) then
+        addon:SaveBuilderPriorityOrder()
+        addon:Print("Moved builder priority " .. priorityRule .. " " .. priorityAction .. ".")
+      else
+        addon:Print("Unknown or immovable builder rule: " .. priorityRule)
+      end
+      return
+    end
+
+    addon:Print("Usage: " .. primarySlashCommand .. " priority <list|up|down|reset> [rule-id]")
     return
   end
 
