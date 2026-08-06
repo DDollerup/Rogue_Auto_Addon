@@ -7,7 +7,6 @@
 
 Core.lua
 Roleplay.lua
-BuilderEngine.lua
 BuilderRuleInterrupts.lua
 BuilderRuleFinishers.lua
 BuilderRuleMaintenance.lua
