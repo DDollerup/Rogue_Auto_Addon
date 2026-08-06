@@ -248,7 +248,7 @@ addon.DebugEvents = {
   ["active_enemy_cast_cleared"] = "Clearing enemy cast %s (%s)",
   ["enemy_cast_tracking"] = "Tracking enemy cast %s from %s",
   ["builder_poison_check"] = "Builder poison check: equipped=%s, targetImmune=%s, rotation=%s, reason=%s",
-  ["interrupt_decision"] = "Interrupt %s: source=%s, age=%s, remaining=%s, energy=%s/%s, melee=%s, kickReady=%s, decision=%s%s",
+  ["interrupt_decision"] = "Interrupt %s: source=%s, age=%s, remaining=%s, energy=%s/%s, melee=%s, kickReady=%s, decision=%s",
   ["casting_spell"] = "Casting %s",
   ["loaded_version"] = "Loaded version %s",
 }
@@ -944,7 +944,11 @@ function addon:FormatDebugEvent(eventName, ...)
 
   if type(eventDefinition) == "string" then
     if string.find(eventDefinition, "%%") then
-      return string.format(eventDefinition, ...)
+      local ok, formatted = pcall(string.format, eventDefinition, ...)
+      if ok then
+        return formatted
+      end
+      return eventDefinition
     end
     return eventDefinition
   end
@@ -953,7 +957,11 @@ function addon:FormatDebugEvent(eventName, ...)
     if type(eventDefinition.template) == "function" then
       return eventDefinition.template(...)
     end
-    return string.format(eventDefinition.template, ...)
+    local ok, formatted = pcall(string.format, eventDefinition.template, ...)
+    if ok then
+      return formatted
+    end
+    return eventDefinition.template
   end
 
   return tostring(eventName)
@@ -5968,6 +5976,10 @@ function addon:DebugInterruptDecision(activeCast, decision, reason)
   local remaining = math.max((activeCast.expiresAt or now) - now, 0)
   local kickReady = self:HasSpell("Kick") and self:IsSpellReady("Kick")
   local melee = self:IsInMeleeRange()
+  local decisionText = tostring(decision or "ignore")
+  if reason then
+    decisionText = decisionText .. ", reason=" .. tostring(reason)
+  end
 
   self:DebugEvent(
     "interrupt_decision",
@@ -5979,8 +5991,7 @@ function addon:DebugInterruptDecision(activeCast, decision, reason)
     tostring(self:GetKickEnergyCost()),
     tostring(melee),
     tostring(kickReady),
-    tostring(decision or "ignore"),
-    reason and ", reason=" .. tostring(reason) or ""
+    decisionText
   )
 end
 
