@@ -194,9 +194,7 @@ addon.state = {
   activeEnemyCast = nil,
   suppressedEnemyCastBar = nil,
   pendingKidneyShotCheck = nil,
-  builderEviscerateArm = nil,
-  builderEviscerateUrgentAtFive = false,
-  lastBuilderComboPoints = nil,
+  builderEviscerateIntent = nil,
   activeRotationMode = nil,
   activeOpenerHint = nil,
   combatSession = nil,
@@ -6320,29 +6318,11 @@ function addon:AreBuilderMainBuffsSafe(minimumRemaining, context)
 end
 
 function addon:ClearBuilderEviscerateArm()
-  self.state.builderEviscerateArm = nil
+  self.state.builderEviscerateIntent = nil
 end
 
 function addon:ClearBuilderEviscerateUrgent()
-  self.state.builderEviscerateUrgentAtFive = false
-end
-
-function addon:IsBuilderEviscerateUrgent(context)
-  local currentComboPoints = context and context.comboPoints or self:GetComboPoints()
-  if currentComboPoints < 5 then
-    return false
-  end
-
-  if self.state.builderEviscerateUrgentAtFive then
-    return true
-  end
-
-  local previousComboPoints = self.state.lastBuilderComboPoints
-  if previousComboPoints == nil then
-    return false
-  end
-
-  return previousComboPoints <= 3 and (currentComboPoints - previousComboPoints) >= 2
+  self:ClearBuilderEviscerateArm()
 end
 
 function addon:HasBuilderEviscerateShockWindow(context)
@@ -6354,25 +6334,29 @@ function addon:HasBuilderEviscerateShockWindow(context)
     and state.envenomRemaining >= minimumRemaining
 end
 
-function addon:IsBuilderEviscerateArmed(context)
-  local arm = self.state.builderEviscerateArm
-  if not arm or not context then
-    return false
+function addon:GetBuilderEviscerateIntent(context)
+  local intent = self.state.builderEviscerateIntent
+  if not intent or not context then
+    return nil
   end
 
   local targetKey = self:GetTargetKey()
-  if not targetKey or arm.targetKey ~= targetKey or context.comboPoints < 4 then
+  if not targetKey or intent.targetKey ~= targetKey or context.comboPoints < 4 then
     self:ClearBuilderEviscerateArm()
-    return false
+    return nil
   end
 
-  if context.comboPoints == 4
-    and GetTime() - (arm.armedAt or 0) > (self.builderEviscerateArmTimeout or 5) then
+  if GetTime() > (intent.expiresAt or 0) then
     self:ClearBuilderEviscerateArm()
-    return false
+    return nil
   end
 
-  return true
+  if intent.requireShockWindow and not self:HasBuilderEviscerateShockWindow(context) then
+    self:ClearBuilderEviscerateArm()
+    return nil
+  end
+
+  return intent
 end
 
 function addon:ArmBuilderEviscerate(context, requireShockWindow)
@@ -6397,10 +6381,12 @@ function addon:ArmBuilderEviscerate(context, requireShockWindow)
     return false
   end
 
-  self.state.builderEviscerateArm = {
+  self.state.builderEviscerateIntent = {
     targetKey = targetKey,
     armedAt = GetTime(),
+    expiresAt = GetTime() + (self.builderEviscerateArmTimeout or 5),
     shockWindow = requireShockWindow == true,
+    requireShockWindow = requireShockWindow == true,
   }
   return true
 end
@@ -6410,7 +6396,8 @@ function addon:CanUseBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreK
     return false, "invalid context, combo points, or missing Eviscerate"
   end
 
-  local armed = allowArmed and self:IsBuilderEviscerateArmed(context)
+  local intent = allowArmed and self:GetBuilderEviscerateIntent(context)
+  local armed = intent ~= nil
   if not armed and not allowUnsafe and not self:AreBuilderMainBuffsSafe(nil, context) then
     return false, "main buffs unsafe for unarmed Eviscerate"
   end
@@ -6454,6 +6441,7 @@ function addon:TryBuilderEviscerate(context, allowArmed, allowUnsafe, ignoreKick
 
   local success = self:TryCast("Eviscerate")
   if success then
+    self:ClearBuilderEviscerateArm()
     self:ClearBuilderEviscerateUrgent()
     return success
   end
@@ -8265,20 +8253,10 @@ function addon:OnComboPointsChanged(unit)
   end
 
   local currentComboPoints = self:GetComboPoints()
-  local previousComboPoints = self.state.lastBuilderComboPoints or currentComboPoints
-
-  if currentComboPoints >= 5 and previousComboPoints <= 3 and (currentComboPoints - previousComboPoints) >= 2 then
-    self.state.builderEviscerateUrgentAtFive = true
-    self:Trace("Combo jump " .. previousComboPoints .. "->" .. currentComboPoints .. "; forcing next Eviscerate")
-  elseif currentComboPoints < 5 then
-    self:ClearBuilderEviscerateUrgent()
-  end
-
   if currentComboPoints < 4 then
     self:ClearBuilderEviscerateArm()
   end
 
-  self.state.lastBuilderComboPoints = currentComboPoints
   self:UpdateComboPointFrame(true)
 end
 
