@@ -223,6 +223,7 @@ addon.state = {
     lastDamageTarget = nil,
     lastDamageAt = 0,
   },
+  lastDebugMessage = nil,
 }
 
 addon.damageCategories = {
@@ -905,9 +906,17 @@ function addon:Print(message)
 end
 
 function addon:Debug(message)
-  if RogueAutoDB and RogueAutoDB.debug then
-    self:Print(message)
+  if not (RogueAutoDB and RogueAutoDB.debug) then
+    return
   end
+
+  local text = tostring(message)
+  if self.state.lastDebugMessage == text then
+    return
+  end
+
+  self.state.lastDebugMessage = text
+  self:Print(text)
 end
 
 function addon:Trace(message)
