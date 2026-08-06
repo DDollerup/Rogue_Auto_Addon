@@ -99,8 +99,8 @@ function addon:RunBuilderPriority(context)
     local rule = self.BuilderRules[ruleId]
     if rule and (not rule.when or rule.when(self, context)) then
       local result = rule.execute(self, context)
-      if result == self.BuilderRuleResult.CAST
-        or result == self.BuilderRuleResult.BLOCKED_STOP then
+      local shouldStop = result == self.BuilderRuleResult.CAST or result == self.BuilderRuleResult.BLOCKED_STOP
+      if shouldStop then
         if rule.trace then
           self:TraceEvent(rule.trace)
         end

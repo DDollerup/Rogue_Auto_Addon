@@ -975,6 +975,10 @@ SlashCmdList.ROGUEAUTO = function(message)
     local priorityAction = args[2]
     local priorityRule = args[3]
     if priorityAction == "list" then
+      if not addon.BuilderPriorityOrder then
+        addon:Print("Builder priority engine is unavailable; please /reload.")
+        return
+      end
       for index, ruleId in ipairs(addon.BuilderPriorityOrder) do
         addon:Print(tostring(index) .. ". " .. ruleId)
       end
