@@ -934,19 +934,19 @@ function addon:Print(message)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33cc99RogueAuto:|r " .. message)
 end
 
-function addon:FormatDebugEvent(eventName, ...)
+function addon:FormatDebugEvent(eventName)
   local eventDefinition = self.DebugEvents and self.DebugEvents[eventName]
   if not eventDefinition then
     return tostring(eventName)
   end
 
   if type(eventDefinition) == "function" then
-    return eventDefinition(...)
+    return eventDefinition(unpack(arg))
   end
 
   if type(eventDefinition) == "string" then
     if string.find(eventDefinition, "%%") then
-      local ok, formatted = pcall(string.format, eventDefinition, ...)
+      local ok, formatted = pcall(string.format, eventDefinition, unpack(arg))
       if ok then
         return formatted
       end
@@ -957,9 +957,9 @@ function addon:FormatDebugEvent(eventName, ...)
 
   if type(eventDefinition) == "table" and eventDefinition.template then
     if type(eventDefinition.template) == "function" then
-      return eventDefinition.template(...)
+      return eventDefinition.template(unpack(arg))
     end
-    local ok, formatted = pcall(string.format, eventDefinition.template, ...)
+    local ok, formatted = pcall(string.format, eventDefinition.template, unpack(arg))
     if ok then
       return formatted
     end
@@ -983,12 +983,12 @@ function addon:Debug(message)
   self:Print(text)
 end
 
-function addon:DebugEvent(eventName, ...)
+function addon:DebugEvent(eventName)
   if not (RogueAutoDB and RogueAutoDB.debug) then
     return
   end
 
-  self:Debug(self:FormatDebugEvent(eventName, ...))
+  self:Debug(self:FormatDebugEvent(eventName, unpack(arg)))
 end
 
 function addon:Trace(message)
@@ -1006,8 +1006,8 @@ function addon:Trace(message)
   self:Print(text)
 end
 
-function addon:TraceEvent(eventName, ...)
-  local traceText = self:FormatDebugEvent(eventName, ...)
+function addon:TraceEvent(eventName)
+  local traceText = self:FormatDebugEvent(eventName, unpack(arg))
   if traceText then
     self:Trace(traceText)
   end
@@ -8422,8 +8422,8 @@ local function resolveEventArgs(selfOrEvent, eventOrArg1, eventPayload)
   return nil, nil
 end
 
-frame:SetScript("OnEvent", function(...)
-  local eventName, arg1 = resolveEventArgs(...)
+frame:SetScript("OnEvent", function(selfOrEvent, eventOrArg1, eventPayload)
+  local eventName, arg1 = resolveEventArgs(selfOrEvent, eventOrArg1, eventPayload)
   if eventName == "VARIABLES_LOADED" then
     addon:OnVariablesLoaded()
   elseif eventName == "PLAYER_LOGIN" then

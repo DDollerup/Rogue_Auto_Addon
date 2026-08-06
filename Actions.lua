@@ -36,9 +36,9 @@ local function executeBuilderRules(self, context, rules)
             end
           end
 
-          local unpackFn = unpack or table.unpack
+          local unpackFn = unpack
           if self.TraceEvent then
-            if #traceArgs > 0 then
+            if table.getn(traceArgs) > 0 then
               self:TraceEvent(rule.trace, unpackFn(traceArgs))
             else
               self:TraceEvent(rule.trace)
