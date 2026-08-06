@@ -2620,7 +2620,11 @@ function addon:IsSpellReady(name)
     return true
   end
 
-  return duration == 0
+  if duration == 0 or startTime == 0 then
+    return true
+  end
+
+  return (startTime + duration) <= GetTime()
 end
 
 function addon:GetSpellCooldownInfo(name)
