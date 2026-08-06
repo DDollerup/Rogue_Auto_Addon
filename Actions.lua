@@ -54,7 +54,6 @@ local function executeBuilderRules(self, context, rules)
           return true
         end
       end
-    end
   end
   return false
 end
