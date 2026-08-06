@@ -4,7 +4,7 @@ addon.BuilderRuleResult = {
   CAST = "cast",
   CONTINUE = "continue",
   RESERVE_CONTINUE = "reserve_continue",
-  BLOCKED_STOP = "blocked_stop",
+  BLOCKED_STOP = "blocked_stop"
 }
 
 addon.BuilderPriorityOrder = {
@@ -17,25 +17,27 @@ addon.BuilderPriorityOrder = {
   "feint",
   "riposte",
   "eviscerate_arm",
-  "preferred_builder",
+  "preferred_builder"
 }
 
 addon.BuilderRules = {}
 
-function addon:RegisterBuilderRule(rule)
-  if not rule or not rule.id then
-    return
+function addon.RegisterBuilderRule(self, rule)
+  if rule and rule.id then
+    self.BuilderRules[rule.id] = rule
   end
-  self.BuilderRules[rule.id] = rule
 end
 
-function addon:SetBuilderPriorityOrder(order)
+function addon.SetBuilderPriorityOrder(self, order)
   if type(order) ~= "table" then
     return false
   end
 
   local nextOrder = {}
   local seen = {}
+  local index
+  local ruleId
+
   for index, ruleId in ipairs(order) do
     if self.BuilderRules[ruleId] and not seen[ruleId] then
       table.insert(nextOrder, ruleId)
@@ -43,7 +45,7 @@ function addon:SetBuilderPriorityOrder(order)
     end
   end
 
-  for _, ruleId in ipairs(self.BuilderPriorityOrder) do
+  for index, ruleId in ipairs(self.BuilderPriorityOrder) do
     if self.BuilderRules[ruleId] and not seen[ruleId] then
       table.insert(nextOrder, ruleId)
       seen[ruleId] = true
@@ -54,26 +56,29 @@ function addon:SetBuilderPriorityOrder(order)
   return true
 end
 
-function addon:LoadBuilderPriorityOrder()
+function addon.LoadBuilderPriorityOrder(self)
   if RogueAutoDB and RogueAutoDB.builder and type(RogueAutoDB.builder.priorityOrder) == "table" then
     self:SetBuilderPriorityOrder(RogueAutoDB.builder.priorityOrder)
   end
 end
 
-function addon:SaveBuilderPriorityOrder()
+function addon.SaveBuilderPriorityOrder(self)
   if not RogueAutoDB or not RogueAutoDB.builder then
     return
   end
 
   RogueAutoDB.builder.priorityOrder = {}
-  for _, ruleId in ipairs(self.BuilderPriorityOrder) do
+  for index, ruleId in ipairs(self.BuilderPriorityOrder) do
     table.insert(RogueAutoDB.builder.priorityOrder, ruleId)
   end
 end
 
-function addon:MoveBuilderPriority(ruleId, direction)
+function addon.MoveBuilderPriority(self, ruleId, direction)
   local order = self.BuilderPriorityOrder
-  local index = nil
+  local index
+  local position
+  local currentId
+
   for position, currentId in ipairs(order) do
     if currentId == ruleId then
       index = position
@@ -94,21 +99,27 @@ function addon:MoveBuilderPriority(ruleId, direction)
   return true
 end
 
-function addon:RunBuilderPriority(context)
-  for _, ruleId in ipairs(self.BuilderPriorityOrder) do
-    local rule = self.BuilderRules[ruleId]
-    if rule and (not rule.when or rule.when(self, context)) then
-      local result = rule.execute(self, context)
-      local shouldStop = result == self.BuilderRuleResult.CAST or result == self.BuilderRuleResult.BLOCKED_STOP
-      if shouldStop then
-        if rule.trace then
+function addon.RunBuilderPriority(self, context)
+  local ruleId
+  local rule
+  local result
+  local shouldStop
+
+  for index, ruleId in ipairs(self.BuilderPriorityOrder) do
+    rule = self.BuilderRules[ruleId]
+    if rule then
+      if not rule.when or rule.when(self, context) then
+        result = rule.execute(self, context)
+        shouldStop = result == self.BuilderRuleResult.CAST or result == self.BuilderRuleResult.BLOCKED_STOP
+        if shouldStop then
+          if rule.trace then
+            self:TraceEvent(rule.trace)
+          end
+          return result
+        end
+        if result == self.BuilderRuleResult.RESERVE_CONTINUE and rule.trace then
           self:TraceEvent(rule.trace)
         end
-        return result
-      end
-
-      if result == self.BuilderRuleResult.RESERVE_CONTINUE and rule.trace then
-        self:TraceEvent(rule.trace)
       end
     end
   end
