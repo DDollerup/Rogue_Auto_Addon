@@ -223,6 +223,8 @@ addon.state = {
     lastDamageTarget = nil,
     lastDamageAt = 0,
   },
+  variablesLoaded = false,
+  playerLoginHandled = false,
   lastDebugMessage = nil,
 }
 
@@ -8072,9 +8074,17 @@ end
 
 function addon:OnVariablesLoaded()
   self:InitDB()
+  self.state.variablesLoaded = true
 end
 
 function addon:OnPlayerLogin()
+  if self.state.playerLoginHandled then
+    return
+  end
+  self.state.playerLoginHandled = true
+  if not self.state.variablesLoaded then
+    self:OnVariablesLoaded()
+  end
   self:InstallUiErrorFilter()
   self:RefreshKnownSpells()
   self:InitializePickPocketGoldStats()
@@ -8486,7 +8496,20 @@ frame:SetScript("OnEvent", function(...)
   end
 end)
 
+local function bootstrapPlayerLoginIfReady()
+  if addon.state.playerLoginHandled then
+    return
+  end
+
+  if IsLoggedIn and not IsLoggedIn() then
+    return
+  end
+
+  addon:OnPlayerLogin()
+end
+
 frame:SetScript("OnUpdate", function()
+  bootstrapPlayerLoginIfReady()
   addon:UpdateNoticeFrames()
   addon:UpdatePendingKidneyShotCheck()
   addon:UpdateCooldownListFrame(false)
