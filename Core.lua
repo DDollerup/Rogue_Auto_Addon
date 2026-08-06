@@ -8393,7 +8393,15 @@ frame:RegisterEvent("PLAYER_MONEY")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 
-frame:SetScript("OnEvent", function(_, eventName, arg1)
+local function resolveEventArgs(selfOrEvent, eventOrArg1, eventPayload)
+  if type(selfOrEvent) == "string" then
+    return selfOrEvent, eventOrArg1
+  end
+  return eventOrArg1, eventPayload
+end
+
+frame:SetScript("OnEvent", function(...)
+  local eventName, arg1 = resolveEventArgs(...)
   if eventName == "VARIABLES_LOADED" then
     addon:OnVariablesLoaded()
   elseif eventName == "PLAYER_LOGIN" then
