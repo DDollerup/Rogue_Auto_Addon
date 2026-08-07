@@ -14,5 +14,6 @@ BuilderRuleMaintenance.lua
 BuilderRuleUtility.lua
 BuilderRuleBuilders.lua
 Settings.lua
+DebugSettings.lua
 Actions.lua
 Config.lua
