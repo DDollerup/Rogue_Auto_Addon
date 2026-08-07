@@ -2,7 +2,7 @@
 ## Title: RogueAuto
 ## Notes: Manual rogue accessibility helper for Turtle WoW.
 ## Author: Codex
-## Version: 1.0.0
+## Version: 1.0.1
 ## SavedVariables: RogueAutoDB
 
 Core.lua
@@ -15,5 +15,6 @@ BuilderRuleUtility.lua
 BuilderRuleBuilders.lua
 Settings.lua
 DebugSettings.lua
+VersionNotice.lua
 Actions.lua
 Config.lua
