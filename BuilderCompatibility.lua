@@ -4,8 +4,22 @@ local function isLegacyTruthy(value)
   return value == true or value == 1
 end
 
--- Vanilla 1.12 returns nil from IsUsableSpell when an ability is not usable.
--- Treat only true/1 as usable so reactive abilities cannot falsely succeed.
+local function getLegacySpellUsability(self, name)
+  if not IsUsableSpell then
+    return true, false
+  end
+
+  local spellIndex = self:GetSpellIndex(name)
+  if not spellIndex then
+    return false, false
+  end
+
+  local usable, noMana = IsUsableSpell(spellIndex, BOOKTYPE_SPELL)
+  return isLegacyTruthy(usable), isLegacyTruthy(noMana)
+end
+
+-- Vanilla 1.12 spellbook APIs use spell index + BOOKTYPE_SPELL. Treat nil
+-- usability as false; reactive abilities must be explicitly reported usable.
 function addon:CanCast(name)
   if not self:HasSpell(name) then
     return false
@@ -28,12 +42,8 @@ function addon:CanCast(name)
     return false
   end
 
-  if IsUsableSpell then
-    local usable, noMana = IsUsableSpell(name)
-    return isLegacyTruthy(usable) and not isLegacyTruthy(noMana)
-  end
-
-  return true
+  local usable, noMana = getLegacySpellUsability(self, name)
+  return usable and not noMana
 end
 
 function addon:CanUseSurpriseAttack()
@@ -47,11 +57,9 @@ function addon:CanUseSurpriseAttack()
       return false
     end
 
-    if IsUsableSpell then
-      local usable, noMana = IsUsableSpell("Surprise Attack")
-      if not isLegacyTruthy(usable) or isLegacyTruthy(noMana) then
-        return false
-      end
+    local usable, noMana = getLegacySpellUsability(self, "Surprise Attack")
+    if not usable or noMana then
+      return false
     end
   end
 
@@ -71,7 +79,8 @@ function addon:OnCombatMiss(message)
 end
 
 -- UNIT_COMBAT reports PARRY for the unit that actually performed the parry.
--- Use that authoritative 1.12 signal to arm Riposte when the player parries.
+-- Use the authoritative legacy event globals while retaining compatibility
+-- with clients that pass event arguments to the script callback.
 local riposteEventFrame = CreateFrame("Frame")
 riposteEventFrame:RegisterEvent("UNIT_COMBAT")
 riposteEventFrame:SetScript("OnEvent", function(selfOrEvent, eventOrUnit, unitOrAction, actionOrDamage)
@@ -98,85 +107,114 @@ riposteEventFrame:SetScript("OnEvent", function(selfOrEvent, eventOrUnit, unitOr
   end
 end)
 
-local function normalizePoisonLoadoutName(name)
+local function normalizePoisonImmunityName(self, name)
   if not name or name == "" then
     return nil
   end
-  return string.lower(name)
-end
 
-function addon:GetWeaponPoisonLoadoutKey()
-  local states = self:GetWeaponPoisonStates()
-  local mainHand = "none"
-  local offHand = "none"
-  local reliable = true
-
-  for _, state in ipairs(states or {}) do
-    local poisonName = normalizePoisonLoadoutName(state.name)
-    if not poisonName then
-      poisonName = "unknown"
-      reliable = false
-    end
-
-    if state.hand == "main" then
-      mainHand = poisonName
-    elseif state.hand == "off" then
-      offHand = poisonName
+  local lowerName = string.lower(name)
+  for _, knownName in ipairs(self.weaponPoisonNames or {}) do
+    if string.find(lowerName, string.lower(knownName), 1, true) then
+      return string.lower(knownName)
     end
   end
 
-  return "mh=" .. mainHand .. ";oh=" .. offHand, reliable
+  if string.find(lowerName, "envenom", 1, true) then
+    return "envenom"
+  end
+  if string.find(lowerName, "noxious assault", 1, true) then
+    return "noxious assault"
+  end
+
+  return lowerName
 end
 
--- Poison immunity is specific to the current poison loadout. If the client
--- cannot identify an active poison by name, keep the memory target-instance
--- local instead of incorrectly carrying it across weapon/poison swaps.
-function addon:GetPoisonImmunityKey(targetName)
+function addon:GetPoisonImmunityKey(targetName, poisonName)
   local targetNameKey = self:NormalizeMobLearningKey(targetName)
-  if not targetNameKey then
+  local poisonKey = normalizePoisonImmunityName(self, poisonName)
+  if not targetNameKey or not poisonKey then
     return nil
   end
 
-  local loadoutKey, reliable = self:GetWeaponPoisonLoadoutKey()
-  if reliable then
-    return targetNameKey .. "|" .. loadoutKey
-  end
-
-  local targetKey = self:GetTargetKey()
-  if not targetKey then
-    return nil
-  end
-
-  return targetNameKey .. "|unknown|" .. tostring(targetKey)
+  return targetNameKey .. "|" .. poisonKey
 end
 
-function addon:ClearTargetPoisonImmunity(reason, targetName)
-  local immunity = self.state.poisonImmunity
-  local computedKey = self:GetPoisonImmunityKey(
-    targetName or (immunity and immunity.targetName) or UnitName("target")
+function addon:GetTargetPoisonImmunity(poisonName, targetName)
+  targetName = targetName or UnitName("target")
+  local immunityKey = self:GetPoisonImmunityKey(targetName, poisonName)
+  if not immunityKey then
+    return nil
+  end
+
+  return self.state.poisonImmunities[immunityKey]
+end
+
+function addon:IsCurrentTargetPoisonSpellImmune(poisonName)
+  if not self:IsHostileTarget() then
+    return false
+  end
+
+  return self:GetTargetPoisonImmunity(poisonName) ~= nil
+end
+
+function addon:ClearSpecificTargetPoisonImmunity(poisonName, reason, targetName)
+  targetName = targetName or UnitName("target")
+  local immunityKey = self:GetPoisonImmunityKey(targetName, poisonName)
+  if not immunityKey then
+    return false
+  end
+
+  local immunity = self.state.poisonImmunities[immunityKey]
+  if not immunity then
+    return false
+  end
+
+  self.state.poisonImmunities[immunityKey] = nil
+  if self.state.poisonImmunity == immunity then
+    self.state.poisonImmunity = nil
+  end
+
+  self:DebugEvent(
+    "poison_immunity_cleared",
+    tostring(targetName or "target"),
+    tostring(reason or poisonName or "unspecified")
   )
+  return true
+end
 
-  if immunity then
-    self:DebugEvent(
-      "poison_immunity_cleared",
-      tostring(immunity.targetName or "target"),
-      tostring(reason or "unspecified")
-    )
+-- With no poison argument this preserves the legacy meaning: clear all
+-- remembered poison evidence for the named target. A poison argument clears
+-- only that poison or poison-dependent ability.
+function addon:ClearTargetPoisonImmunity(reason, targetName, poisonName)
+  targetName = targetName or (self.state.poisonImmunity and self.state.poisonImmunity.targetName) or UnitName("target")
+  if not targetName then
+    self.state.poisonImmunity = nil
+    return
   end
 
-  if immunity and immunity.immunityKey then
-    self.state.poisonImmunities[immunity.immunityKey] = nil
-  end
-  if computedKey then
-    self.state.poisonImmunities[computedKey] = nil
+  if poisonName then
+    self:ClearSpecificTargetPoisonImmunity(poisonName, reason, targetName)
+  else
+    local targetNameKey = self:NormalizeMobLearningKey(targetName)
+    if targetNameKey then
+      local prefix = targetNameKey .. "|"
+      for immunityKey in pairs(self.state.poisonImmunities) do
+        if string.sub(immunityKey, 1, string.len(prefix)) == prefix then
+          self.state.poisonImmunities[immunityKey] = nil
+        end
+      end
+    end
+    self.state.poisonImmunity = nil
   end
 
-  self.state.poisonImmunity = nil
   if self.poisonImmunityFrame then
     self.poisonImmunityFrame:Hide()
   end
 end
 
+-- Global physical mode is appropriate only when every identifiable active
+-- weapon poison is known immune. A single immune poison no longer disables
+-- another poison that still works.
 function addon:IsCurrentTargetPoisonImmune()
   if not self:IsHostileTarget() then
     self.state.poisonImmunity = nil
@@ -186,16 +224,30 @@ function addon:IsCurrentTargetPoisonImmune()
     return false
   end
 
-  local targetName = UnitName("target")
-  local immunityKey = self:GetPoisonImmunityKey(targetName)
-  local targetKey = self:GetTargetKey()
-  if not immunityKey or not targetKey then
-    self.state.poisonImmunity = nil
-    return false
+  local states = self:GetWeaponPoisonStates()
+  local identifiedPoisons = 0
+  local immunePoisons = 0
+  local hasUnidentifiedEnchant = false
+  local representativeImmunity = nil
+
+  for _, state in ipairs(states or {}) do
+    if state.name then
+      identifiedPoisons = identifiedPoisons + 1
+      local immunity = self:GetTargetPoisonImmunity(state.name)
+      if immunity then
+        immunePoisons = immunePoisons + 1
+        representativeImmunity = representativeImmunity or immunity
+      end
+    else
+      hasUnidentifiedEnchant = true
+    end
   end
 
-  local immunity = self.state.poisonImmunities[immunityKey]
-  if not immunity then
+  local allActivePoisonsImmune = identifiedPoisons > 0
+    and immunePoisons == identifiedPoisons
+    and not hasUnidentifiedEnchant
+
+  if not allActivePoisonsImmune then
     self.state.poisonImmunity = nil
     if self.poisonImmunityFrame then
       self.poisonImmunityFrame:Hide()
@@ -203,9 +255,7 @@ function addon:IsCurrentTargetPoisonImmune()
     return false
   end
 
-  immunity.targetKey = targetKey
-  immunity.targetName = targetName
-  self.state.poisonImmunity = immunity
+  self.state.poisonImmunity = representativeImmunity
   return true
 end
 
@@ -226,41 +276,91 @@ function addon:MarkCurrentTargetPoisonImmune(spellName, message, observedTargetN
   end
 
   local targetKey = self:GetTargetKey()
-  local immunityKey = self:GetPoisonImmunityKey(targetName)
-  if not targetKey or not immunityKey then
+  local normalizedSpell = normalizePoisonImmunityName(self, spellName)
+  local immunityKey = self:GetPoisonImmunityKey(targetName, normalizedSpell)
+  if not targetKey or not immunityKey or not normalizedSpell then
     return false
   end
 
-  local normalizedSpell = spellName
-  local current = self.state.poisonImmunities[immunityKey]
-  if current then
-    current.targetKey = targetKey
-    current.targetName = targetName
-    current.spellName = normalizedSpell
-    current.message = message
-    current.detectedAt = GetTime()
-    self.state.poisonImmunity = current
-    self:UpdatePoisonImmunityFrame()
-    return true
+  local immunity = self.state.poisonImmunities[immunityKey]
+  if not immunity then
+    immunity = {
+      immunityKey = immunityKey,
+      poisonName = normalizedSpell,
+    }
+    self.state.poisonImmunities[immunityKey] = immunity
   end
 
-  local immunity = {
-    immunityKey = immunityKey,
-    targetKey = targetKey,
-    targetName = targetName,
-    spellName = normalizedSpell,
-    message = message,
-    detectedAt = GetTime(),
-  }
-  self.state.poisonImmunities[immunityKey] = immunity
-  self.state.poisonImmunity = immunity
+  immunity.targetKey = targetKey
+  immunity.targetName = targetName
+  immunity.spellName = spellName
+  immunity.message = message
+  immunity.detectedAt = GetTime()
+
   self:DebugEvent(
     "poison_immunity_remembered",
     tostring(targetName),
-    tostring(normalizedSpell)
+    tostring(spellName)
   )
-  self:UpdatePoisonImmunityFrame()
+
+  if self:IsCurrentTargetPoisonImmune() then
+    self:UpdatePoisonImmunityFrame()
+  end
   return true
+end
+
+-- Clear only the poison/ability that later succeeds. Successful Deadly Poison,
+-- for example, must not erase remembered Instant Poison immunity.
+function addon:OnPoisonCombatMessage(message)
+  local immuneTarget, immuneSpell = self:ExtractPoisonImmunityEvidence(message)
+  if immuneTarget and immuneSpell then
+    self:MarkCurrentTargetPoisonImmune(immuneSpell, message, immuneTarget)
+    return
+  end
+
+  local successTarget, successSpell = self:ExtractPositivePoisonEvidence(message)
+  if not successTarget or not successSpell then
+    return
+  end
+
+  local targetName = UnitName("target")
+  if targetName and string.lower(successTarget) == string.lower(targetName) then
+    self:ClearSpecificTargetPoisonImmunity(
+      successSpell,
+      "later poison success: " .. tostring(successSpell),
+      successTarget
+    )
+  end
+end
+
+local originalShouldRefreshBuilderBuff = addon.ShouldRefreshBuilderBuff
+function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
+  if spellName == "Envenom" and self:IsCurrentTargetPoisonSpellImmune("Envenom") then
+    return false
+  end
+
+  return originalShouldRefreshBuilderBuff(self, spellName, comboPoints, context)
+end
+
+local originalAreBuilderMainBuffsSafe = addon.AreBuilderMainBuffsSafe
+function addon:AreBuilderMainBuffsSafe(minimumRemaining, context)
+  if self:IsCurrentTargetPoisonSpellImmune("Envenom") then
+    local state = self:GetBuilderMainBuffState()
+    local safeWindow = minimumRemaining or self.builderEviscerateSafeWindow or 10
+    return state.sndActive and state.sndRemaining >= safeWindow
+  end
+
+  return originalAreBuilderMainBuffsSafe(self, minimumRemaining, context)
+end
+
+local originalGetBuilderSpellScore = addon.GetBuilderSpellScore
+function addon:GetBuilderSpellScore(spellName, context, modeHint)
+  if self:IsPoisonImmunitySpell(spellName)
+    and self:IsCurrentTargetPoisonSpellImmune(spellName) then
+    return nil
+  end
+
+  return originalGetBuilderSpellScore(self, spellName, context, modeHint)
 end
 
 local originalGetPreferredBuilder = addon.GetPreferredBuilder
@@ -295,7 +395,7 @@ function addon:GetPreferredBuilder(context)
 
   local reason = "Highest-scoring legal physical builder"
   if context and context.poisonImmune then
-    reason = "Poison-immune target; scoring physical builders"
+    reason = "All active weapon poisons are immune; scoring physical builders"
   elseif context and context.hasWeaponPoison == false then
     reason = "No active weapon poison; scoring physical builders"
   end
