@@ -6,6 +6,7 @@
 ## SavedVariables: RogueAutoDB
 
 Core.lua
+BuilderCompatibility.lua
 Roleplay.lua
 BuilderRuleInterrupts.lua
 BuilderRuleFinishers.lua
