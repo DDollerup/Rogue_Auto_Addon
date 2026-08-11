@@ -8524,6 +8524,7 @@ frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 frame:RegisterEvent("PLAYER_AURAS_CHANGED")
 frame:RegisterEvent("UNIT_INVENTORY_CHANGED")
 frame:RegisterEvent("BAG_UPDATE")
+frame:RegisterEvent("ITEM_LOCK_CHANGED")
 frame:RegisterEvent("UNIT_ENERGY")
 frame:RegisterEvent("UNIT_COMBO_POINTS")
 frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
@@ -8603,6 +8604,10 @@ frame:SetScript("OnEvent", function(selfOrEvent, eventOrArg1, eventPayload)
   elseif eventName == "BAG_UPDATE" then
     if addon.OnMountGearEvent then
       addon:OnMountGearEvent(eventName, arg1)
+    end
+  elseif eventName == "ITEM_LOCK_CHANGED" then
+    if addon.ProcessMountGear then
+      addon:ProcessMountGear()
     end
   elseif eventName == "UNIT_ENERGY" then
     addon:OnEnergyChanged(arg1)

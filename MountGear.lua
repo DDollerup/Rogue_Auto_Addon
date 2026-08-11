@@ -275,12 +275,6 @@ function addon:ProcessMountGear()
 
   local operation = state.pending[state.pendingIndex]
   if state.cursorOwned and CursorHasItem and CursorHasItem() then
-    if AutoEquipCursorItem then
-      AutoEquipCursorItem()
-      state.retryAt = GetTime() + 0.25
-      self:TraceEvent("mount_gear_cursor", operation.label)
-      return
-    end
     if EquipCursorItem then
       EquipCursorItem(operation.slot)
       state.retryAt = GetTime() + 0.25
@@ -306,27 +300,16 @@ function addon:ProcessMountGear()
     return
   end
   if not PickupContainerItem or not EquipCursorItem then
-    if not AutoEquipCursorItem then
-      state.lastError = "This client does not expose the required equipment API."
-      state.phase = "error"
-      self:MountGearMessage(state.lastError)
-      return
-    end
-  end
-
-  self:TraceEvent("mount_gear_attempt", operation.label, bag, bagSlot, operation.itemId)
-  PickupContainerItem(bag, bagSlot)
-  state.cursorOwned = true
-  if AutoEquipCursorItem then
-    AutoEquipCursorItem()
-  elseif EquipCursorItem then
-    EquipCursorItem(operation.slot)
-  else
     state.lastError = "This client does not expose the required equipment API."
     state.phase = "error"
     self:MountGearMessage(state.lastError)
     return
   end
+
+  self:TraceEvent("mount_gear_attempt", operation.label, bag, bagSlot, operation.itemId)
+  PickupContainerItem(bag, bagSlot)
+  state.cursorOwned = true
+  EquipCursorItem(operation.slot)
   state.retries = state.retries + 1
   state.retryAt = GetTime() + 0.25
   if state.retries > 12 then
