@@ -723,7 +723,11 @@ local function createMountGearControl(parent, y)
   capture:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -62)
   capture:SetText("Capture Equipped")
   capture:SetScript("OnClick", function()
-    addon:CaptureMountGearProfile()
+    if addon.CaptureMountGearProfile then
+      addon:CaptureMountGearProfile()
+    else
+      addon:Print("Mount Gear module is unavailable. Verify MountGear.lua is installed and /reload.")
+    end
     addon:RefreshConfig()
   end)
 
@@ -733,7 +737,11 @@ local function createMountGearControl(parent, y)
   clear:SetPoint("LEFT", capture, "RIGHT", 8, 0)
   clear:SetText("Clear")
   clear:SetScript("OnClick", function()
-    addon:ClearMountGearProfile()
+    if addon.ClearMountGearProfile then
+      addon:ClearMountGearProfile()
+    else
+      addon:Print("Mount Gear module is unavailable. Verify MountGear.lua is installed and /reload.")
+    end
     addon:RefreshConfig()
   end)
 
@@ -743,7 +751,11 @@ local function createMountGearControl(parent, y)
   equip:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -94)
   equip:SetText("Equip Profile")
   equip:SetScript("OnClick", function()
-    addon:BeginMountGearSwap("manual")
+    if addon.BeginMountGearSwap then
+      addon:BeginMountGearSwap("manual")
+    else
+      addon:Print("Mount Gear module is unavailable. Verify MountGear.lua is installed and /reload.")
+    end
     addon:RefreshConfig()
   end)
 
@@ -753,7 +765,11 @@ local function createMountGearControl(parent, y)
   restore:SetPoint("LEFT", equip, "RIGHT", 8, 0)
   restore:SetText("Restore")
   restore:SetScript("OnClick", function()
-    addon:BeginMountGearRestore()
+    if addon.BeginMountGearRestore then
+      addon:BeginMountGearRestore()
+    else
+      addon:Print("Mount Gear module is unavailable. Verify MountGear.lua is installed and /reload.")
+    end
     addon:RefreshConfig()
   end)
 
@@ -764,6 +780,14 @@ local function createMountGearControl(parent, y)
 
   control.Refresh = function()
     local settings = RogueAutoDB.mountGear or {}
+    if not addon.GetMountGearStatus or not addon.mountGearSlots then
+      status:SetText("Mount Gear module unavailable. Verify MountGear.lua is installed and /reload.")
+      status:SetTextColor(1, 0.3, 0.3)
+      enable:SetChecked(nil)
+      autoSwap:SetChecked(nil)
+      profile:SetText("")
+      return
+    end
     local phase, message = addon:GetMountGearStatus()
     status:SetText("State: " .. tostring(phase) .. " - " .. tostring(message or "Idle"))
     status:SetTextColor(0.8, 0.8, 0.8)
@@ -1125,8 +1149,12 @@ SlashCmdList.ROGUEAUTO = function(message)
   if command == "mountgear" then
     local action = args[2]
     if action == "status" then
-      local phase, message = addon:GetMountGearStatus()
-      addon:Print("Mount gear: " .. tostring(phase) .. " - " .. tostring(message or "Idle"))
+      if addon.GetMountGearStatus then
+        local phase, message = addon:GetMountGearStatus()
+        addon:Print("Mount gear: " .. tostring(phase) .. " - " .. tostring(message or "Idle"))
+      else
+        addon:Print("Mount Gear module is unavailable. Verify MountGear.lua is installed and /reload.")
+      end
     elseif action == "enable" or action == "disable" then
       RogueAutoDB.mountGear.enabled = action == "enable"
       addon:RefreshConfig()
@@ -1140,15 +1168,23 @@ SlashCmdList.ROGUEAUTO = function(message)
         addon:Print("Mount gear auto swap " .. (RogueAutoDB.mountGear.autoSwap and "enabled" or "disabled") .. ".")
       end
     elseif action == "capture" then
+    if addon.CaptureMountGearProfile then
       addon:CaptureMountGearProfile()
+    end
       addon:RefreshConfig()
     elseif action == "clear" then
-      addon:ClearMountGearProfile()
+      if addon.ClearMountGearProfile then
+        addon:ClearMountGearProfile()
+      end
       addon:RefreshConfig()
     elseif action == "equip" then
-      addon:BeginMountGearSwap("manual")
+      if addon.BeginMountGearSwap then
+        addon:BeginMountGearSwap("manual")
+      end
     elseif action == "restore" then
-      addon:BeginMountGearRestore()
+      if addon.BeginMountGearRestore then
+        addon:BeginMountGearRestore()
+      end
     else
       addon:Print("Usage: /rga mountgear <status|enable|disable|autoswap on|autoswap off|capture|clear|equip|restore>")
     end
