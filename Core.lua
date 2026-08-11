@@ -8576,15 +8576,21 @@ frame:SetScript("OnEvent", function(selfOrEvent, eventOrArg1, eventPayload)
     addon:OnCombatStarted()
   elseif eventName == "PLAYER_REGEN_ENABLED" then
     addon:OnCombatEnded()
-    addon:OnMountGearEvent(eventName, arg1)
+    if addon.OnMountGearEvent then
+      addon:OnMountGearEvent(eventName, arg1)
+    end
   elseif eventName == "PLAYER_AURAS_CHANGED" then
-    addon:OnMountGearEvent(eventName, arg1)
+    if addon.OnMountGearEvent then
+      addon:OnMountGearEvent(eventName, arg1)
+    end
   elseif eventName == "UNIT_INVENTORY_CHANGED" then
-    if not arg1 or arg1 == "player" then
+    if addon.OnMountGearEvent and (not arg1 or arg1 == "player") then
       addon:OnMountGearEvent(eventName, arg1)
     end
   elseif eventName == "BAG_UPDATE" then
-    addon:OnMountGearEvent(eventName, arg1)
+    if addon.OnMountGearEvent then
+      addon:OnMountGearEvent(eventName, arg1)
+    end
   elseif eventName == "UNIT_ENERGY" then
     addon:OnEnergyChanged(arg1)
   elseif eventName == "UNIT_COMBO_POINTS" then
@@ -8672,7 +8678,9 @@ frame:SetScript("OnUpdate", function()
   addon:UpdateSelfBuffTimelineFrame(false)
   addon:UpdateComboPointFrame(false)
   addon:UpdatePickPocketGoldStatsFrame(false)
-  addon:UpdateMountGear()
+  if addon.UpdateMountGear then
+    addon:UpdateMountGear()
+  end
   addon:UpdateWeaponPoisonFrame(false)
   addon:UpdateWeaponPoisonWarningFrame(false)
 end)
