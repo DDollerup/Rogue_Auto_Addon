@@ -290,6 +290,10 @@ end
 
 function addon:OnMountGearEvent(eventName, arg1)
   local state = self:EnsureMountGearState()
+  if eventName ~= "PLAYER_AURAS_CHANGED" and eventName ~= "PLAYER_REGEN_ENABLED" then
+    self:ProcessMountGear()
+    return
+  end
   local mounted = self:IsPlayerMountedForMountGear()
   if mounted ~= state.mounted then
     state.mounted = mounted
