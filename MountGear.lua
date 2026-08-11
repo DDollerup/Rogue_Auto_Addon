@@ -79,7 +79,9 @@ end
 
 function addon:IsPlayerMountedForMountGear()
   if UnitIsMounted then
-    return UnitIsMounted("player")
+    if UnitIsMounted("player") then
+      return true
+    end
   end
 
   if not UnitBuff or not self.mountGearTooltip or not self.mountGearTooltip.SetUnitBuff then
@@ -88,9 +90,22 @@ function addon:IsPlayerMountedForMountGear()
 
   local index
   for index = 1, 32 do
+    local texture = UnitBuff("player", index)
+    if not texture then
+      break
+    end
+
+    if string.find(texture, "Mount_") then
+      return true
+    end
+
     self.mountGearTooltip:SetUnitBuff("player", index)
-    local text = getglobal("RogueAutoMountGearTooltipTextLeft1")
-    if text and text:GetText() and string.find(string.lower(text:GetText()), "riding") then
+    local text = getglobal("RogueAutoMountGearTooltipTextLeft2")
+    local textValue = text and text:GetText() or ""
+    local lowerText = string.lower(textValue)
+    if string.find(lowerText, "^increases speed")
+      or string.find(lowerText, "^speed scales with your riding skill")
+      or string.find(lowerText, "^slow and steady") then
       return true
     end
   end
@@ -328,6 +343,7 @@ function addon:OnMountGearEvent(eventName, arg1)
     return
   end
   local mounted = self:IsPlayerMountedForMountGear()
+  self:TraceEvent("mount_gear_detection", mounted and "mounted" or "not mounted", eventName)
   if mounted ~= state.mounted then
     state.mounted = mounted
     if mounted then
