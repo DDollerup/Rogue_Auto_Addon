@@ -78,6 +78,10 @@ function addon:EnsureMountGearState()
 end
 
 function addon:IsPlayerMountedForMountGear()
+  if IsMounted and IsMounted() then
+    return true
+  end
+
   if UnitIsMounted then
     if UnitIsMounted("player") then
       return true
@@ -100,12 +104,16 @@ function addon:IsPlayerMountedForMountGear()
     end
 
     self.mountGearTooltip:SetUnitBuff("player", index)
-    local text = getglobal("RogueAutoMountGearTooltipTextLeft2")
-    local textValue = text and text:GetText() or ""
-    local lowerText = string.lower(textValue)
-    if string.find(lowerText, "^increases speed")
-      or string.find(lowerText, "^speed scales with your riding skill")
-      or string.find(lowerText, "^slow and steady") then
+    local text1 = getglobal("RogueAutoMountGearTooltipTextLeft1")
+    local text2 = getglobal("RogueAutoMountGearTooltipTextLeft2")
+    local textValue1 = string.lower(text1 and text1:GetText() or "")
+    local textValue2 = string.lower(text2 and text2:GetText() or "")
+    local tooltipText = textValue1 .. " " .. textValue2
+    if string.find(tooltipText, "riding")
+      or string.find(tooltipText, "increases speed")
+      or string.find(tooltipText, "speed scales")
+      or string.find(tooltipText, "speed based on")
+      or string.find(tooltipText, "slow and steady") then
       return true
     end
   end
