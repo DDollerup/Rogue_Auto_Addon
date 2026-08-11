@@ -350,6 +350,9 @@ end
 
 addon.DebugEvents = {
   ["mount_gear_state"] = "Mount gear: %s - %s",
+  ["mount_gear_attempt"] = "Mount gear attempt: %s from bag %s slot %s item %s",
+  ["mount_gear_cursor"] = "Mount gear cursor retry: %s",
+  ["mount_gear_result"] = "Mount gear result: %s - %s",
   ["builder_rule_emergency_preamble"] = "Builder rule: emergency kick/riposte/interrupt preamble",
   ["builder_rule_feint"] = "Builder rule: feint",
   ["builder_rule_riposte"] = "Builder rule: riposte",

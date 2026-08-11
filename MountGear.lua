@@ -70,6 +70,7 @@ function addon:EnsureMountGearState()
     pendingIndex = 1,
     retryAt = 0,
     retries = 0,
+    cursorOwned = false,
     lastError = nil,
     lastMessage = "Idle",
   }
@@ -196,6 +197,7 @@ function addon:BeginMountGearSwap(mode)
   end
   state.pendingIndex = 1
   state.retries = 0
+  state.cursorOwned = false
   state.phase = "equipping"
   state.pendingMode = mode
   self:MountGearMessage("Equipping mount gear.")
@@ -225,6 +227,7 @@ function addon:BeginMountGearRestore()
   end
   state.pendingIndex = 1
   state.retries = 0
+  state.cursorOwned = false
   state.phase = "restoring"
   self:MountGearMessage("Restoring original gear.")
   self:ProcessMountGear()
@@ -256,10 +259,27 @@ function addon:ProcessMountGear()
   end
 
   local operation = state.pending[state.pendingIndex]
+  if state.cursorOwned and CursorHasItem and CursorHasItem() then
+    if AutoEquipCursorItem then
+      AutoEquipCursorItem()
+      state.retryAt = GetTime() + 0.25
+      self:TraceEvent("mount_gear_cursor", operation.label)
+      return
+    end
+    if EquipCursorItem then
+      EquipCursorItem(operation.slot)
+      state.retryAt = GetTime() + 0.25
+      self:TraceEvent("mount_gear_cursor", operation.label)
+      return
+    end
+  end
+
   local currentLink = getInventoryLink(operation.slot)
   if sameItem(currentLink, operation.itemId) then
+    state.cursorOwned = false
     state.pendingIndex = state.pendingIndex + 1
     state.retries = 0
+    self:TraceEvent("mount_gear_result", operation.label, "equipped")
     return
   end
 
@@ -271,14 +291,27 @@ function addon:ProcessMountGear()
     return
   end
   if not PickupContainerItem or not EquipCursorItem then
+    if not AutoEquipCursorItem then
+      state.lastError = "This client does not expose the required equipment API."
+      state.phase = "error"
+      self:MountGearMessage(state.lastError)
+      return
+    end
+  end
+
+  self:TraceEvent("mount_gear_attempt", operation.label, bag, bagSlot, operation.itemId)
+  PickupContainerItem(bag, bagSlot)
+  state.cursorOwned = true
+  if AutoEquipCursorItem then
+    AutoEquipCursorItem()
+  elseif EquipCursorItem then
+    EquipCursorItem(operation.slot)
+  else
     state.lastError = "This client does not expose the required equipment API."
     state.phase = "error"
     self:MountGearMessage(state.lastError)
     return
   end
-
-  PickupContainerItem(bag, bagSlot)
-  EquipCursorItem(operation.slot)
   state.retries = state.retries + 1
   state.retryAt = GetTime() + 0.25
   if state.retries > 12 then
