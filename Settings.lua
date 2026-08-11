@@ -152,6 +152,11 @@ addon.settingDefinitions = {
     label = "Maintain Flourish",
     help = "Allows Builder() to refresh Flourish after Slice and Dice and Envenom upkeep and before starting a new Eviscerate cycle.",
   },
+  builderFeint = {
+    path = { "builder", "useFeint" },
+    label = "Use Feint in Builder",
+    help = "Allows Builder() to use Feint when the target appears to be attacking you and you are grouped.",
+  },
   highlightDuration = {
     path = { "notifications", "highlightDuration" },
     label = "Highlight duration",
@@ -228,7 +233,7 @@ addon.uiSections = {
     title = "Builder",
     kind = "builder",
     help = "Auto compares Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Builder() handles interrupts before Feint, maintains Envenom ahead of Slice and Dice, can optionally maintain Flourish, and sets up safe 5-point Eviscerates. After confirmed poison immunity, a red-marked poison icon appears beside the target frame. Poison immunity or having no poison on either weapon makes Builder skip Envenom and Noxious Assault, prefer Sinister Strike, and require only Slice and Dice for Eviscerate cycles.",
-    items = { "builderFlourish", "builderGhostlyStrike" },
+    items = { "builderFlourish", "builderGhostlyStrike", "builderFeint" },
   },
   {
     title = "Mount Gear",
@@ -302,6 +307,15 @@ addon.slashCommandDefinitions = {
     usage = "on|off",
     success = function(value)
       return "Builder Ghostly Strike " .. (value and "enabled" or "disabled") .. "."
+    end,
+  },
+  {
+    command = "builderfeint",
+    type = "toggle",
+    setting = "builderFeint",
+    usage = "on|off",
+    success = function(value)
+      return "Builder Feint " .. (value and "enabled" or "disabled") .. "."
     end,
   },
   {

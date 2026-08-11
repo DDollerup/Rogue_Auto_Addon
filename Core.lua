@@ -124,6 +124,7 @@ addon.defaults = {
     mode = "auto",
     useGhostlyStrike = false,
     useFlourish = false,
+    useFeint = true,
     priorityOrder = nil,
   },
   mountGear = {
@@ -1209,6 +1210,10 @@ function addon:MigrateSettings()
 
   if RogueAutoDB.builder.useFlourish == nil then
     RogueAutoDB.builder.useFlourish = false
+  end
+
+  if RogueAutoDB.builder.useFeint == nil then
+    RogueAutoDB.builder.useFeint = true
   end
 
   if type(RogueAutoDB.mountGear) ~= "table" then
@@ -7681,6 +7686,10 @@ function addon:DoesTargetAppearToBeOnPlayer()
 end
 
 function addon:ShouldUseBuilderFeint()
+  if not RogueAutoDB or not RogueAutoDB.builder or RogueAutoDB.builder.useFeint == false then
+    return false
+  end
+
   if self:GetCurrentGroupSize() <= 0 then
     return false
   end
