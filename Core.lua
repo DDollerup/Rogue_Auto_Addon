@@ -126,6 +126,11 @@ addon.defaults = {
     useFlourish = false,
     priorityOrder = nil,
   },
+  mountGear = {
+    enabled = false,
+    autoSwap = false,
+    profile = {},
+  },
   minimap = {
     angle = 235,
   },
@@ -344,6 +349,7 @@ function addon:RunBuilderPriority(context)
 end
 
 addon.DebugEvents = {
+  ["mount_gear_state"] = "Mount gear: %s - %s",
   ["builder_rule_emergency_preamble"] = "Builder rule: emergency kick/riposte/interrupt preamble",
   ["builder_rule_feint"] = "Builder rule: feint",
   ["builder_rule_riposte"] = "Builder rule: riposte",
@@ -1199,6 +1205,20 @@ function addon:MigrateSettings()
 
   if RogueAutoDB.builder.useFlourish == nil then
     RogueAutoDB.builder.useFlourish = false
+  end
+
+  if type(RogueAutoDB.mountGear) ~= "table" then
+    RogueAutoDB.mountGear = deepCopy(self.defaults.mountGear)
+  else
+    if RogueAutoDB.mountGear.enabled == nil then
+      RogueAutoDB.mountGear.enabled = false
+    end
+    if RogueAutoDB.mountGear.autoSwap == nil then
+      RogueAutoDB.mountGear.autoSwap = false
+    end
+    if type(RogueAutoDB.mountGear.profile) ~= "table" then
+      RogueAutoDB.mountGear.profile = {}
+    end
   end
 
   local roleplay = RogueAutoDB.roleplay
@@ -8488,6 +8508,9 @@ frame:RegisterEvent("VARIABLES_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+frame:RegisterEvent("PLAYER_AURAS_CHANGED")
+frame:RegisterEvent("UNIT_INVENTORY_CHANGED")
+frame:RegisterEvent("BAG_UPDATE")
 frame:RegisterEvent("UNIT_ENERGY")
 frame:RegisterEvent("UNIT_COMBO_POINTS")
 frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
@@ -8553,6 +8576,15 @@ frame:SetScript("OnEvent", function(selfOrEvent, eventOrArg1, eventPayload)
     addon:OnCombatStarted()
   elseif eventName == "PLAYER_REGEN_ENABLED" then
     addon:OnCombatEnded()
+    addon:OnMountGearEvent(eventName, arg1)
+  elseif eventName == "PLAYER_AURAS_CHANGED" then
+    addon:OnMountGearEvent(eventName, arg1)
+  elseif eventName == "UNIT_INVENTORY_CHANGED" then
+    if not arg1 or arg1 == "player" then
+      addon:OnMountGearEvent(eventName, arg1)
+    end
+  elseif eventName == "BAG_UPDATE" then
+    addon:OnMountGearEvent(eventName, arg1)
   elseif eventName == "UNIT_ENERGY" then
     addon:OnEnergyChanged(arg1)
   elseif eventName == "UNIT_COMBO_POINTS" then
@@ -8640,6 +8672,7 @@ frame:SetScript("OnUpdate", function()
   addon:UpdateSelfBuffTimelineFrame(false)
   addon:UpdateComboPointFrame(false)
   addon:UpdatePickPocketGoldStatsFrame(false)
+  addon:UpdateMountGear()
   addon:UpdateWeaponPoisonFrame(false)
   addon:UpdateWeaponPoisonWarningFrame(false)
 end)

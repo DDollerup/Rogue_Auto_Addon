@@ -111,6 +111,7 @@ local pickPocketRunTimerMenuControl = nil
 
 local sectionIcons = {
   builder = "Interface\\Icons\\INV_Sword_04",
+  mountGear = "Interface\\Icons\\Ability_Mount_RidingHorse",
   roleplay = "Interface\\Icons\\INV_Misc_Mask_01",
   ["Builder"] = "Interface\\Icons\\INV_Sword_04",
   ["Openers"] = "Interface\\Icons\\Ability_Stealth",
@@ -681,6 +682,105 @@ local function createRoleplayTestControl(parent, y)
   return control, 30
 end
 
+local function createMountGearControl(parent, y)
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(controlWidth)
+  control:SetHeight(190)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
+
+  local status = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  status:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
+  status:SetWidth(textWidth)
+  status:SetJustifyH("LEFT")
+
+  local enable = CreateFrame("CheckButton", "RogueAutoMountGearEnable", control, "UICheckButtonTemplate")
+  enable:SetPoint("TOPLEFT", control, "TOPLEFT", -4, -28)
+  local enableText = getglobal(enable:GetName() .. "Text")
+  if enableText then
+    enableText:SetText("Enable Mount Gear")
+  end
+  enable:SetScript("OnClick", function()
+    local settings = RogueAutoDB.mountGear
+    settings.enabled = enable:GetChecked() == 1
+    addon:RefreshConfig()
+  end)
+
+  local autoSwap = CreateFrame("CheckButton", "RogueAutoMountGearAutoSwap", control, "UICheckButtonTemplate")
+  autoSwap:SetPoint("TOPLEFT", control, "TOPLEFT", 190, -28)
+  local autoText = getglobal(autoSwap:GetName() .. "Text")
+  if autoText then
+    autoText:SetText("Auto Swap")
+  end
+  autoSwap:SetScript("OnClick", function()
+    local settings = RogueAutoDB.mountGear
+    settings.autoSwap = autoSwap:GetChecked() == 1
+    addon:RefreshConfig()
+  end)
+
+  local capture = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+  capture:SetWidth(150)
+  capture:SetHeight(24)
+  capture:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -62)
+  capture:SetText("Capture Equipped")
+  capture:SetScript("OnClick", function()
+    addon:CaptureMountGearProfile()
+    addon:RefreshConfig()
+  end)
+
+  local clear = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+  clear:SetWidth(110)
+  clear:SetHeight(24)
+  clear:SetPoint("LEFT", capture, "RIGHT", 8, 0)
+  clear:SetText("Clear")
+  clear:SetScript("OnClick", function()
+    addon:ClearMountGearProfile()
+    addon:RefreshConfig()
+  end)
+
+  local equip = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+  equip:SetWidth(150)
+  equip:SetHeight(24)
+  equip:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -94)
+  equip:SetText("Equip Profile")
+  equip:SetScript("OnClick", function()
+    addon:BeginMountGearSwap("manual")
+    addon:RefreshConfig()
+  end)
+
+  local restore = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+  restore:SetWidth(110)
+  restore:SetHeight(24)
+  restore:SetPoint("LEFT", equip, "RIGHT", 8, 0)
+  restore:SetText("Restore")
+  restore:SetScript("OnClick", function()
+    addon:BeginMountGearRestore()
+    addon:RefreshConfig()
+  end)
+
+  local profile = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  profile:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -130)
+  profile:SetWidth(textWidth)
+  profile:SetJustifyH("LEFT")
+
+  control.Refresh = function()
+    local settings = RogueAutoDB.mountGear or {}
+    local phase, message = addon:GetMountGearStatus()
+    status:SetText("State: " .. tostring(phase) .. " - " .. tostring(message or "Idle"))
+    status:SetTextColor(0.8, 0.8, 0.8)
+    enable:SetChecked(settings.enabled and 1 or nil)
+    autoSwap:SetChecked(settings.autoSwap and 1 or nil)
+    local parts = {}
+    local index
+    for index, slotInfo in ipairs(addon.mountGearSlots) do
+      local entry = settings.profile and settings.profile[slotInfo.id]
+      table.insert(parts, slotInfo.name .. ": " .. (entry and (entry.link or ("item " .. tostring(entry.itemId))) or "empty"))
+    end
+    profile:SetText(table.concat(parts, "\n"))
+  end
+  registerRefreshable(control)
+  return control, 190
+end
+
 local function createSectionCard(parent, section, y)
   local card = CreateFrame("Frame", nil, parent)
   card:SetWidth(cardWidth)
@@ -720,6 +820,9 @@ local function createSectionCard(parent, section, y)
       cursorY = cursorY - itemHeight - 6
     end
     cursorY = cursorY - 10
+  elseif section.kind == "mountGear" then
+    local _, height = createMountGearControl(card, cursorY)
+    cursorY = cursorY - height - 10
   elseif section.kind == "pickPocketGold" then
     for _, settingId in ipairs(section.items or {}) do
       local definition = addon.settingDefinitions[settingId]
@@ -820,6 +923,7 @@ local function printHelp()
   addon:Print(primarySlashCommand .. " opener <garrote|ambush|cheap shot|pick pocket>")
   addon:Print(primarySlashCommand .. " priority list")
   addon:Print(primarySlashCommand .. " priority <up|down|reset> <rule-id>")
+  addon:Print(primarySlashCommand .. " mountgear <status|enable|disable|autoswap|capture|clear|equip|restore>")
   for _, definition in ipairs(addon:GetSlashDefinitions()) do
     addon:Print(primarySlashCommand .. " " .. definition.command .. " " .. definition.usage)
   end
@@ -1015,6 +1119,39 @@ SlashCmdList.ROGUEAUTO = function(message)
     end
 
     addon:Print("Usage: " .. primarySlashCommand .. " priority <list|up|down|reset> [rule-id]")
+    return
+  end
+
+  if command == "mountgear" then
+    local action = args[2]
+    if action == "status" then
+      local phase, message = addon:GetMountGearStatus()
+      addon:Print("Mount gear: " .. tostring(phase) .. " - " .. tostring(message or "Idle"))
+    elseif action == "enable" or action == "disable" then
+      RogueAutoDB.mountGear.enabled = action == "enable"
+      addon:RefreshConfig()
+      addon:Print("Mount gear " .. action .. "d.")
+    elseif action == "autoswap" then
+      if args[3] ~= "on" and args[3] ~= "off" then
+        addon:Print("Usage: /rga mountgear autoswap <on|off>")
+      else
+        RogueAutoDB.mountGear.autoSwap = args[3] == "on"
+        addon:RefreshConfig()
+        addon:Print("Mount gear auto swap " .. (RogueAutoDB.mountGear.autoSwap and "enabled" or "disabled") .. ".")
+      end
+    elseif action == "capture" then
+      addon:CaptureMountGearProfile()
+      addon:RefreshConfig()
+    elseif action == "clear" then
+      addon:ClearMountGearProfile()
+      addon:RefreshConfig()
+    elseif action == "equip" then
+      addon:BeginMountGearSwap("manual")
+    elseif action == "restore" then
+      addon:BeginMountGearRestore()
+    else
+      addon:Print("Usage: /rga mountgear <status|enable|disable|autoswap on|autoswap off|capture|clear|equip|restore>")
+    end
     return
   end
 

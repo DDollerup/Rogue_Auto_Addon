@@ -231,6 +231,11 @@ addon.uiSections = {
     items = { "builderFlourish", "builderGhostlyStrike" },
   },
   {
+    title = "Mount Gear",
+    kind = "mountGear",
+    help = "Capture the currently equipped riding items into a profile. When enabled, Auto Swap equips that profile after the mounted aura appears and restores your original gear after dismounting. Swaps never run during combat.",
+  },
+  {
     title = "Openers",
     help = "Opener(hint) only attempts the explicit opener you ask for, but can try Pick Pocket first when eligible.",
     items = { "pickPocketHumanoids" },
