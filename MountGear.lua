@@ -249,7 +249,7 @@ function addon:BeginMountGearRestore()
   return true
 end
 
-function addon:ProcessMountGear()
+function addon:ProcessMountGearStep()
   local state = self:EnsureMountGearState()
   if not state.pending or state.pendingIndex > table.getn(state.pending) then
     if state.phase == "restoring" then
@@ -316,6 +316,25 @@ function addon:ProcessMountGear()
     state.lastError = "Could not equip " .. formatItem(nil, operation.itemId) .. "."
     state.phase = "error"
     self:MountGearMessage(state.lastError)
+  end
+end
+
+function addon:ProcessMountGear()
+  local state = self:EnsureMountGearState()
+  if state.processing then
+    return
+  end
+
+  state.processing = true
+  local ok, errorMessage = pcall(function()
+    self:ProcessMountGearStep()
+  end)
+  state.processing = false
+
+  if not ok then
+    state.phase = "error"
+    state.lastError = tostring(errorMessage)
+    self:MountGearMessage("Swap error: " .. state.lastError)
   end
 end
 
