@@ -351,12 +351,10 @@ end
 
 addon.DebugEvents = {
   ["mount_gear_state"] = "Mount gear: %s - %s",
-  ["mount_gear_attempt"] = "Mount gear attempt: %s from bag %s slot %s item %s",
-  ["mount_gear_cursor"] = "Mount gear cursor retry: %s",
+  ["mount_gear_attempt"] = "Mount gear transaction: %s from bag %s slot %s to %s",
   ["mount_gear_result"] = "Mount gear result: %s - %s",
   ["mount_gear_detection"] = "Mount gear detection: %s on %s",
-  ["mount_gear_buff"] = "Mount buff %s: texture=%s id=%s",
-  ["mount_gear_buff_text"] = "Mount buff %s text: line1=%s line2=%s",
+  ["mount_gear_unknown"] = "Mount gear fallback matched aura %s: texture=%s id=%s",
   ["builder_rule_emergency_preamble"] = "Builder rule: emergency kick/riposte/interrupt preamble",
   ["builder_rule_feint"] = "Builder rule: feint",
   ["builder_rule_riposte"] = "Builder rule: riposte",
