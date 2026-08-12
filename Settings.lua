@@ -74,11 +74,11 @@ function addon:SetSetting(id, value)
 end
 
 addon.builderOptions = {
-  { key = "auto", label = "Auto" },
-  { key = "sinister", label = "Sinister" },
-  { key = "hemo", label = "Hemo" },
+  { key = "auto", label = "Smart Choice" },
+  { key = "sinister", label = "Sinister Strike" },
+  { key = "hemo", label = "Hemorrhage" },
   { key = "backstab", label = "Backstab" },
-  { key = "noxious", label = "Noxious" },
+  { key = "noxious", label = "Noxious Assault" },
 }
 
 addon.roleplayPersonalityOptions = {
@@ -119,47 +119,47 @@ addon.settingDefinitions = {
   },
   pickPocketHumanoids = {
     path = { "stealth", "pickPocketHumanoids" },
-    label = "Pick Pocket before opener when eligible",
-    help = "Only affects Opener(hint).",
+    label = "Try Pick Pocket first",
+    help = "The Opener button will try to grab treasure before attacking when it is safe.",
   },
   comboPointsEnabled = {
     path = { "ui", "comboPoints", "enabled" },
-    label = "Show combo point bullets above the player",
-    help = "Displays five combo point bullets near the center of the screen.",
+    label = "Show my combo points",
+    help = "Shows five easy-to-see dots near your character.",
   },
   comboPointsUnlocked = {
     path = { "ui", "comboPoints", "unlocked" },
-    label = "Unlock combo point bullets for dragging",
-    help = "When enabled, drag the bullets to move them. Disable it to lock them back in place.",
+    label = "Let me move the combo points",
+    help = "Turn this on, drag the dots where you want them, then turn it off.",
   },
   pickPocketGoldStatsEnabled = {
     path = { "ui", "pickPocketStats", "enabled" },
-    label = "Show Pick Pocket gold stats panel",
-    help = "Displays Pick Pocket gold per-hour and lifetime totals in a small draggable panel.",
+    label = "Show my stolen gold",
+    help = "Shows how much money Pick Pocket has found.",
   },
   pickPocketGoldStatsUnlocked = {
     path = { "ui", "pickPocketStats", "unlocked" },
-    label = "Unlock Pick Pocket gold stats panel",
-    help = "When enabled, drag the stats panel to place it anywhere. Disable it to lock it in place.",
+    label = "Let me move the gold box",
+    help = "Turn this on, drag the gold box, then turn it off.",
   },
   builderGhostlyStrike = {
     path = { "builder", "useGhostlyStrike" },
-    label = "Prioritize Ghostly Strike in Auto",
-    help = "Only affects Builder() while builder mode is Auto.",
+    label = "Use Ghostly Strike when helpful",
+    help = "Smart Choice can use Ghostly Strike to help you dodge.",
   },
   builderFlourish = {
     path = { "builder", "useFlourish" },
-    label = "Maintain Flourish",
-    help = "Allows Builder() to refresh Flourish after Slice and Dice and Envenom upkeep and before starting a new Eviscerate cycle.",
+    label = "Keep Flourish active",
+    help = "The combat helper will refresh Flourish when your important buffs are safe.",
   },
   builderFeint = {
     path = { "builder", "useFeint" },
-    label = "Use Feint in Builder",
-    help = "Allows Builder() to use Feint when the target appears to be attacking you and you are grouped.",
+    label = "Use Feint to stay safe",
+    help = "The combat helper can use Feint when an enemy attacks you in a group.",
   },
   highlightDuration = {
     path = { "notifications", "highlightDuration" },
-    label = "Highlight duration",
+    label = "How long should hints glow?",
     min = 3,
     max = 20,
     step = 1,
@@ -167,7 +167,7 @@ addon.settingDefinitions = {
       return self:ClampValue(math.floor(value + 0.5), 3, 20)
     end,
     display = function(value)
-      return "Highlight duration: " .. tostring(value) .. " sec"
+      return "Hints glow for " .. tostring(value) .. " seconds"
     end,
   },
   roleplayEnabled = {
@@ -176,8 +176,8 @@ addon.settingDefinitions = {
     help = "Sends occasional custom /emote messages only after confirmed actions and outcomes.",
   },
   roleplayEnabledMode = {
-    label = "RP emotes",
-    help = "Off is the safe default. On sends throttled nearby /emote messages after confirmed actions.",
+    label = "Let my rogue talk",
+    help = "When this is on, your rogue sometimes acts out nearby emotes. Off is quiet.",
     options = {
       { key = "off", label = "Off" },
       { key = "on", label = "On" },
@@ -194,8 +194,8 @@ addon.settingDefinitions = {
   },
   roleplayPersonality = {
     path = { "roleplay", "personality" },
-    label = "Personality",
-    help = "Silent Blade is restrained, Scoundrel is playful, and Venomous is dark and poison-focused.",
+    label = "Choose a personality",
+    help = "Silent Blade is calm, Scoundrel is silly, and Venomous likes poison jokes.",
     options = addon.roleplayPersonalityOptions,
     normalize = function(self, value)
       for _, option in ipairs(self.roleplayPersonalityOptions) do
@@ -208,8 +208,8 @@ addon.settingDefinitions = {
   },
   roleplayFrequency = {
     path = { "roleplay", "frequency" },
-    label = "Combat emote chance",
-    help = "Pick Pocket outcomes and victories always qualify; combat abilities use this chance and are still throttled.",
+    label = "How often should my rogue talk?",
+    help = "A higher number means more roleplay messages during fights.",
     min = 10,
     max = 100,
     step = 5,
@@ -217,50 +217,63 @@ addon.settingDefinitions = {
       return self:ClampValue(math.floor(value + 0.5), 10, 100)
     end,
     display = function(value)
-      return "Combat emote chance: " .. tostring(value) .. "%"
+      return "Talk chance: " .. tostring(value) .. "%"
     end,
   },
 }
 
 addon.uiSections = {
   {
-    title = "Roleplay",
-    kind = "roleplay",
-    help = "Choose Off or On, then select a personality. Emotes cover Pick Pocket, finishers, Kick, control, openers, Vanish, Sprint, Evasion, Sap, Shoot/Throw, and victories.",
-    items = { "roleplayEnabledMode", "roleplayPersonality", "roleplayFrequency" },
-  },
-  {
-    title = "Builder",
+    title = "1. Combat Helper",
     kind = "builder",
-    help = "Auto compares Backstab, Surprise Attack, Noxious Assault, Hemorrhage, and Sinister Strike from live combat context. Builder() handles interrupts before Feint, maintains Envenom ahead of Slice and Dice, can optionally maintain Flourish, and sets up safe 5-point Eviscerates. After confirmed poison immunity, a red-marked poison icon appears beside the target frame. Poison immunity or having no poison on either weapon makes Builder skip Envenom and Noxious Assault, prefer Sinister Strike, and require only Slice and Dice for Eviscerate cycles.",
+    color = { 0.25, 0.82, 0.38 },
+    help = "Choose Smart Choice if you are unsure. RogueAuto will pick attacks, keep important buffs active, interrupt danger, and spend combo points.",
     items = { "builderFlourish", "builderGhostlyStrike", "builderFeint" },
   },
   {
-    title = "Mount Gear",
+    title = "2. Riding Clothes",
     kind = "mountGear",
-    help = "Capture the currently equipped riding items into a profile. When enabled, Auto Swap equips that profile after the mounted aura appears and restores your original gear after dismounting. Swaps never run during combat.",
+    color = { 0.28, 0.72, 1.0 },
+    help = "Put on your fastest riding items, press Save Riding Clothes, and turn on Auto Change. Your normal clothes return when you get off your mount.",
   },
   {
-    title = "Openers",
-    help = "Opener(hint) only attempts the explicit opener you ask for, but can try Pick Pocket first when eligible.",
+    title = "3. Sneaking",
+    color = { 0.72, 0.48, 1.0 },
+    help = "Choose whether the Opener button should try Pick Pocket before your selected stealth attack.",
     items = { "pickPocketHumanoids" },
   },
   {
-    title = "Pick Pocket Gold",
+    title = "4. Treasure Counter",
     kind = "pickPocketGold",
-    help = "Track Pick Pocket income with a draggable lifetime and per-hour gold stat panel.",
+    color = { 1.0, 0.74, 0.18 },
+    help = "Keep a little box on screen that counts the money found with Pick Pocket.",
     items = { "pickPocketGoldStatsEnabled", "pickPocketGoldStatsUnlocked" },
   },
   {
-    title = "Combo Points",
-    help = "By default the bullets sit centered above the player. Unlock them to drag the display to a better spot, then lock it again when you're done.",
+    title = "5. Things on My Screen",
+    color = { 1.0, 0.48, 0.22 },
+    help = "Show combo points near your character and choose where they sit.",
     items = { "comboPointsEnabled", "comboPointsUnlocked" },
   },
   {
-    title = "Highlights",
+    title = "6. Helpful Glows",
+    color = { 1.0, 0.82, 0.25 },
+    help = "Choose how long RogueAuto keeps an important hint glowing.",
     items = { "highlightDuration" },
   },
-  { title = "Macros", kind = "macros" },
+  {
+    title = "7. Rogue Personality",
+    kind = "roleplay",
+    color = { 0.98, 0.42, 0.58 },
+    help = "Your rogue can sometimes say playful things after successful actions. This is optional and starts quiet.",
+    items = { "roleplayEnabledMode", "roleplayPersonality", "roleplayFrequency" },
+  },
+  {
+    title = "8. Action Buttons",
+    kind = "macros",
+    color = { 0.32, 0.82, 0.76 },
+    help = "These are the commands used by your RogueAuto action-bar buttons.",
+  },
 }
 
 addon.slashCommandDefinitions = {

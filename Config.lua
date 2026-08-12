@@ -685,7 +685,7 @@ end
 local function createMountGearControl(parent, y)
   local control = CreateFrame("Frame", nil, parent)
   control:SetWidth(controlWidth)
-  control:SetHeight(190)
+  control:SetHeight(208)
   control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
 
   local status = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -697,7 +697,7 @@ local function createMountGearControl(parent, y)
   enable:SetPoint("TOPLEFT", control, "TOPLEFT", -4, -28)
   local enableText = getglobal(enable:GetName() .. "Text")
   if enableText then
-    enableText:SetText("Enable Mount Gear")
+    enableText:SetText("Use Riding Clothes")
   end
   enable:SetScript("OnClick", function()
     local settings = RogueAutoDB.mountGear
@@ -709,7 +709,7 @@ local function createMountGearControl(parent, y)
   autoSwap:SetPoint("TOPLEFT", control, "TOPLEFT", 190, -28)
   local autoText = getglobal(autoSwap:GetName() .. "Text")
   if autoText then
-    autoText:SetText("Auto Swap")
+    autoText:SetText("Auto Change")
   end
   autoSwap:SetScript("OnClick", function()
     local settings = RogueAutoDB.mountGear
@@ -718,10 +718,10 @@ local function createMountGearControl(parent, y)
   end)
 
   local capture = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
-  capture:SetWidth(150)
+  capture:SetWidth(176)
   capture:SetHeight(24)
   capture:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -62)
-  capture:SetText("Capture Equipped")
+  capture:SetText("Save Riding Clothes")
   capture:SetScript("OnClick", function()
     if addon.CaptureMountGearProfile then
       addon:CaptureMountGearProfile()
@@ -735,7 +735,7 @@ local function createMountGearControl(parent, y)
   clear:SetWidth(110)
   clear:SetHeight(24)
   clear:SetPoint("LEFT", capture, "RIGHT", 8, 0)
-  clear:SetText("Clear")
+  clear:SetText("Forget Saved Clothes")
   clear:SetScript("OnClick", function()
     if addon.ClearMountGearProfile then
       addon:ClearMountGearProfile()
@@ -746,10 +746,10 @@ local function createMountGearControl(parent, y)
   end)
 
   local equip = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
-  equip:SetWidth(150)
+  equip:SetWidth(176)
   equip:SetHeight(24)
   equip:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -94)
-  equip:SetText("Equip Profile")
+  equip:SetText("Wear Riding Clothes")
   equip:SetScript("OnClick", function()
     if addon.BeginMountGearSwap then
       addon:BeginMountGearSwap("manual")
@@ -763,7 +763,7 @@ local function createMountGearControl(parent, y)
   restore:SetWidth(110)
   restore:SetHeight(24)
   restore:SetPoint("LEFT", equip, "RIGHT", 8, 0)
-  restore:SetText("Restore")
+  restore:SetText("Wear Normal Clothes")
   restore:SetScript("OnClick", function()
     if addon.BeginMountGearRestore then
       addon:BeginMountGearRestore()
@@ -802,7 +802,7 @@ local function createMountGearControl(parent, y)
     profile:SetText(table.concat(parts, "\n"))
   end
   registerRefreshable(control)
-  return control, 190
+  return control, 208
 end
 
 local function createSectionCard(parent, section, y)
@@ -817,8 +817,9 @@ local function createSectionCard(parent, section, y)
     edgeSize = 12,
     insets = { left = 4, right = 4, top = 4, bottom = 4 },
   })
-  card:SetBackdropColor(0.08, 0.08, 0.08, 0.84)
-  card:SetBackdropBorderColor(0.75, 0.58, 0.12, 0.45)
+  card:SetBackdropColor(0.035, 0.045, 0.055, 0.94)
+  local sectionColor = section.color or { 0.95, 0.72, 0.18 }
+  card:SetBackdropBorderColor(sectionColor[1], sectionColor[2], sectionColor[3], 0.72)
 
   local cursorY = -10
   cursorY = cursorY - createSectionHeader(card, section)

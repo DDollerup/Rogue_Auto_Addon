@@ -2,14 +2,15 @@ local addon = RogueAuto
 
 addon.settingDefinitions.debugEnabled = {
   path = { "debug" },
-  label = "Show debug traces",
-  help = "Prints RogueAuto debug and Builder trace messages to chat. Leave disabled for normal gameplay.",
+  label = "Show technical messages",
+  help = "Only turn this on when an adult or addon helper asks for it.",
 }
 
 table.insert(addon.uiSections, {
-  title = "Debug",
+  title = "9. Grown-up Help",
   kind = "debug",
-  help = "Diagnostic output for troubleshooting RogueAuto behavior.",
+  color = { 0.64, 0.68, 0.72 },
+  help = "This section prints technical details used to find problems. You can safely leave it off.",
   items = { "debugEnabled" },
 })
 
