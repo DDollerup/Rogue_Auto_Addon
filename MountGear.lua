@@ -94,7 +94,7 @@ function addon:IsPlayerMountedForMountGear()
 
   local index
   for index = 1, 32 do
-    local texture = UnitBuff("player", index)
+    local texture, applications, buffId = UnitBuff("player", index)
     if not texture then
       break
     end
@@ -109,6 +109,7 @@ function addon:IsPlayerMountedForMountGear()
     local textValue1 = string.lower(text1 and text1:GetText() or "")
     local textValue2 = string.lower(text2 and text2:GetText() or "")
     local tooltipText = textValue1 .. " " .. textValue2
+    self:TraceEvent("mount_gear_buff", index, texture, buffId or "none", textValue1, textValue2)
     if string.find(tooltipText, "riding")
       or string.find(tooltipText, "increases speed")
       or string.find(tooltipText, "speed scales")
@@ -357,15 +358,11 @@ function addon:OnMountGearEvent(eventName, arg1)
   if mounted ~= state.mounted then
     state.mounted = mounted
     if mounted then
-      local settings = getSettings()
-      if settings and settings.enabled and settings.autoSwap then
-        self:BeginMountGearSwap("mount")
-      end
+      self:MountGearMessage("Mounted aura detected; gear swap is paused for diagnosis.")
     elseif state.snapshot then
-      self:BeginMountGearRestore()
+      self:MountGearMessage("Dismounted aura detected; gear restore is paused for diagnosis.")
     end
   end
-  self:ProcessMountGear()
 end
 
 function addon:UpdateMountGear()
