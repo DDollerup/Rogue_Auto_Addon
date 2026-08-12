@@ -51,6 +51,7 @@ addon.kickInterruptSpells = {
   ["mind blast"] = true,
   ["mind flay"] = true,
   ["venom spit"] = true,
+  ["curse of thorns"] = true,
   ["mana burn"] = true,
   ["immolate"] = true,
   ["corruption"] = true,
