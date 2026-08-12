@@ -2184,7 +2184,13 @@ function addon:OnPoisonCombatMessage(message)
   end
 
   local targetName = UnitName("target")
-  if targetName and string.lower(successTarget) == string.lower(targetName) then
+  local immunity = self.state.poisonImmunity
+  local immunitySpell = immunity and normalizeSpellName(immunity.spellName) or nil
+  local normalizedSuccessSpell = normalizeSpellName(successSpell)
+  if targetName
+    and string.lower(successTarget) == string.lower(targetName)
+    and immunitySpell
+    and normalizedSuccessSpell == immunitySpell then
     self:ClearTargetPoisonImmunity(
       "later poison success: " .. tostring(successSpell),
       successTarget
