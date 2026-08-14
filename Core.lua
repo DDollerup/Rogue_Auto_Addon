@@ -2140,6 +2140,16 @@ function addon:ExtractPoisonImmunityEvidence(message)
     return trim(targetName), normalizeSpellName(spellName)
   end
 
+  _, _, spellName, targetName = string.find(message, "^Your (.-) was resisted by (.-)%.?$")
+  if targetName and spellName and self:IsPoisonImmunitySpell(spellName) then
+    return trim(targetName), normalizeSpellName(spellName)
+  end
+
+  _, _, targetName, spellName = string.find(message, "^(.-) is immune to (.-)%.?$")
+  if targetName and spellName and self:IsPoisonImmunitySpell(spellName) then
+    return trim(targetName), normalizeSpellName(spellName)
+  end
+
   return nil, nil
 end
 
