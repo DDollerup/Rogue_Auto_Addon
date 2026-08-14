@@ -199,6 +199,7 @@ addon.state = {
   learningFight = nil,
   poisonImmunity = nil,
   poisonImmunities = {},
+  poisonResistanceEvidence = {},
   activeEnemyCast = nil,
   suppressedEnemyCastBar = nil,
   pendingKidneyShotCheck = nil,
@@ -376,6 +377,7 @@ addon.DebugEvents = {
   ["poison_immunity_cleared"] = "Clearing poison immunity for %s (%s)",
   ["poison_immunity_remembered"] = "Poison immunity remembered for %s by %s; matching targets will use the physical rotation for this session",
   ["poison_immunity_raw"] = "Poison immunity evidence from %s: %s",
+  ["poison_resistance_evidence"] = "Poison resistance evidence for %s from %s: %s/3",
   ["active_enemy_cast_cleared"] = "Clearing enemy cast %s (%s)",
   ["enemy_cast_tracking"] = "Tracking enemy cast %s from %s",
   ["builder_poison_check"] = "Builder poison check: equipped=%s, targetImmune=%s, rotation=%s, reason=%s",
@@ -2141,17 +2143,73 @@ function addon:ExtractPoisonImmunityEvidence(message)
     return trim(targetName), normalizeSpellName(spellName)
   end
 
-  _, _, spellName, targetName = string.find(message, "^Your (.-) was resisted by (.-)%.?$")
-  if targetName and spellName and self:IsPoisonImmunitySpell(spellName) then
-    return trim(targetName), normalizeSpellName(spellName)
-  end
-
   _, _, targetName, spellName = string.find(message, "^(.-) is immune to (.-)%.?$")
   if targetName and spellName and self:IsPoisonImmunitySpell(spellName) then
     return trim(targetName), normalizeSpellName(spellName)
   end
 
   return nil, nil
+end
+
+function addon:GetPoisonResistanceEvidenceKey(targetName, spellName)
+  local targetKey = self:GetPoisonImmunityKey(targetName)
+  local poisonKey = normalizeSpellName(spellName)
+  if not targetKey or poisonKey == "" then
+    return nil
+  end
+  return targetKey .. "|" .. string.lower(poisonKey)
+end
+
+function addon:RecordPoisonResistanceEvidence(message)
+  if not message then
+    return false
+  end
+
+  local _, _, spellName, targetName = string.find(message, "^Your (.-) was resisted by (.-)%.?$")
+  if not targetName or not spellName or not self:IsPoisonImmunitySpell(spellName) then
+    return false
+  end
+
+  targetName = trim(targetName)
+  local currentTargetName = UnitName("target")
+  if not currentTargetName or string.lower(targetName) ~= string.lower(currentTargetName) then
+    return false
+  end
+
+  local evidenceKey = self:GetPoisonResistanceEvidenceKey(targetName, spellName)
+  if not evidenceKey then
+    return false
+  end
+
+  local now = GetTime()
+  local evidence = self.state.poisonResistanceEvidence[evidenceKey]
+  if not evidence or not evidence.lastAt or (now - evidence.lastAt) > 8 then
+    evidence = { count = 0 }
+    self.state.poisonResistanceEvidence[evidenceKey] = evidence
+  end
+  evidence.count = (evidence.count or 0) + 1
+  evidence.lastAt = now
+  self:DebugEvent(
+    "poison_resistance_evidence",
+    tostring(targetName),
+    tostring(spellName),
+    tostring(evidence.count)
+  )
+
+  if evidence.count < 3 then
+    return true
+  end
+
+  self.state.poisonResistanceEvidence[evidenceKey] = nil
+  self:MarkCurrentTargetPoisonImmune(spellName, message, targetName)
+  return true
+end
+
+function addon:ClearPoisonResistanceEvidence(targetName, spellName)
+  local evidenceKey = self:GetPoisonResistanceEvidenceKey(targetName, spellName)
+  if evidenceKey then
+    self.state.poisonResistanceEvidence[evidenceKey] = nil
+  end
 end
 
 function addon:ExtractPositivePoisonEvidence(message)
@@ -2218,6 +2276,15 @@ function addon:OnPoisonCombatMessage(message)
 
   if self:MarkRecentPoisonAttemptImmune(message) then
     return
+  end
+
+  if self:RecordPoisonResistanceEvidence(message) then
+    return
+  end
+
+  local successTarget, successSpell = self:ExtractPositivePoisonEvidence(message)
+  if successTarget and successSpell then
+    self:ClearPoisonResistanceEvidence(successTarget, successSpell)
   end
 end
 
