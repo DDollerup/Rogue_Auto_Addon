@@ -2,7 +2,7 @@ RogueAuto = RogueAuto or {}
 
 local addon = RogueAuto
 
-addon.version = "1.0.0"
+addon.version = "1.0.3"
 addon.refreshWindow = {
   playerBuff = 2,
   targetDebuff = 3,
@@ -2239,6 +2239,45 @@ end
 
 function addon:OnPoisonUiError(message)
   self:MarkRecentPoisonAttemptImmune(message)
+end
+
+function addon:OnPoisonCombatTextUpdate(updateType, message)
+  local updateText = string.lower(tostring(updateType or ""))
+  local messageText = string.lower(tostring(message or ""))
+  if not string.find(updateText, "immune", 1, true)
+    and not string.find(messageText, "immune", 1, true) then
+    return false
+  end
+
+  if not self:IsHostileTarget() then
+    return false
+  end
+
+  local lastAttempt = self.state.lastSpellAttempt
+  local recentAttempt = lastAttempt
+    and lastAttempt.at
+    and (GetTime() - lastAttempt.at) <= 1
+  if recentAttempt then
+    if not self:IsPoisonImmunitySpell(lastAttempt.name) then
+      return false
+    end
+    return self:MarkCurrentTargetPoisonImmune(
+      lastAttempt.name,
+      tostring(updateType or "") .. ": " .. tostring(message or ""),
+      lastAttempt.targetName
+    )
+  end
+
+  local hasWeaponPoison = self:HasAnyWeaponPoison()
+  if not hasWeaponPoison then
+    return false
+  end
+
+  return self:MarkCurrentTargetPoisonImmune(
+    "Weapon Poison",
+    tostring(updateType or "") .. ": " .. tostring(message or ""),
+    UnitName("target")
+  )
 end
 
 function addon:ClassifyDamageEvent(sourceType, spellName, school)
@@ -8604,6 +8643,7 @@ frame:RegisterEvent("CHAT_MSG_MONEY")
 frame:RegisterEvent("PLAYER_MONEY")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 frame:RegisterEvent("PLAYER_TARGET_CHANGED")
+frame:RegisterEvent("COMBAT_TEXT_UPDATE")
 
 local function resolveEventArgs(selfOrEvent, eventOrArg1, eventPayload)
   if type(selfOrEvent) == "string" then
@@ -8716,6 +8756,8 @@ frame:SetScript("OnEvent", function(selfOrEvent, eventOrArg1, eventPayload)
     addon:OnHostileDeath(arg1)
   elseif eventName == "PLAYER_TARGET_CHANGED" then
     addon:OnTargetChanged()
+  elseif eventName == "COMBAT_TEXT_UPDATE" then
+    addon:OnPoisonCombatTextUpdate(arg1, arg2)
   end
 end)
 
