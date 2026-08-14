@@ -157,6 +157,26 @@ addon.settingDefinitions = {
     label = "Use Feint to stay safe",
     help = "The combat helper can use Feint when an enemy attacks you in a group.",
   },
+  interruptKidneyShot = {
+    label = "Use Kidney Shot for interrupts",
+    help = "When Kick cannot be used, the combat helper may spend combo points to stop a dangerous spell.",
+    get = function(self)
+      return RogueAutoDB.builder.useKidneyShotInterrupt ~= false
+    end,
+    set = function(self, value)
+      RogueAutoDB.builder.useKidneyShotInterrupt = value == true
+    end,
+  },
+  interruptBlind = {
+    label = "Use Blind for interrupts",
+    help = "When Kick and Kidney Shot cannot help, the combat helper may use Blind to stop a dangerous spell.",
+    get = function(self)
+      return RogueAutoDB.builder.useBlindInterrupt ~= false
+    end,
+    set = function(self, value)
+      RogueAutoDB.builder.useBlindInterrupt = value == true
+    end,
+  },
   highlightDuration = {
     path = { "notifications", "highlightDuration" },
     label = "How long should hints glow?",
@@ -228,7 +248,13 @@ addon.uiSections = {
     kind = "builder",
     color = { 0.25, 0.82, 0.38 },
     help = "Choose Smart Choice if you are unsure. RogueAuto will pick attacks, keep important buffs active, interrupt danger, and spend combo points.",
-    items = { "builderFlourish", "builderGhostlyStrike", "builderFeint" },
+    items = {
+      "builderFlourish",
+      "builderGhostlyStrike",
+      "builderFeint",
+      "interruptKidneyShot",
+      "interruptBlind",
+    },
   },
   {
     title = "2. Riding Clothes",

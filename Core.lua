@@ -6199,6 +6199,7 @@ function addon:GetInterruptResponseForActiveCast(context, activeCast, castWasRes
 
   local kickUnavailableReason = self:GetKickUnavailableReason()
   if context
+    and self:GetSetting("interruptKidneyShot") == true
     and context.comboPoints > 0
     and self:HasSpell("Kidney Shot")
     and self:IsInMeleeRange()
@@ -6208,7 +6209,10 @@ function addon:GetInterruptResponseForActiveCast(context, activeCast, castWasRes
     return "kidney", activeCast, dangerScore, confidence
   end
 
-  if self:HasSpell("Blind") and self:CanCast("Blind") and dangerScore >= 0.82 then
+  if self:GetSetting("interruptBlind") == true
+    and self:HasSpell("Blind")
+    and self:CanCast("Blind")
+    and dangerScore >= 0.82 then
     self:DebugInterruptDecision(activeCast, "blind", kickUnavailableReason)
     return "blind", activeCast, dangerScore, confidence
   end
@@ -6295,6 +6299,10 @@ function addon:IsTargetStunImmune(context)
 end
 
 function addon:CanUseKidneyShotInterrupt(context)
+  if self:GetSetting("interruptKidneyShot") ~= true then
+    return false
+  end
+
   if not context or context.comboPoints <= 0 then
     return false
   end
@@ -6319,6 +6327,10 @@ function addon:CanUseKidneyShotInterrupt(context)
 end
 
 function addon:CanUseBlindInterrupt(context)
+  if self:GetSetting("interruptBlind") ~= true then
+    return false
+  end
+
   if self:GetInterruptResponseForActiveCast(context) ~= "blind" then
     return false
   end
