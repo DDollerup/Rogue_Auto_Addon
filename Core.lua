@@ -375,6 +375,7 @@ addon.DebugEvents = {
   ["eviscerate_cast_failed"] = "Eviscerate cast failed after passing checks",
   ["poison_immunity_cleared"] = "Clearing poison immunity for %s (%s)",
   ["poison_immunity_remembered"] = "Poison immunity remembered for %s by %s; matching targets will use the physical rotation until poison succeeds",
+  ["poison_immunity_raw"] = "Poison immunity evidence from %s: %s",
   ["active_enemy_cast_cleared"] = "Clearing enemy cast %s (%s)",
   ["enemy_cast_tracking"] = "Tracking enemy cast %s from %s",
   ["builder_poison_check"] = "Builder poison check: equipped=%s, targetImmune=%s, rotation=%s, reason=%s",
@@ -2203,6 +2204,12 @@ function addon:MarkRecentPoisonAttemptImmune(message)
 end
 
 function addon:OnPoisonCombatMessage(message)
+  local evidenceText = string.lower(tostring(message or ""))
+  if string.find(evidenceText, "immune", 1, true)
+    or string.find(evidenceText, "resist", 1, true) then
+    self:DebugEvent("poison_immunity_raw", "combat log", tostring(message))
+  end
+
   local immuneTarget, immuneSpell = self:ExtractPoisonImmunityEvidence(message)
   if immuneTarget and immuneSpell then
     self:MarkCurrentTargetPoisonImmune(immuneSpell, message, immuneTarget)
@@ -2238,46 +2245,12 @@ function addon:OnPoisonCombatMessage(message)
 end
 
 function addon:OnPoisonUiError(message)
+  local evidenceText = string.lower(tostring(message or ""))
+  if string.find(evidenceText, "immune", 1, true)
+    or string.find(evidenceText, "resist", 1, true) then
+    self:DebugEvent("poison_immunity_raw", "UI error", tostring(message))
+  end
   self:MarkRecentPoisonAttemptImmune(message)
-end
-
-function addon:OnPoisonCombatTextUpdate(updateType, message)
-  local updateText = string.lower(tostring(updateType or ""))
-  local messageText = string.lower(tostring(message or ""))
-  if not string.find(updateText, "immune", 1, true)
-    and not string.find(messageText, "immune", 1, true) then
-    return false
-  end
-
-  if not self:IsHostileTarget() then
-    return false
-  end
-
-  local lastAttempt = self.state.lastSpellAttempt
-  local recentAttempt = lastAttempt
-    and lastAttempt.at
-    and (GetTime() - lastAttempt.at) <= 1
-  if recentAttempt then
-    if not self:IsPoisonImmunitySpell(lastAttempt.name) then
-      return false
-    end
-    return self:MarkCurrentTargetPoisonImmune(
-      lastAttempt.name,
-      tostring(updateType or "") .. ": " .. tostring(message or ""),
-      lastAttempt.targetName
-    )
-  end
-
-  local hasWeaponPoison = self:HasAnyWeaponPoison()
-  if not hasWeaponPoison then
-    return false
-  end
-
-  return self:MarkCurrentTargetPoisonImmune(
-    "Weapon Poison",
-    tostring(updateType or "") .. ": " .. tostring(message or ""),
-    UnitName("target")
-  )
 end
 
 function addon:ClassifyDamageEvent(sourceType, spellName, school)
@@ -8643,7 +8616,6 @@ frame:RegisterEvent("CHAT_MSG_MONEY")
 frame:RegisterEvent("PLAYER_MONEY")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 frame:RegisterEvent("PLAYER_TARGET_CHANGED")
-frame:RegisterEvent("COMBAT_TEXT_UPDATE")
 
 local function resolveEventArgs(selfOrEvent, eventOrArg1, eventPayload)
   if type(selfOrEvent) == "string" then
@@ -8756,8 +8728,6 @@ frame:SetScript("OnEvent", function(selfOrEvent, eventOrArg1, eventPayload)
     addon:OnHostileDeath(arg1)
   elseif eventName == "PLAYER_TARGET_CHANGED" then
     addon:OnTargetChanged()
-  elseif eventName == "COMBAT_TEXT_UPDATE" then
-    addon:OnPoisonCombatTextUpdate(arg1, arg2)
   end
 end)
 
