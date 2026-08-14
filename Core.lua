@@ -2167,10 +2167,39 @@ function addon:ExtractPositivePoisonEvidence(message)
   return nil, nil
 end
 
+function addon:MarkRecentPoisonAttemptImmune(message)
+  if not message or not string.find(string.lower(message), "immune", 1, true) then
+    return false
+  end
+
+  local lastAttempt = self.state.lastSpellAttempt
+  if not lastAttempt
+    or not lastAttempt.at
+    or (GetTime() - lastAttempt.at) > 2
+    or not self:IsPoisonImmunitySpell(lastAttempt.name) then
+    return false
+  end
+
+  local targetKey = self:GetTargetKey()
+  if not targetKey or lastAttempt.targetKey ~= targetKey then
+    return false
+  end
+
+  return self:MarkCurrentTargetPoisonImmune(
+    lastAttempt.name,
+    message,
+    lastAttempt.targetName
+  )
+end
+
 function addon:OnPoisonCombatMessage(message)
   local immuneTarget, immuneSpell = self:ExtractPoisonImmunityEvidence(message)
   if immuneTarget and immuneSpell then
     self:MarkCurrentTargetPoisonImmune(immuneSpell, message, immuneTarget)
+    return
+  end
+
+  if self:MarkRecentPoisonAttemptImmune(message) then
     return
   end
 
@@ -2199,24 +2228,7 @@ function addon:OnPoisonCombatMessage(message)
 end
 
 function addon:OnPoisonUiError(message)
-  if not message or not string.find(string.lower(message), "immune", 1, true) then
-    return
-  end
-
-  local lastAttempt = self.state.lastSpellAttempt
-  local recentAttempt = lastAttempt
-    and lastAttempt.at
-    and (GetTime() - lastAttempt.at) <= 1
-  if not recentAttempt or not self:IsPoisonImmunitySpell(lastAttempt.name) then
-    return
-  end
-
-  local targetKey = self:GetTargetKey()
-  if not targetKey or lastAttempt.targetKey ~= targetKey then
-    return
-  end
-
-  self:MarkCurrentTargetPoisonImmune(lastAttempt.name, message, lastAttempt.targetName)
+  self:MarkRecentPoisonAttemptImmune(message)
 end
 
 function addon:ClassifyDamageEvent(sourceType, spellName, school)
@@ -8640,6 +8652,9 @@ frame:SetScript("OnEvent", function(selfOrEvent, eventOrArg1, eventPayload)
     addon:OnCombatMiss(arg1)
   elseif eventName == "CHAT_MSG_SPELL_SELF_DAMAGE" then
     addon:OnSpellSelfDamage(arg1)
+  elseif eventName == "CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE" then
+    addon:OnSpellPeriodicDamage(arg1)
+    addon:OnFriendlySpellMessage(arg1)
   elseif eventName == "CHAT_MSG_SPELL_SELF_BUFF" then
     addon:OnSelfBuffMessage(arg1)
     addon:OnFriendlySpellMessage(arg1)
@@ -8654,7 +8669,6 @@ frame:SetScript("OnEvent", function(selfOrEvent, eventOrArg1, eventPayload)
     or eventName == "CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF"
     or eventName == "CHAT_MSG_SPELL_PET_DAMAGE"
     or eventName == "CHAT_MSG_SPELL_PET_BUFF"
-    or eventName == "CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE"
     or eventName == "CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE"
     or eventName == "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE" then
     addon:OnFriendlySpellMessage(arg1)
