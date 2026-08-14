@@ -374,7 +374,7 @@ addon.DebugEvents = {
   ["eviscerate_blocked_unarmed"] = "Eviscerate blocked: %s",
   ["eviscerate_cast_failed"] = "Eviscerate cast failed after passing checks",
   ["poison_immunity_cleared"] = "Clearing poison immunity for %s (%s)",
-  ["poison_immunity_remembered"] = "Poison immunity remembered for %s by %s; matching targets will use the physical rotation until poison succeeds",
+  ["poison_immunity_remembered"] = "Poison immunity remembered for %s by %s; matching targets will use the physical rotation for this session",
   ["poison_immunity_raw"] = "Poison immunity evidence from %s: %s",
   ["active_enemy_cast_cleared"] = "Clearing enemy cast %s (%s)",
   ["enemy_cast_tracking"] = "Tracking enemy cast %s from %s",
@@ -2218,29 +2218,6 @@ function addon:OnPoisonCombatMessage(message)
 
   if self:MarkRecentPoisonAttemptImmune(message) then
     return
-  end
-
-  if not self:IsCurrentTargetPoisonImmune() then
-    return
-  end
-
-  local successTarget, successSpell = self:ExtractPositivePoisonEvidence(message)
-  if not successTarget or not successSpell then
-    return
-  end
-
-  local targetName = UnitName("target")
-  local immunity = self.state.poisonImmunity
-  local immunitySpell = immunity and normalizeSpellName(immunity.spellName) or nil
-  local normalizedSuccessSpell = normalizeSpellName(successSpell)
-  if targetName
-    and string.lower(successTarget) == string.lower(targetName)
-    and immunitySpell
-    and normalizedSuccessSpell == immunitySpell then
-    self:ClearTargetPoisonImmunity(
-      "later poison success: " .. tostring(successSpell),
-      successTarget
-    )
   end
 end
 
