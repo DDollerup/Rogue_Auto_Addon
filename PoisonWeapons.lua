@@ -1,4 +1,5 @@
 local addon = RogueAuto
+local coreGetWeaponPoisonName = addon.GetWeaponPoisonName
 
 local PROFILE_NORMAL = "normal"
 local PROFILE_DISSOLVENT = "dissolvent"
@@ -108,9 +109,17 @@ function addon:ReadPoisonWeaponTooltip(setTooltip)
     local fallback = nil
     local index
     for index = 1, 12 do
-        local line = getglobal("RogueAutoPoisonWeaponTooltipTextLeft" .. index)
-        local text = line and line:GetText()
-        if text then
+        local leftLine = getglobal("RogueAutoPoisonWeaponTooltipTextLeft" .. index)
+        local rightLine = getglobal("RogueAutoPoisonWeaponTooltipTextRight" .. index)
+        local texts = {
+            leftLine and leftLine:GetText() or nil,
+            rightLine and rightLine:GetText() or nil,
+        }
+        local textIndex
+        for textIndex = 1, 2 do
+            local text = texts[textIndex]
+            local parsed = text and self.ExtractWeaponPoisonNameFromText and self:ExtractWeaponPoisonNameFromText(text)
+            if parsed then return parsed end
             local normalized = lower(text)
             local poisonIndex
             for poisonIndex = 1, table.getn(poisonNames) do
@@ -126,6 +135,10 @@ end
 
 
 function addon:GetWeaponPoisonName(slotId)
+    if coreGetWeaponPoisonName then
+        local poisonName = coreGetWeaponPoisonName(self, slotId)
+        if poisonName then return poisonName end
+    end
     return self:ReadPoisonWeaponTooltip(function(tooltip)
         tooltip:SetInventoryItem("player", slotId)
     end)
