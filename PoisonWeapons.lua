@@ -82,6 +82,8 @@ function addon:GetPoisonWeaponState()
         operations = {},
         index = 1,
         retries = 0,
+        waitingForUnlock = false,
+        retryAt = 0,
     }
     self.state.poisonImmunities = self.state.poisonImmunities or {}
     self.state.poisonResistanceEvidence = self.state.poisonResistanceEvidence or {}
@@ -201,6 +203,8 @@ function addon:BeginPoisonWeaponSwap(profileId, reason)
     state.reason = reason
     state.index = 1
     state.retries = 0
+    state.waitingForUnlock = false
+    state.retryAt = 0
     if table.getn(state.operations) == 0 then
         state.phase = "idle"
         state.activeProfile = profileId
@@ -232,9 +236,13 @@ function addon:ProcessPoisonWeaponSwap()
     if sameIdentity(self:GetEquippedPoisonWeapon(operation.slotId), operation.identity) then
         state.index = state.index + 1
         state.retries = 0
+        state.waitingForUnlock = false
+        state.retryAt = 0
         self:ProcessPoisonWeaponSwap()
         return
     end
+    if state.waitingForUnlock and now() < state.retryAt then return end
+    state.waitingForUnlock = false
     local bag, slot = self:FindPoisonWeapon(operation.identity)
     if bag == nil then
         state.phase = "blocked"
@@ -244,6 +252,8 @@ function addon:ProcessPoisonWeaponSwap()
     PickupContainerItem(bag, slot)
     EquipCursorItem(operation.slotId)
     state.retries = state.retries + 1
+    state.waitingForUnlock = true
+    state.retryAt = now() + 0.75
     if state.retries > 3 then
         state.phase = "blocked"
         state.message = "Could not equip the " .. state.profileId .. " weapons."
