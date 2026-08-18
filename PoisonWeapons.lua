@@ -55,6 +55,10 @@ local function sameIdentity(left, right)
         and left.uniqueId == right.uniqueId
 end
 
+local function sameItem(left, right)
+    return left and right and left.itemId == right.itemId
+end
+
 local function targetKey()
     if not UnitExists("target") then return nil end
     local name = UnitName("target")
@@ -94,13 +98,13 @@ function addon:GetEquippedPoisonWeapon(slotId)
     return identityFromLink(GetInventoryItemLink("player", slotId))
 end
 
-function addon:GetWeaponPoisonName(slotId)
+function addon:ReadPoisonWeaponTooltip(setTooltip)
     if not RogueAutoPoisonWeaponTooltip then
         CreateFrame("GameTooltip", "RogueAutoPoisonWeaponTooltip", UIParent, "GameTooltipTemplate")
         RogueAutoPoisonWeaponTooltip:SetOwner(UIParent, "ANCHOR_NONE")
     end
     RogueAutoPoisonWeaponTooltip:ClearLines()
-    RogueAutoPoisonWeaponTooltip:SetInventoryItem("player", slotId)
+    setTooltip(RogueAutoPoisonWeaponTooltip)
     local fallback = nil
     local index
     for index = 1, 12 do
@@ -118,6 +122,28 @@ function addon:GetWeaponPoisonName(slotId)
         end
     end
     return fallback
+end
+
+
+function addon:GetWeaponPoisonName(slotId)
+    return self:ReadPoisonWeaponTooltip(function(tooltip)
+        tooltip:SetInventoryItem("player", slotId)
+    end)
+end
+
+function addon:GetBagWeaponPoisonName(bag, slot)
+    return self:ReadPoisonWeaponTooltip(function(tooltip)
+        tooltip:SetBagItem(bag, slot)
+    end)
+end
+
+function addon:PoisonWeaponSlotMatches(slotId, identity, poisonName)
+    local equipped = self:GetEquippedPoisonWeapon(slotId)
+    if not sameItem(equipped, identity) then return false end
+    if poisonName and poisonName ~= "" then
+        return lower(self:GetWeaponPoisonName(slotId)) == lower(poisonName)
+    end
+    return sameIdentity(equipped, identity)
 end
 
 function addon:CapturePoisonWeaponProfile(profileId)
@@ -141,7 +167,9 @@ function addon:GetPoisonWeaponProfileSummary(profileId)
     local off = profile.slots and profile.slots[17]
     local mainText = main and main.link or "Empty"
     local offText = off and off.link or "Empty"
-    return "Main: " .. mainText .. "\nOff: " .. offText
+    local mainPoison = profile.poisons and profile.poisons[16] or "No poison detected"
+    local offPoison = profile.poisons and profile.poisons[17] or "No poison detected"
+    return "Main: " .. mainText .. " - " .. mainPoison .. "\nOff: " .. offText .. " - " .. offPoison
 end
 
 function addon:GetActivePoisonWeaponProfileId()
@@ -153,22 +181,28 @@ function addon:GetActivePoisonWeaponProfileId()
     for index = 1, table.getn(ids) do
         local profile = settings.profiles[ids[index]]
         if profile and profile.slots
-            and sameIdentity(currentMain, profile.slots[16])
-            and sameIdentity(currentOff, profile.slots[17]) then
+            and self:PoisonWeaponSlotMatches(16, profile.slots[16], profile.poisons and profile.poisons[16])
+            and self:PoisonWeaponSlotMatches(17, profile.slots[17], profile.poisons and profile.poisons[17]) then
             return ids[index]
         end
     end
     return nil
 end
 
-function addon:FindPoisonWeapon(identity)
+function addon:FindPoisonWeapon(identity, poisonName)
     if not identity then return nil end
     local bag
     for bag = 0, 4 do
         local slot
         for slot = 1, GetContainerNumSlots(bag) do
             local candidate = identityFromLink(GetContainerItemLink(bag, slot))
-            if sameIdentity(candidate, identity) then return bag, slot end
+            if sameItem(candidate, identity) then
+                if poisonName and poisonName ~= "" then
+                    if lower(self:GetBagWeaponPoisonName(bag, slot)) == lower(poisonName) then return bag, slot end
+                elseif sameIdentity(candidate, identity) then
+                    return bag, slot
+                end
+            end
         end
     end
     return nil
@@ -195,8 +229,9 @@ function addon:BeginPoisonWeaponSwap(profileId, reason)
     for index = 1, table.getn(slots) do
         local slotId = slots[index]
         local wanted = profile.slots[slotId]
-        if wanted and not sameIdentity(self:GetEquippedPoisonWeapon(slotId), wanted) then
-            table.insert(state.operations, { slotId = slotId, identity = wanted })
+        local poisonName = profile.poisons and profile.poisons[slotId]
+        if wanted and not self:PoisonWeaponSlotMatches(slotId, wanted, poisonName) then
+            table.insert(state.operations, { slotId = slotId, identity = wanted, poisonName = poisonName })
         end
     end
     state.profileId = profileId
@@ -233,7 +268,7 @@ function addon:ProcessPoisonWeaponSwap()
         state.message = state.profileId .. " profile equipped."
         return
     end
-    if sameIdentity(self:GetEquippedPoisonWeapon(operation.slotId), operation.identity) then
+    if self:PoisonWeaponSlotMatches(operation.slotId, operation.identity, operation.poisonName) then
         state.index = state.index + 1
         state.retries = 0
         state.waitingForUnlock = false
@@ -243,7 +278,7 @@ function addon:ProcessPoisonWeaponSwap()
     end
     if state.waitingForUnlock and now() < state.retryAt then return end
     state.waitingForUnlock = false
-    local bag, slot = self:FindPoisonWeapon(operation.identity)
+    local bag, slot = self:FindPoisonWeapon(operation.identity, operation.poisonName)
     if bag == nil then
         state.phase = "blocked"
         state.message = "A captured " .. state.profileId .. " weapon is not in your bags."
