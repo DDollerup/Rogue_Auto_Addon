@@ -28,8 +28,8 @@ function addon:Builder()
   if not self:PrepareAction(true) then
     return
   end
-  if self.PreparePoisonWeaponsForBuilder and not self:PreparePoisonWeaponsForBuilder() then
-    return
+  if self.PreparePoisonWeaponsForBuilder then
+    self:PreparePoisonWeaponsForBuilder()
   end
 
   self:LoadBuilderPriorityOrder()

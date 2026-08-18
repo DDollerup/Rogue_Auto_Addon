@@ -376,7 +376,7 @@ addon.DebugEvents = {
   ["eviscerate_blocked_unarmed"] = "Eviscerate blocked: %s",
   ["eviscerate_cast_failed"] = "Eviscerate cast failed after passing checks",
   ["poison_immunity_cleared"] = "Clearing poison immunity for %s (%s)",
-  ["poison_immunity_remembered"] = "Poison immunity remembered for %s by %s; matching targets will use the physical rotation for this session",
+  ["poison_immunity_remembered"] = "Poison immunity remembered for %s by %s; matching targets will use the alternate poison profile for this session",
   ["poison_immunity_raw"] = "Poison immunity evidence from %s: %s",
   ["poison_resistance_evidence"] = "Poison resistance evidence for %s from %s: %s/3",
   ["active_enemy_cast_cleared"] = "Clearing enemy cast %s (%s)",
@@ -3025,15 +3025,7 @@ function addon:HasAnyWeaponPoison()
 end
 
 function addon:ShouldUsePhysicalBuilderRotation(context)
-  if not context then
-    return false
-  end
-
-  if context.physicalBuilderRotation ~= nil then
-    return context.physicalBuilderRotation == true
-  end
-
-  return context.poisonImmune == true or context.hasWeaponPoison == false
+  return false
 end
 
 function addon:GetWeaponPoisonWarningStrength(states)
@@ -5851,13 +5843,13 @@ function addon:GetComboPointContext(mode)
     poisonImmune = poisonImmune,
     hasWeaponPoison = hasWeaponPoison,
     weaponPoisonReason = weaponPoisonReason,
-    physicalBuilderRotation = poisonImmune or not hasWeaponPoison,
+    physicalBuilderRotation = false,
   }
   self:DebugEvent(
     "builder_poison_check",
     tostring(context.hasWeaponPoison),
     tostring(context.poisonImmune),
-    (context.physicalBuilderRotation and "physical" or "poison"),
+    "poison",
     tostring(context.weaponPoisonReason)
   )
   context.activeEnemyCast = self:GetInterruptibleEnemyCast()
@@ -7622,13 +7614,6 @@ function addon:GetPreferredBuilder(context)
 
   local function buildReasons(bestSpell, preferredSpell)
     local reasons = {}
-    if self:ShouldUsePhysicalBuilderRotation(context) then
-      if context.poisonImmune then
-        addHeuristicReason(reasons, "Target is poison immune; using physical rotation")
-      else
-        addHeuristicReason(reasons, "No weapon poison is active; using physical rotation")
-      end
-    end
     if context and context.reserveKick then
       addHeuristicReason(reasons, "Holding enough energy to answer a cast")
     end
