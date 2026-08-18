@@ -336,7 +336,7 @@ function addon:EvaluatePoisonWeaponTarget()
     return true
 end
 
-function addon:PreparePoisonWeaponsForBuilder()
+function addon:PreparePoisonWeaponsForBuilder(context)
     local settings = self:GetPoisonWeaponSettings()
     if not settings.enabled then return true end
     self:ProcessPoisonWeaponSwap()
