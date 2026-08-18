@@ -2,7 +2,7 @@ RogueAuto = RogueAuto or {}
 
 local addon = RogueAuto
 
-addon.version = "1.0.3"
+addon.version = "1.0.4"
 addon.refreshWindow = {
   playerBuff = 2,
   targetDebuff = 3,
@@ -52,6 +52,7 @@ addon.kickInterruptSpells = {
   ["mind flay"] = true,
   ["venom spit"] = true,
   ["curse of thorns"] = true,
+  ["flame buffet"] = true,
   ["mana burn"] = true,
   ["immolate"] = true,
   ["corruption"] = true,
@@ -1996,305 +1997,6 @@ function addon:IsPoisonDirectSpell(name)
   end
 
   return string.find(normalized, "Poison") ~= nil
-end
-
-function addon:IsPoisonImmunitySpell(name)
-  local normalized = normalizeSpellName(name)
-  if normalized == "" then
-    return false
-  end
-
-  return normalized == "Envenom"
-    or normalized == "Noxious Assault"
-    or string.find(string.lower(normalized), "poison", 1, true) ~= nil
-end
-
-function addon:IsPositivePoisonEvidenceSpell(name)
-  local normalized = normalizeSpellName(name)
-  if normalized == "" or normalized == "Noxious Assault" then
-    return false
-  end
-
-  return normalized == "Envenom"
-    or string.find(string.lower(normalized), "poison", 1, true) ~= nil
-end
-
-function addon:GetPoisonImmunityKey(targetName)
-  return self:NormalizeMobLearningKey(targetName)
-end
-
-function addon:ClearTargetPoisonImmunity(reason, targetName)
-  local immunity = self.state.poisonImmunity
-  local immunityKey = self:GetPoisonImmunityKey(
-    targetName or (immunity and immunity.targetName) or UnitName("target")
-  )
-  if immunity then
-    self:DebugEvent(
-      "poison_immunity_cleared",
-      tostring(immunity.targetName or "target"),
-      tostring(reason or "unspecified")
-    )
-  end
-  if immunityKey then
-    self.state.poisonImmunities[immunityKey] = nil
-  end
-  self.state.poisonImmunity = nil
-  if self.poisonImmunityFrame then
-    self.poisonImmunityFrame:Hide()
-  end
-end
-
-function addon:IsCurrentTargetPoisonImmune()
-  if not self:IsHostileTarget() then
-    self.state.poisonImmunity = nil
-    return false
-  end
-
-  local targetName = UnitName("target")
-  local immunityKey = self:GetPoisonImmunityKey(targetName)
-  local targetKey = self:GetTargetKey()
-  if not immunityKey or not targetKey then
-    self.state.poisonImmunity = nil
-    return false
-  end
-
-  local immunity = self.state.poisonImmunities[immunityKey]
-  if not immunity then
-    self.state.poisonImmunity = nil
-    return false
-  end
-
-  immunity.targetKey = targetKey
-  immunity.targetName = targetName
-  self.state.poisonImmunity = immunity
-  return true
-end
-
-function addon:MarkCurrentTargetPoisonImmune(spellName, message, observedTargetName)
-  if not self:IsHostileTarget() or not self:IsPoisonImmunitySpell(spellName) then
-    return false
-  end
-
-  local targetName = UnitName("target")
-  if not targetName or targetName == "" then
-    return false
-  end
-
-  if observedTargetName
-    and observedTargetName ~= ""
-    and string.lower(trim(observedTargetName)) ~= string.lower(targetName) then
-    return false
-  end
-
-  local targetKey = self:GetTargetKey()
-  if not targetKey then
-    return false
-  end
-
-  local immunityKey = self:GetPoisonImmunityKey(targetName)
-  if not immunityKey then
-    return false
-  end
-
-  local normalizedSpell = normalizeSpellName(spellName)
-  local current = self.state.poisonImmunities[immunityKey]
-  if current then
-    current.targetKey = targetKey
-    current.targetName = targetName
-    current.spellName = normalizedSpell
-    current.message = message
-    current.detectedAt = GetTime()
-    self.state.poisonImmunity = current
-    self:UpdatePoisonImmunityFrame()
-    return true
-  end
-
-  local immunity = {
-    immunityKey = immunityKey,
-    targetKey = targetKey,
-    targetName = targetName,
-    spellName = normalizedSpell,
-    message = message,
-    detectedAt = GetTime(),
-  }
-  self.state.poisonImmunities[immunityKey] = immunity
-  self.state.poisonImmunity = immunity
-  self:DebugEvent(
-    "poison_immunity_remembered",
-    tostring(targetName),
-    tostring(normalizedSpell)
-  )
-  self:UpdatePoisonImmunityFrame()
-  return true
-end
-
-function addon:ExtractPoisonImmunityEvidence(message)
-  if not message or message == "" then
-    return nil, nil
-  end
-
-  local _, _, targetName, spellName = string.find(message, "^(.-) is immune to your (.-)%.?$")
-  if targetName and spellName then
-    return trim(targetName), normalizeSpellName(spellName)
-  end
-
-  _, _, spellName, targetName = string.find(message, "^Your (.-) failed%. (.-) is immune%.?$")
-  if targetName and spellName then
-    return trim(targetName), normalizeSpellName(spellName)
-  end
-
-  _, _, targetName, spellName = string.find(message, "^(.-) is immune to (.-)%.?$")
-  if targetName and spellName and self:IsPoisonImmunitySpell(spellName) then
-    return trim(targetName), normalizeSpellName(spellName)
-  end
-
-  return nil, nil
-end
-
-function addon:GetPoisonResistanceEvidenceKey(targetName, spellName)
-  local targetKey = self:GetPoisonImmunityKey(targetName)
-  local poisonKey = normalizeSpellName(spellName)
-  if not targetKey or poisonKey == "" then
-    return nil
-  end
-  return targetKey .. "|" .. string.lower(poisonKey)
-end
-
-function addon:RecordPoisonResistanceEvidence(message)
-  if not message then
-    return false
-  end
-
-  local _, _, spellName, targetName = string.find(message, "^Your (.-) was resisted by (.-)%.?$")
-  if not targetName or not spellName or not self:IsPoisonImmunitySpell(spellName) then
-    return false
-  end
-
-  targetName = trim(targetName)
-  local currentTargetName = UnitName("target")
-  if not currentTargetName or string.lower(targetName) ~= string.lower(currentTargetName) then
-    return false
-  end
-
-  local evidenceKey = self:GetPoisonResistanceEvidenceKey(targetName, spellName)
-  if not evidenceKey then
-    return false
-  end
-
-  local now = GetTime()
-  local evidence = self.state.poisonResistanceEvidence[evidenceKey]
-  if not evidence or not evidence.lastAt or (now - evidence.lastAt) > 8 then
-    evidence = { count = 0 }
-    self.state.poisonResistanceEvidence[evidenceKey] = evidence
-  end
-  evidence.count = (evidence.count or 0) + 1
-  evidence.lastAt = now
-  self:DebugEvent(
-    "poison_resistance_evidence",
-    tostring(targetName),
-    tostring(spellName),
-    tostring(evidence.count)
-  )
-
-  if evidence.count < 3 then
-    return true
-  end
-
-  self.state.poisonResistanceEvidence[evidenceKey] = nil
-  self:MarkCurrentTargetPoisonImmune(spellName, message, targetName)
-  return true
-end
-
-function addon:ClearPoisonResistanceEvidence(targetName, spellName)
-  local evidenceKey = self:GetPoisonResistanceEvidenceKey(targetName, spellName)
-  if evidenceKey then
-    self.state.poisonResistanceEvidence[evidenceKey] = nil
-  end
-end
-
-function addon:ExtractPositivePoisonEvidence(message)
-  if not message or message == "" then
-    return nil, nil
-  end
-
-  local targetName, spellName
-  _, _, spellName, targetName = string.find(message, "^Your (.-) hits (.-) for ")
-  if not spellName then
-    _, _, spellName, targetName = string.find(message, "^Your (.-) crits (.-) for ")
-  end
-  if not spellName then
-    _, _, targetName, spellName = string.find(message, "^(.-) is afflicted by your (.-)%.?$")
-  end
-  if not spellName then
-    _, _, targetName, spellName = string.find(message, "^(.-) suffers %d+ .- damage from your (.-)%.?$")
-  end
-
-  if targetName and spellName and self:IsPositivePoisonEvidenceSpell(spellName) then
-    return trim(targetName), normalizeSpellName(spellName)
-  end
-
-  return nil, nil
-end
-
-function addon:MarkRecentPoisonAttemptImmune(message)
-  if not message or not string.find(string.lower(message), "immune", 1, true) then
-    return false
-  end
-
-  local lastAttempt = self.state.lastSpellAttempt
-  if not lastAttempt
-    or not lastAttempt.at
-    or (GetTime() - lastAttempt.at) > 2
-    or not self:IsPoisonImmunitySpell(lastAttempt.name) then
-    return false
-  end
-
-  local targetKey = self:GetTargetKey()
-  if not targetKey or lastAttempt.targetKey ~= targetKey then
-    return false
-  end
-
-  return self:MarkCurrentTargetPoisonImmune(
-    lastAttempt.name,
-    message,
-    lastAttempt.targetName
-  )
-end
-
-function addon:OnPoisonCombatMessage(message)
-  local evidenceText = string.lower(tostring(message or ""))
-  if string.find(evidenceText, "immune", 1, true)
-    or string.find(evidenceText, "resist", 1, true) then
-    self:DebugEvent("poison_immunity_raw", "combat log", tostring(message))
-  end
-
-  local immuneTarget, immuneSpell = self:ExtractPoisonImmunityEvidence(message)
-  if immuneTarget and immuneSpell then
-    self:MarkCurrentTargetPoisonImmune(immuneSpell, message, immuneTarget)
-    return
-  end
-
-  if self:MarkRecentPoisonAttemptImmune(message) then
-    return
-  end
-
-  if self:RecordPoisonResistanceEvidence(message) then
-    return
-  end
-
-  local successTarget, successSpell = self:ExtractPositivePoisonEvidence(message)
-  if successTarget and successSpell then
-    self:ClearPoisonResistanceEvidence(successTarget, successSpell)
-  end
-end
-
-function addon:OnPoisonUiError(message)
-  local evidenceText = string.lower(tostring(message or ""))
-  if string.find(evidenceText, "immune", 1, true)
-    or string.find(evidenceText, "resist", 1, true) then
-    self:DebugEvent("poison_immunity_raw", "UI error", tostring(message))
-  end
-  self:MarkRecentPoisonAttemptImmune(message)
 end
 
 function addon:ClassifyDamageEvent(sourceType, spellName, school)
@@ -8599,6 +8301,7 @@ function addon:OnTargetChanged()
   self.state.activeOpenerHint = nil
   self:ClearPendingPickPocketAttempt()
   self:UpdatePoisonImmunityFrame()
+  self:EvaluatePoisonWeaponTarget()
 end
 
 function addon:OnComboPointsChanged(unit)
@@ -8706,6 +8409,9 @@ frame:SetScript("OnEvent", function(selfOrEvent, eventOrArg1, eventPayload)
     if addon.ProcessMountGear then
       addon:ProcessMountGear()
     end
+    if addon.ProcessPoisonWeaponSwap then
+      addon:ProcessPoisonWeaponSwap()
+    end
   elseif eventName == "UNIT_ENERGY" then
     addon:OnEnergyChanged(arg1)
   elseif eventName == "UNIT_COMBO_POINTS" then
@@ -8797,6 +8503,9 @@ frame:SetScript("OnUpdate", function()
   addon:UpdatePickPocketGoldStatsFrame(false)
   if addon.UpdateMountGear then
     addon:UpdateMountGear()
+  end
+  if addon.UpdatePoisonWeapons then
+    addon:UpdatePoisonWeapons()
   end
   addon:UpdateWeaponPoisonFrame(false)
   addon:UpdateWeaponPoisonWarningFrame(false)

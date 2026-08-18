@@ -1,6 +1,6 @@
 local addon = RogueAuto
 
-addon.version = "1.0.3"
+addon.version = "1.0.4"
 
 local originalOnPlayerLogin = addon.OnPlayerLogin
 function addon:OnPlayerLogin()

@@ -28,6 +28,9 @@ function addon:Builder()
   if not self:PrepareAction(true) then
     return
   end
+  if self.PreparePoisonWeaponsForBuilder and not self:PreparePoisonWeaponsForBuilder() then
+    return
+  end
 
   self:LoadBuilderPriorityOrder()
   local context = self:GetComboPointContext("builder")

@@ -682,6 +682,69 @@ local function createRoleplayTestControl(parent, y)
   return control, 30
 end
 
+local function createPoisonWeaponsControl(parent, y)
+  local control = CreateFrame("Frame", nil, parent)
+  control:SetWidth(controlWidth)
+  control:SetHeight(250)
+  control:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
+
+  local status = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  status:SetPoint("TOPLEFT", control, "TOPLEFT", 0, 0)
+  status:SetWidth(textWidth)
+  status:SetJustifyH("LEFT")
+
+  local enable = CreateFrame("CheckButton", "RogueAutoPoisonWeaponsEnable", control, "UICheckButtonTemplate")
+  enable:SetPoint("TOPLEFT", control, "TOPLEFT", -4, -28)
+  getglobal(enable:GetName() .. "Text"):SetText("Auto Change")
+  enable:SetScript("OnClick", function()
+    addon:GetPoisonWeaponSettings().enabled = enable:GetChecked() == 1
+    addon:EvaluatePoisonWeaponTarget()
+    addon:RefreshConfig()
+  end)
+
+  local combat = CreateFrame("CheckButton", "RogueAutoPoisonWeaponsCombat", control, "UICheckButtonTemplate")
+  combat:SetPoint("TOPLEFT", control, "TOPLEFT", 190, -28)
+  getglobal(combat:GetName() .. "Text"):SetText("Change in Combat")
+  combat:SetScript("OnClick", function()
+    addon:GetPoisonWeaponSettings().allowCombat = combat:GetChecked() == 1
+    addon:RefreshConfig()
+  end)
+
+  local function makeButton(text, x, yOffset, callback)
+    local button = CreateFrame("Button", nil, control, "UIPanelButtonTemplate")
+    button:SetWidth(168)
+    button:SetHeight(24)
+    button:SetPoint("TOPLEFT", control, "TOPLEFT", x, yOffset)
+    button:SetText(text)
+    button:SetScript("OnClick", function()
+      callback()
+      addon:RefreshConfig()
+    end)
+    return button
+  end
+
+  makeButton("Save Normal Weapons", 0, -62, function() addon:CapturePoisonWeaponProfile("normal") end)
+  makeButton("Wear Normal Weapons", 180, -62, function() addon:BeginPoisonWeaponSwap("normal", "manual") end)
+  makeButton("Save Dissolvent Weapons", 0, -94, function() addon:CapturePoisonWeaponProfile("dissolvent") end)
+  makeButton("Wear Dissolvent Weapons", 180, -94, function() addon:BeginPoisonWeaponSwap("dissolvent", "manual") end)
+
+  local profiles = control:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  profiles:SetPoint("TOPLEFT", control, "TOPLEFT", 0, -132)
+  profiles:SetWidth(textWidth)
+  profiles:SetJustifyH("LEFT")
+
+  control.Refresh = function()
+    local settings = addon:GetPoisonWeaponSettings()
+    enable:SetChecked(settings.enabled and 1 or nil)
+    combat:SetChecked(settings.allowCombat and 1 or nil)
+    status:SetText("State: " .. addon:GetPoisonWeaponStatus())
+    profiles:SetText("Normal\n" .. addon:GetPoisonWeaponProfileSummary("normal") .. "\n\nDissolvent\n" .. addon:GetPoisonWeaponProfileSummary("dissolvent"))
+  end
+  control.Refresh()
+  table.insert(addon.configControls, control)
+  return control, 250
+end
+
 local function createMountGearControl(parent, y)
   local control = CreateFrame("Frame", nil, parent)
   control:SetWidth(controlWidth)
@@ -845,6 +908,9 @@ local function createSectionCard(parent, section, y)
       cursorY = cursorY - itemHeight - 6
     end
     cursorY = cursorY - 10
+  elseif section.kind == "poisonWeapons" then
+    local _, height = createPoisonWeaponsControl(card, cursorY)
+    cursorY = cursorY - height - 10
   elseif section.kind == "mountGear" then
     local _, height = createMountGearControl(card, cursorY)
     cursorY = cursorY - height - 10
