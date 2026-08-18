@@ -734,6 +734,13 @@ local function createPoisonWeaponsControl(parent, y)
   profiles:SetJustifyH("LEFT")
 
   control.Refresh = function()
+    if not addon.GetPoisonWeaponSettings then
+      enable:SetChecked(nil)
+      combat:SetChecked(nil)
+      status:SetText("Poison Weapons module unavailable. Verify PoisonWeapons.lua is installed and /reload.")
+      profiles:SetText("")
+      return
+    end
     local settings = addon:GetPoisonWeaponSettings()
     enable:SetChecked(settings.enabled and 1 or nil)
     combat:SetChecked(settings.allowCombat and 1 or nil)
@@ -741,7 +748,7 @@ local function createPoisonWeaponsControl(parent, y)
     profiles:SetText("Normal\n" .. addon:GetPoisonWeaponProfileSummary("normal") .. "\n\nDissolvent\n" .. addon:GetPoisonWeaponProfileSummary("dissolvent"))
   end
   control.Refresh()
-  table.insert(addon.configControls, control)
+  registerRefreshable(control)
   return control, 250
 end
 

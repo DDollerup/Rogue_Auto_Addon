@@ -2186,7 +2186,9 @@ function addon:OnSpellSelfDamage(message)
     return
   end
 
-  self:OnPoisonCombatMessage(message)
+  if self.OnPoisonCombatMessage then
+    self:OnPoisonCombatMessage(message)
+  end
 
   if self.OnRoleplayCombatMessage then
     self:OnRoleplayCombatMessage(message)
@@ -2249,7 +2251,9 @@ function addon:OnSpellPeriodicDamage(message)
     return
   end
 
-  self:OnPoisonCombatMessage(message)
+  if self.OnPoisonCombatMessage then
+    self:OnPoisonCombatMessage(message)
+  end
 
   if self.OnRoleplayCombatMessage then
     self:OnRoleplayCombatMessage(message)
@@ -2724,7 +2728,7 @@ function addon:PositionPoisonImmunityFrame()
 end
 
 function addon:UpdatePoisonImmunityFrame()
-  if not self:IsCurrentTargetPoisonImmune() then
+  if not self.IsCurrentTargetPoisonImmune or not self:IsCurrentTargetPoisonImmune() then
     if self.poisonImmunityFrame then
       self.poisonImmunityFrame:Hide()
     end
@@ -5815,7 +5819,7 @@ function addon:GetComboPointContext(mode)
   local remainingFightDuration = expectedFightDuration * (targetHealthPct / 100)
   local liveRemainingFightDuration = self:GetLiveFightRemainingDuration(targetHealthPct)
   local interruptConfidence = self:GetInterruptLearningConfidence(learningProfile)
-  local poisonImmune = self:IsCurrentTargetPoisonImmune()
+  local poisonImmune = self.IsCurrentTargetPoisonImmune and self:IsCurrentTargetPoisonImmune() or false
   local hasWeaponPoison, weaponPoisonReason = self:HasAnyWeaponPoison()
   if liveRemainingFightDuration and liveRemainingFightDuration > 0 then
     if liveRemainingFightDuration < (remainingFightDuration * 0.75) then
@@ -8128,7 +8132,9 @@ function addon:OnCombatMiss(message)
     return
   end
 
-  self:OnPoisonCombatMessage(message)
+  if self.OnPoisonCombatMessage then
+    self:OnPoisonCombatMessage(message)
+  end
   self:ClearPickPocketActionBlockOnResist(message)
 
   local lower = string.lower(message)
@@ -8158,7 +8164,9 @@ function addon:OnUiError(message)
     return
   end
 
-  self:OnPoisonUiError(message)
+  if self.OnPoisonUiError then
+    self:OnPoisonUiError(message)
+  end
   self:ClearPickPocketActionBlockOnResist(message)
 
   local lower = string.lower(message)
@@ -8269,8 +8277,12 @@ function addon:OnHostileSpellMessage(message)
 end
 
 function addon:OnSpellFailedLocalPlayer(message)
-  self:OnPoisonCombatMessage(message)
-  self:OnPoisonUiError(message)
+  if self.OnPoisonCombatMessage then
+    self:OnPoisonCombatMessage(message)
+  end
+  if self.OnPoisonUiError then
+    self:OnPoisonUiError(message)
+  end
   self:ClearPickPocketActionBlockOnResist(message)
 
   if self.OnRoleplayPickPocketFailure then
@@ -8301,7 +8313,9 @@ function addon:OnTargetChanged()
   self.state.activeOpenerHint = nil
   self:ClearPendingPickPocketAttempt()
   self:UpdatePoisonImmunityFrame()
-  self:EvaluatePoisonWeaponTarget()
+  if self.EvaluatePoisonWeaponTarget then
+    self:EvaluatePoisonWeaponTarget()
+  end
 end
 
 function addon:OnComboPointsChanged(unit)
