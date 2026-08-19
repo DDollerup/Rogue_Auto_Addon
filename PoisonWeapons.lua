@@ -309,8 +309,8 @@ function addon:GetDesiredPoisonWeaponProfileId()
         if dissolventTypes[creatureType] and settings.profiles[PROFILE_DISSOLVENT] then
             return PROFILE_DISSOLVENT
         end
+        if settings.profiles[PROFILE_NORMAL] then return PROFILE_NORMAL end
     end
-    if settings.restoreNormal and settings.profiles[PROFILE_NORMAL] then return PROFILE_NORMAL end
     return nil
 end
 
