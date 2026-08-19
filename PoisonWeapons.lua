@@ -3,8 +3,6 @@ local coreGetWeaponPoisonName = addon.GetWeaponPoisonName
 
 local PROFILE_NORMAL = "normal"
 local PROFILE_DISSOLVENT = "dissolvent"
-local RESIST_WINDOW = 8
-local RESIST_THRESHOLD = 3
 
 local dissolventTypes = {
     elemental = true,
@@ -60,13 +58,6 @@ local function sameItem(left, right)
     return left and right and left.itemId == right.itemId
 end
 
-local function targetKey()
-    if not UnitExists("target") then return nil end
-    local name = UnitName("target")
-    if not name or name == "" then return nil end
-    return lower(name)
-end
-
 function addon:GetPoisonWeaponSettings()
     RogueAutoDB = RogueAutoDB or {}
     RogueAutoDB.poisonWeapons = RogueAutoDB.poisonWeapons or {}
@@ -90,8 +81,6 @@ function addon:GetPoisonWeaponState()
         waitingForUnlock = false,
         retryAt = 0,
     }
-    self.state.poisonImmunities = self.state.poisonImmunities or {}
-    self.state.poisonResistanceEvidence = self.state.poisonResistanceEvidence or {}
     return self.state.poisonWeaponSwap
 end
 
@@ -104,8 +93,10 @@ function addon:ReadPoisonWeaponTooltip(setTooltip)
         CreateFrame("GameTooltip", "RogueAutoPoisonWeaponTooltip", UIParent, "GameTooltipTemplate")
         RogueAutoPoisonWeaponTooltip:SetOwner(UIParent, "ANCHOR_NONE")
     end
+    RogueAutoPoisonWeaponTooltip:SetOwner(UIParent, "ANCHOR_NONE")
     RogueAutoPoisonWeaponTooltip:ClearLines()
     setTooltip(RogueAutoPoisonWeaponTooltip)
+    RogueAutoPoisonWeaponTooltip:Show()
     local fallback = nil
     local index
     for index = 1, 12 do
@@ -170,6 +161,8 @@ function addon:CapturePoisonWeaponProfile(profileId)
         poisons = { [16] = self:GetWeaponPoisonName(16), [17] = self:GetWeaponPoisonName(17) },
     }
     self:GetPoisonWeaponState().message = "Captured " .. profileId .. " weapons."
+    self:GetPoisonWeaponState().lastTargetSignature = nil
+    self:EvaluatePoisonWeaponTarget()
     return true
 end
 
@@ -321,21 +314,8 @@ function addon:GetDesiredPoisonWeaponProfileId()
     return nil
 end
 
-function addon:IsPoisonProfileImmune(profileId)
-    local key = targetKey()
-    local records = key and self.state and self.state.poisonImmunities and self.state.poisonImmunities[key]
-    return records and records[profileId] ~= nil
-end
-
 function addon:GetUsablePoisonWeaponProfileId()
-    local desired = self:GetDesiredPoisonWeaponProfileId()
-    if not desired then return nil end
-    if not self:IsPoisonProfileImmune(desired) then return desired end
-    local alternate = desired == PROFILE_NORMAL and PROFILE_DISSOLVENT or PROFILE_NORMAL
-    if self:GetPoisonWeaponSettings().profiles[alternate] and not self:IsPoisonProfileImmune(alternate) then
-        return alternate
-    end
-    return nil
+    return self:GetDesiredPoisonWeaponProfileId()
 end
 
 function addon:EvaluatePoisonWeaponTarget()
@@ -365,107 +345,18 @@ end
 
 function addon:UpdatePoisonWeapons()
     self:ProcessPoisonWeaponSwap()
+    local state = self:GetPoisonWeaponState()
+    local signature = "none"
+    if UnitExists("target") then
+        signature = lower(UnitName("target")) .. "|" .. lower(UnitCreatureType("target"))
+    end
+    if signature ~= state.lastTargetSignature then
+        state.lastTargetSignature = signature
+        self:EvaluatePoisonWeaponTarget()
+    end
 end
 
 function addon:GetPoisonWeaponStatus()
     local state = self:GetPoisonWeaponState()
     return state.phase .. " - " .. (state.message or "")
-end
-
-function addon:IsPoisonImmunitySpell(name)
-    local value = lower(name)
-    return string.find(value, "poison", 1, true) ~= nil or value == "envenom" or value == "noxious assault"
-end
-
-function addon:IsPositivePoisonEvidenceSpell(name)
-    return self:IsPoisonImmunitySpell(name)
-end
-
-function addon:GetPoisonImmunityKey()
-    return targetKey()
-end
-
-function addon:ClearTargetPoisonImmunity()
-    local key = targetKey()
-    if key and self.state and self.state.poisonImmunities then self.state.poisonImmunities[key] = nil end
-    if self.state then self.state.poisonImmunity = nil end
-    if self.UpdatePoisonImmunityFrame then self:UpdatePoisonImmunityFrame() end
-end
-
-function addon:IsCurrentTargetPoisonImmune()
-    local desired = self:GetDesiredPoisonWeaponProfileId() or self:GetActivePoisonWeaponProfileId() or PROFILE_NORMAL
-    if not self:IsPoisonProfileImmune(desired) then return false end
-    local alternate = desired == PROFILE_NORMAL and PROFILE_DISSOLVENT or PROFILE_NORMAL
-    local profiles = self:GetPoisonWeaponSettings().profiles
-    return not profiles[alternate] or self:IsPoisonProfileImmune(alternate)
-end
-
-function addon:MarkCurrentTargetPoisonImmune(spellName)
-    local key = targetKey()
-    if not key then return end
-    local profileId = self:GetActivePoisonWeaponProfileId() or self:GetDesiredPoisonWeaponProfileId() or PROFILE_NORMAL
-    self:GetPoisonWeaponState()
-    self.state.poisonImmunities[key] = self.state.poisonImmunities[key] or {}
-    self.state.poisonImmunities[key][profileId] = { spell = spellName, time = now() }
-    self.state.poisonImmunity = { target = key, spell = spellName, profile = profileId }
-    if self.DebugEvent then self:DebugEvent("poison_immunity_remembered", UnitName("target") or key, spellName or "poison") end
-    self:EvaluatePoisonWeaponTarget()
-    if self.UpdatePoisonImmunityFrame then self:UpdatePoisonImmunityFrame() end
-end
-
-function addon:ExtractPoisonImmunityEvidence(message)
-    local spell = capture(message, "Your (.-) was immune")
-    if not spell then spell = capture(message, "Your (.-) is immune") end
-    if spell and self:IsPoisonImmunitySpell(spell) then return spell end
-    return nil
-end
-
-function addon:ExtractPositivePoisonEvidence(message)
-    local spell = capture(message, "Your (.-) hits") or capture(message, "Your (.-) crits")
-    if spell and self:IsPositivePoisonEvidenceSpell(spell) then return spell end
-    return nil
-end
-
-function addon:RecordPoisonResistance(spellName)
-    local key = targetKey()
-    if not key then return false end
-    local profileId = self:GetActivePoisonWeaponProfileId() or PROFILE_NORMAL
-    local evidenceKey = key .. "|" .. profileId .. "|" .. lower(spellName)
-    local evidence = self.state.poisonResistanceEvidence[evidenceKey]
-    local current = now()
-    if not evidence or current - evidence.started > RESIST_WINDOW then evidence = { count = 0, started = current } end
-    evidence.count = evidence.count + 1
-    self.state.poisonResistanceEvidence[evidenceKey] = evidence
-    return evidence.count >= RESIST_THRESHOLD
-end
-
-function addon:ClearPoisonResistanceEvidence(spellName)
-    local key = targetKey()
-    if not key then return end
-    local profileId = self:GetActivePoisonWeaponProfileId() or PROFILE_NORMAL
-    self.state.poisonResistanceEvidence[key .. "|" .. profileId .. "|" .. lower(spellName)] = nil
-end
-
-function addon:MarkRecentPoisonAttemptImmune()
-    local spell = self.state and self.state.lastPoisonAttempt
-    if spell then self:MarkCurrentTargetPoisonImmune(spell) end
-end
-
-function addon:OnPoisonCombatMessage(message)
-    local immuneSpell = self:ExtractPoisonImmunityEvidence(message)
-    if immuneSpell then
-        self:MarkCurrentTargetPoisonImmune(immuneSpell)
-        return
-    end
-    local resistedSpell = capture(message, "Your (.-) was resisted")
-    if resistedSpell and self:IsPoisonImmunitySpell(resistedSpell) and self:RecordPoisonResistance(resistedSpell) then
-        self:MarkCurrentTargetPoisonImmune(resistedSpell)
-        return
-    end
-    local positiveSpell = self:ExtractPositivePoisonEvidence(message)
-    if positiveSpell then self:ClearPoisonResistanceEvidence(positiveSpell) end
-end
-
-function addon:OnPoisonUiError(message)
-    if lower(message) == "immune" then self:MarkRecentPoisonAttemptImmune() end
 end
