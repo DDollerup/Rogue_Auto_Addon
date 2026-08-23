@@ -359,6 +359,7 @@ addon.DebugEvents = {
   ["builder_rule_feint"] = "Builder rule: feint",
   ["builder_rule_riposte"] = "Builder rule: riposte",
   ["builder_rule_armed_eviscerate_5cp"] = "Builder rule: armed Eviscerate at 5 CP",
+  ["builder_cold_blood_armed_eviscerate"] = "Cold Blood: using for armed 5 CP Eviscerate",
   ["builder_rule_forced_eviscerate_5cp"] = "Builder rule: forced Eviscerate at 5 CP",
   ["builder_rule_combat_buff_upkeep"] = "Builder rule: combat buff upkeep",
   ["builder_rule_flourish_upkeep"] = "Builder rule: flourish upkeep",

@@ -11,6 +11,14 @@ local function hasArmedFivePointEviscerate(self, context)
 end
 
 local function executeArmedEviscerate(self, context)
+  local canEviscerate = self:CanUseBuilderEviscerate(context, true, true, true)
+  if context.comboPoints == 5
+    and canEviscerate
+    and self:CanCast("Cold Blood")
+    and self:TryCast("Cold Blood") then
+    self:TraceEvent("builder_cold_blood_armed_eviscerate")
+  end
+
   if self:TryBuilderEviscerate(context, true, true, true) then
     return result.CAST
   end
