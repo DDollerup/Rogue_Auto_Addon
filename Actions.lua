@@ -28,6 +28,12 @@ function addon:Builder()
   if not self:PrepareAction(true) then
     return
   end
+  if self.IsPoisonWeaponSwapInProgress and self:IsPoisonWeaponSwapInProgress() then
+    if self.ProcessPoisonWeaponSwap then
+      self:ProcessPoisonWeaponSwap()
+    end
+    return
+  end
   self:LoadBuilderPriorityOrder()
   local context = self:GetComboPointContext("builder")
   self:RunBuilderPriority(context)

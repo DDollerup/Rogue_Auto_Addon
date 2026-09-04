@@ -218,6 +218,10 @@ function addon:BeginPoisonWeaponSwap(profileId, reason)
     local settings = self:GetPoisonWeaponSettings()
     local profile = settings.profiles[profileId]
     local state = self:GetPoisonWeaponState()
+    if state.phase == "equipping" then
+        state.reevaluateAfterSwap = true
+        return state.profileId == profileId
+    end
     if not profile or not profile.slots then
         state.message = "Capture the " .. profileId .. " profile first."
         return false
@@ -272,6 +276,8 @@ function addon:ProcessPoisonWeaponSwap()
         state.phase = "idle"
         state.activeProfile = state.profileId
         state.message = state.profileId .. " profile equipped."
+        state.reevaluateAfterSwap = false
+        self:EvaluatePoisonWeaponTarget()
         return
     end
     if self:PoisonWeaponSlotMatches(operation.slotId, operation.identity, operation.poisonName) then
@@ -321,12 +327,21 @@ end
 function addon:EvaluatePoisonWeaponTarget()
     local settings = self:GetPoisonWeaponSettings()
     if not settings.enabled then return true end
+    local state = self:GetPoisonWeaponState()
+    if state.phase == "equipping" then
+        state.reevaluateAfterSwap = true
+        return true
+    end
     local wanted = self:GetUsablePoisonWeaponProfileId()
     if not wanted then return true end
     if self:GetActivePoisonWeaponProfileId() ~= wanted then
         return self:BeginPoisonWeaponSwap(wanted, "target")
     end
     return true
+end
+
+function addon:IsPoisonWeaponSwapInProgress()
+    return self:GetPoisonWeaponState().phase == "equipping"
 end
 
 function addon:PreparePoisonWeaponsForBuilder(context)
