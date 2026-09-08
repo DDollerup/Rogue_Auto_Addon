@@ -8312,8 +8312,8 @@ function addon:OnTargetChanged()
   self.state.activeOpenerHint = nil
   self:ClearPendingPickPocketAttempt()
   self:UpdatePoisonImmunityFrame()
-  if self.EvaluatePoisonWeaponTarget then
-    self:EvaluatePoisonWeaponTarget()
+  if self.OnPoisonWeaponTargetChanged then
+    self:OnPoisonWeaponTargetChanged()
   end
 end
 
@@ -8414,15 +8414,23 @@ frame:SetScript("OnEvent", function(selfOrEvent, eventOrArg1, eventPayload)
     if addon.OnMountGearEvent and (not arg1 or arg1 == "player") then
       addon:OnMountGearEvent(eventName, arg1)
     end
+    if addon.OnPoisonWeaponInventoryEvent and (not arg1 or arg1 == "player") then
+      addon:OnPoisonWeaponInventoryEvent(eventName, arg1)
+    end
   elseif eventName == "BAG_UPDATE" then
     if addon.OnMountGearEvent then
       addon:OnMountGearEvent(eventName, arg1)
+    end
+    if addon.OnPoisonWeaponInventoryEvent then
+      addon:OnPoisonWeaponInventoryEvent(eventName, arg1)
     end
   elseif eventName == "ITEM_LOCK_CHANGED" then
     if addon.ProcessMountGear then
       addon:ProcessMountGear()
     end
-    if addon.ProcessPoisonWeaponSwap then
+    if addon.OnPoisonWeaponInventoryEvent then
+      addon:OnPoisonWeaponInventoryEvent(eventName, arg1)
+    elseif addon.ProcessPoisonWeaponSwap then
       addon:ProcessPoisonWeaponSwap()
     end
   elseif eventName == "UNIT_ENERGY" then

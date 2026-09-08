@@ -698,7 +698,7 @@ local function createPoisonWeaponsControl(parent, y)
   getglobal(enable:GetName() .. "Text"):SetText("Auto Change")
   enable:SetScript("OnClick", function()
     addon:GetPoisonWeaponSettings().enabled = enable:GetChecked() == 1
-    addon:EvaluatePoisonWeaponTarget()
+    addon:RequestPoisonWeaponProfile("config", true)
     addon:RefreshConfig()
   end)
 

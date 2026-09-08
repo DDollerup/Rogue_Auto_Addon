@@ -28,10 +28,8 @@ function addon:Builder()
   if not self:PrepareAction(true) then
     return
   end
-  if self.IsPoisonWeaponSwapInProgress and self:IsPoisonWeaponSwapInProgress() then
-    if self.ProcessPoisonWeaponSwap then
-      self:ProcessPoisonWeaponSwap()
-    end
+  if self.PreparePoisonWeaponTransitionForBuilder
+    and not self:PreparePoisonWeaponTransitionForBuilder() then
     return
   end
   self:LoadBuilderPriorityOrder()
