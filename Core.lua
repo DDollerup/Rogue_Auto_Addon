@@ -244,10 +244,10 @@ addon.BuilderRuleResult = {
 
 addon.BuilderPriorityOrder = {
   "interrupts",
+  "combat_buff_maintenance",
   "eviscerate_armed",
   "eviscerate_forced",
   "eviscerate_shock",
-  "combat_buff_maintenance",
   "flourish_maintenance",
   "feint",
   "riposte",
@@ -328,7 +328,32 @@ function addon:MoveBuilderPriority(ruleId, direction)
   return true
 end
 
+function addon:EnforceBuilderPriorityInvariants()
+  local maintenanceIndex = nil
+  local firstEviscerateIndex = nil
+  local eviscerateRules = {
+    eviscerate_armed = true,
+    eviscerate_forced = true,
+    eviscerate_shock = true,
+    eviscerate_arm = true,
+  }
+
+  for index, ruleId in ipairs(self.BuilderPriorityOrder) do
+    if ruleId == "combat_buff_maintenance" then
+      maintenanceIndex = index
+    elseif eviscerateRules[ruleId] and not firstEviscerateIndex then
+      firstEviscerateIndex = index
+    end
+  end
+
+  if maintenanceIndex and firstEviscerateIndex and maintenanceIndex > firstEviscerateIndex then
+    table.remove(self.BuilderPriorityOrder, maintenanceIndex)
+    table.insert(self.BuilderPriorityOrder, firstEviscerateIndex, "combat_buff_maintenance")
+  end
+end
+
 function addon:RunBuilderPriority(context)
+  self:EnforceBuilderPriorityInvariants()
   for _, ruleId in ipairs(self.BuilderPriorityOrder) do
     local rule = self.BuilderRules[ruleId]
     if rule and (not rule.when or rule.when(self, context)) then
@@ -6266,11 +6291,6 @@ function addon:ShouldRefreshBuilderBuff(spellName, comboPoints, context)
   end
 
   if spellName == "Envenom" then
-    local minimumRemainingFightDuration = self.envenomMinimumRemainingFightDuration or 3
-    if remainingFightDuration > 0 and remainingFightDuration < minimumRemainingFightDuration then
-      return false
-    end
-
     if not active then
       return comboPoints >= 1
     end
